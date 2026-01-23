@@ -11,7 +11,6 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- 1. CONFIGURATION ---
-// We added a 'type' to each product to know if it's a Top or Bottom
 const PRODUCTS = [
   { id: 'hoodie_aqua', name: 'Unisex Hoodie (Aqua)', basePrice: 60, type: 'top' },
   { id: 'hoodie_grey', name: 'Unisex Hoodie (Grey)', basePrice: 60, type: 'top' },
@@ -116,7 +115,6 @@ export default function OrderForm() {
 
   // --- HELPERS FOR THE UI ---
   const getValidPositions = () => {
-    // Returns the correct list based on if the user picked a Hoodie or Pants
     return POSITIONS[selectedProduct.type] || POSITIONS.top;
   };
 
@@ -292,7 +290,7 @@ export default function OrderForm() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: CART (Same as before) */}
+        {/* RIGHT COLUMN: CART */}
         <div className="md:col-span-1">
           <div className="bg-white shadow-xl rounded-xl border border-gray-200 sticky top-4">
             <div className="bg-gray-800 text-white p-4 rounded-t-xl">
@@ -301,5 +299,3 @@ export default function OrderForm() {
             </div>
 
             <div className="p-4 space-y-4 max-h-[50vh] overflow-y-auto">
-              {cart.length === 0 ? (
-                <p
