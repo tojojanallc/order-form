@@ -4,9 +4,9 @@
 import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// --- ⚠️ RE-PASTE YOUR SUPABASE KEYS HERE ⚠️ ---
-const SUPABASE_URL = 'PASTE_YOUR_PROJECT_URL_HERE';
-const SUPABASE_KEY = 'PASTE_YOUR_ANON_KEY_HERE';
+// --- ⚠️ PASTE YOUR REAL KEYS HERE OR IT WILL CRASH ⚠️ ---
+const SUPABASE_URL = 'https://jtywzhexaqlhzgbgdupz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0eXd6aGV4YXFsaHpnYmdkdXB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxOTQ0NTAsImV4cCI6MjA4NDc3MDQ1MH0.9xsTi8YlmTwm2ALynmyjbTGZYhQnPXfV-RnqB7e3dJc';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -70,7 +70,6 @@ export default function OrderForm() {
 
   // --- HANDLERS ---
   const handleAddToCart = () => {
-    // Validation: Ensure all positions are filled
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
     
@@ -87,8 +86,6 @@ export default function OrderForm() {
       finalPrice: calculateTotal()
     };
     setCart([...cart, newItem]);
-    
-    // Reset Form
     setLogos([]);
     setNames([]);
     setBackNameList(false);
@@ -177,7 +174,7 @@ export default function OrderForm() {
                 </div>
               </section>
 
-              {/* SECTION 2: LOGOS (Updated with Smart Selector) */}
+              {/* SECTION 2: LOGOS */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b pb-2">
                   <h2 className="font-bold text-gray-700">2. Accent Logos</h2>
@@ -219,7 +216,7 @@ export default function OrderForm() {
                 <button onClick={() => setLogos([...logos, { type: 'Butterfly', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded hover:border-blue-500 hover:text-blue-500 font-semibold">+ Add Logo</button>
               </section>
 
-              {/* SECTION 3: NAMES (Updated with Smart Selector) */}
+              {/* SECTION 3: NAMES */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b pb-2">
                   <h2 className="font-bold text-gray-700">3. Names</h2>
