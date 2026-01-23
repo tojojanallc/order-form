@@ -5,8 +5,8 @@ import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 // --- ⚠️ RE-PASTE YOUR SUPABASE KEYS HERE ⚠️ ---
-const SUPABASE_URL = 'https://jtywzhexaqlhzgbgdupz.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0eXd6aGV4YXFsaHpnYmdkdXB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxOTQ0NTAsImV4cCI6MjA4NDc3MDQ1MH0.9xsTi8YlmTwm2ALynmyjbTGZYhQnPXfV-RnqB7e3dJc';
+const SUPABASE_URL = 'PASTE_YOUR_PROJECT_URL_HERE';
+const SUPABASE_KEY = 'PASTE_YOUR_ANON_KEY_HERE';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -299,3 +299,60 @@ export default function OrderForm() {
             </div>
 
             <div className="p-4 space-y-4 max-h-[50vh] overflow-y-auto">
+              {cart.length === 0 ? (
+                <p className="text-gray-400 text-center italic py-10">Cart is empty.</p>
+              ) : (
+                cart.map((item) => (
+                  <div key={item.id} className="border-b pb-4 last:border-0 relative group">
+                    <button onClick={() => removeItem(item.id)} className="absolute top-0 right-0 text-red-400 hover:text-red-600 font-bold text-xs p-1">REMOVE</button>
+                    <p className="font-bold text-gray-800">{item.productName}</p>
+                    <p className="text-sm text-gray-600">Size: {item.size}</p>
+                    
+                    <div className="text-xs text-gray-500 mt-1 space-y-1">
+                      {item.customizations.logos.map((l, i) => <div key={i}>• {l.type} ({l.position})</div>)}
+                      {item.customizations.names.map((n, i) => <div key={i}>• "{n.text}" ({n.position})</div>)}
+                    </div>
+                    
+                    <p className="font-bold text-right mt-2 text-blue-900">${item.finalPrice}.00</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* SECTION 6: CUSTOMER INFO */}
+            {cart.length > 0 && (
+              <div className="p-4 bg-gray-50 border-t rounded-b-xl">
+                <h3 className="font-bold text-gray-700 mb-2">6. Customer Info</h3>
+                <input 
+                  className="w-full p-2 border rounded mb-2 text-sm" 
+                  placeholder="Full Name" 
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                />
+                <input 
+                  className="w-full p-2 border rounded mb-4 text-sm" 
+                  placeholder="Phone Number" 
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                />
+
+                <div className="flex justify-between items-center mb-4 border-t pt-4">
+                  <span className="font-bold text-gray-700">Total Due</span>
+                  <span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span>
+                </div>
+                
+                <button 
+                  onClick={handleSubmitOrder}
+                  disabled={isSubmitting}
+                  className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  {isSubmitting ? "Submitting..." : "Submit Order"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
