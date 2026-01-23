@@ -2,17 +2,22 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-// Now it pulls from the hidden file!
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripeKey = process.env.STRIPE_SECRET_KEY;
+// Safely initialize Stripe. If key is missing, it won't crash the build, but will error on checkout.
+const stripe = stripeKey ? new Stripe(stripeKey) : null;
 
 export async function POST(request) {
+  if (!stripe) {
+    console.error("Stripe Key Missing");
+    return NextResponse.json({ error: 'Server Config Error: Missing Stripe Key' }, { status: 500 });
+  }
+
   try {
     const body = await request.json();
     const { cart, customerName } = body;
 
     // Convert your Cart items into Stripe's format
     const lineItems = cart.map((item) => {
-        // Create a description of the custom choices
         const description = [
             `Size: ${item.size}`,
             ...item.customizations.logos.map(l => `Logo: ${l.type} (${l.position})`),
@@ -24,25 +29,21 @@ export async function POST(request) {
                 currency: 'usd',
                 product_data: {
                     name: item.productName,
-                    description: description.substring(0, 400), // Stripe limit
+                    description: description.substring(0, 400),
                 },
-                unit_amount: item.finalPrice * 100, // Stripe expects cents (e.g. $20.00 = 2000)
+                unit_amount: item.finalPrice * 100, 
             },
             quantity: 1,
         };
     });
 
-    // Create the Checkout Session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
       success_url: `${request.headers.get('origin')}/success`,
       cancel_url: `${request.headers.get('origin')}/`,
-      metadata: {
-        customer_name: customerName,
-        // We can store the full order ID here later if needed
-      },
+      metadata: { customer_name: customerName },
     });
 
     return NextResponse.json({ url: session.url });
