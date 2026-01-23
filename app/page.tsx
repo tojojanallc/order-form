@@ -4,11 +4,11 @@
 import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// --- ⚠️ RE-PASTE YOUR SUPABASE KEYS HERE ⚠️ ---
-const SUPABASE_URL = 'https://jtywzhexaqlhzgbgdupz.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0eXd6aGV4YXFsaHpnYmdkdXB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxOTQ0NTAsImV4cCI6MjA4NDc3MDQ1MH0.9xsTi8YlmTwm2ALynmyjbTGZYhQnPXfV-RnqB7e3dJc';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Now it pulls from the hidden file!
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL, 
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 // --- CONFIGURATION ---
 const PRODUCTS = [
@@ -88,7 +88,7 @@ export default function OrderForm() {
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
 
-  // --- THE NEW STRIPE HANDLER ---
+  // --- STRIPE HANDLER ---
   const handleCheckout = async () => {
     if (!customerName || !customerPhone) { alert("Please enter your Name and Phone Number"); return; }
     

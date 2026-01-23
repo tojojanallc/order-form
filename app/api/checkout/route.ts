@@ -2,8 +2,8 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 
-// ⚠️ PASTE YOUR SECRET KEY (sk_test_...) HERE ⚠️
-const stripe = new Stripe('sk_test_...');
+// Now it pulls from the hidden file!
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export async function POST(request) {
   try {
