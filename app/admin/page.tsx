@@ -4,11 +4,10 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// --- ⚠️ PASTE YOUR SUPABASE KEYS HERE ⚠️ ---
-const SUPABASE_URL = 'https://jtywzhexaqlhzgbgdupz.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0eXd6aGV4YXFsaHpnYmdkdXB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxOTQ0NTAsImV4cCI6MjA4NDc3MDQ1MH0.9xsTi8YlmTwm2ALynmyjbTGZYhQnPXfV-RnqB7e3dJc';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// --- SECURE CONNECTION ---
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 export default function AdminPage() {
   const [passcode, setPasscode] = useState('');
@@ -16,11 +15,10 @@ export default function AdminPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Simple "Client-side" security. 
-  // For a real app, you'd want something stronger, but this keeps prying eyes out.
+  // Simple Password Protection
   const handleLogin = (e) => {
     e.preventDefault();
-    if (passcode === 'swim2025') { // <--- CHANGE THIS PASSWORD IF YOU WANT
+    if (passcode === 'swim2025') { // <--- YOU CAN CHANGE THIS PASSWORD
       setIsAuthorized(true);
       fetchOrders();
     } else {
@@ -29,15 +27,21 @@ export default function AdminPage() {
   };
 
   const fetchOrders = async () => {
+    if (!supabase) return alert("Database connection missing");
     setLoading(true);
+    
     // Fetch orders, newest first
     const { data, error } = await supabase
       .from('orders')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) console.error('Error fetching orders:', error);
-    else setOrders(data);
+    if (error) {
+        console.error('Error fetching orders:', error);
+        alert("Error fetching data. Check console.");
+    } else {
+        setOrders(data);
+    }
     setLoading(false);
   };
 
@@ -49,11 +53,12 @@ export default function AdminPage() {
         <span className="font-bold">{item.productName}</span> ({item.size})
         <br />
         <span className="text-xs text-gray-500">
-          {item.customizations.logos.length > 0 && `Logos: ${item.customizations.logos.length}, `}
-          {item.customizations.names.length > 0 && `Names: ${item.customizations.names.length}, `}
-          {item.customizations.backList && `Back List, `}
-          {item.customizations.metallic && `Metallic`}
+          {item.customizations.logos.map(l => `Logo: ${l.type} (${l.position})`).join(', ')}
+          {item.customizations.names.map(n => `Name: ${n.text} (${n.position})`).join(', ')}
+          {item.customizations.backList && <div>• Back Name List</div>}
+          {item.customizations.metallic && <div>• Metallic Highlight</div>}
         </span>
+        <div className="font-bold text-xs mt-1">${item.finalPrice}</div>
       </div>
     ));
   };
@@ -109,7 +114,6 @@ export default function AdminPage() {
                       <div className="text-sm text-gray-500">{order.phone}</div>
                     </td>
                     <td className="p-4 border-b align-top bg-gray-50">
-                      {/* This parses the complex JSON into readable text */}
                       {formatCart(order.cart_data)}
                     </td>
                     <td className="p-4 border-b text-right font-bold text-green-700 align-top">
