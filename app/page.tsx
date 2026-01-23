@@ -94,7 +94,7 @@ export default function OrderForm() {
     
     setIsSubmitting(true);
 
-    // 1. Save to Supabase first (Status: Unpaid)
+    // 1. Save to Supabase
     const { error } = await supabase.from('orders').insert([{ 
       customer_name: customerName, phone: customerPhone, cart_data: cart, total_price: calculateGrandTotal() 
     }]);
