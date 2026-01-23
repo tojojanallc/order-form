@@ -81,6 +81,22 @@ export default function OrderForm() {
        return;
     }
 
+// --- NEW: SEND SMS CONFIRMATION ---
+    try {
+      await fetch('/api/send-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          phone: customerPhone, 
+          message: `Hi ${customerName}! We received your order for the 2025 Championships. You will receive another text when it is ready for pickup!` 
+        }),
+      });
+    } catch (smsError) {
+      console.error("SMS Failed", smsError);
+      // We don't stop the order if the text fails, just log it.
+    }
+    // ----------------------------------
+    
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',

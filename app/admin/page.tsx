@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'; 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,6 +13,7 @@ export default function AdminPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [notifying, setNotifying] = useState(null); // Tracks which button is loading
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -31,6 +32,31 @@ export default function AdminPage() {
     if (error) { console.error(error); alert("Error fetching data."); } 
     else { setOrders(data); }
     setLoading(false);
+  };
+
+  // --- NEW: NOTIFY FUNCTION ---
+  const handleNotifyPickup = async (orderId, customerName, phone) => {
+    if (!confirm(`Send "Ready for Pickup" text to ${customerName}?`)) return;
+    
+    setNotifying(orderId);
+
+    // 1. Send the Text
+    const response = await fetch('/api/send-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        phone: phone, 
+        message: `Hi ${customerName}! Your Swag Order is READY for pickup at the main booth. See you soon!` 
+      }),
+    });
+
+    if (response.ok) {
+      alert("Text Sent!");
+      // Optional: You could update a "status" field in Supabase here if you wanted
+    } else {
+      alert("Failed to send text.");
+    }
+    setNotifying(null);
   };
 
   const formatCart = (cartItems) => {
@@ -77,8 +103,8 @@ export default function AdminPage() {
                 <tr>
                   <th className="p-4 border-b border-gray-300 font-black text-gray-900">Date</th>
                   <th className="p-4 border-b border-gray-300 font-black text-gray-900">Customer</th>
-                  <th className="p-4 border-b border-gray-300 font-black text-gray-900">Items (Details)</th>
-                  <th className="p-4 border-b border-gray-300 font-black text-gray-900 text-right">Total</th>
+                  <th className="p-4 border-b border-gray-300 font-black text-gray-900">Items</th>
+                  <th className="p-4 border-b border-gray-300 font-black text-gray-900 text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -87,7 +113,15 @@ export default function AdminPage() {
                     <td className="p-4 text-sm text-gray-900 font-medium">{new Date(order.created_at).toLocaleDateString()} <br/> {new Date(order.created_at).toLocaleTimeString()}</td>
                     <td className="p-4 align-top"><div className="font-bold text-black">{order.customer_name}</div><div className="text-sm text-gray-800 font-medium">{order.phone}</div></td>
                     <td className="p-4 align-top bg-gray-50">{formatCart(order.cart_data)}</td>
-                    <td className="p-4 text-right font-black text-green-800 align-top">${order.total_price}</td>
+                    <td className="p-4 text-right align-top">
+                        <button 
+                            onClick={() => handleNotifyPickup(order.id, order.customer_name, order.phone)}
+                            disabled={notifying === order.id}
+                            className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded shadow whitespace-nowrap"
+                        >
+                            {notifying === order.id ? "Sending..." : "📲 Text: Ready"}
+                        </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
