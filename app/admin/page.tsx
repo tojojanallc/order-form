@@ -35,6 +35,7 @@ export default function AdminPage() {
   const [logos, setLogos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ revenue: 0, count: 0, topItem: '-' });
+  const [uploadLog, setUploadLog] = useState([]); 
 
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
   const audioRef = useRef(null);
@@ -50,7 +51,6 @@ export default function AdminPage() {
   const [offerBackNames, setOfferBackNames] = useState(true);
   const [offerMetallic, setOfferMetallic] = useState(true);
 
-  // --- ANALYTICS ---
   useEffect(() => {
     if (orders.length > 0) {
         const revenue = orders.reduce((sum, o) => sum + (o.total_price || 0), 0);
@@ -67,43 +67,33 @@ export default function AdminPage() {
     }
   }, [orders]);
 
-  // --- AUTO-PRINT POLLER ---
   useEffect(() => {
     let interval;
-    if (isAuthorized && autoPrintEnabled) {
-        interval = setInterval(() => { checkForNewLabels(); }, 5000);
-    }
+    if (isAuthorized && autoPrintEnabled) { interval = setInterval(() => { checkForNewLabels(); }, 5000); }
     return () => clearInterval(interval);
   }, [isAuthorized, autoPrintEnabled, orders]);
 
   const checkForNewLabels = () => {
-    const unprinted = orders
-        .filter(o => !o.printed && o.status !== 'completed' && o.status !== 'shipped')
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-    if (unprinted.length > 0) {
-        if (audioRef.current) audioRef.current.play().catch(e => console.log("Audio play failed", e));
-        printLabel(unprinted[0]);
-    }
+    const unprinted = orders.filter(o => !o.printed && o.status !== 'completed' && o.status !== 'shipped').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (unprinted.length > 0) { if (audioRef.current) audioRef.current.play().catch(e => console.log("Audio fail", e)); printLabel(unprinted[0]); }
   };
 
   const printLabel = async (order) => {
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
     await supabase.from('orders').update({ printed: true }).eq('id', order.id);
-
     const printWindow = window.open('', '', 'width=400,height=600');
     if (!printWindow) { alert("⚠️ POPUP BLOCKED"); return; }
-
     printWindow.document.write(`<html><head><title>Order #${order.id}</title><style>@page { size: 4in 6in; margin: 0; } body { font-family: 'Courier New', monospace; margin: 0.1in; padding: 0; width: 3.8in; } .header { text-align: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 15px; } h1 { font-size: 28px; font-weight: 900; margin: 0; text-transform: uppercase; line-height: 1.1; } h2 { font-size: 16px; margin: 5px 0 0 0; color: #333; } .items { text-align: left; } .item { margin-bottom: 15px; font-size: 18px; font-weight: bold; border-bottom: 1px dashed #999; padding-bottom: 5px; } .details { font-size: 14px; font-weight: normal; margin-top: 2px; } .footer { margin-top: 30px; text-align: center; font-size: 12px; border-top: 2px solid black; padding-top: 10px; } .shipping-alert { display: block; margin-top: 5px; background: black; color: white; font-size: 12px; padding: 2px 5px; border-radius: 4px; width: fit-content; }</style></head><body><div class="header"><h1>${order.customer_name}</h1><h2>Order #${order.id}</h2></div><div class="items">${order.cart_data.map(item => `<div class="item"><div style="display:flex; justify-content:space-between;"><span>${item.productName}</span><span>${item.size}</span></div>${item.customizations.logos.length > 0 ? `<div class="details">Logos: ${item.customizations.logos.map(l => l.type).join(', ')}</div>` : ''}${item.customizations.names.length > 0 ? `<div class="details">Names: ${item.customizations.names.map(n => n.text).join(', ')}</div>` : ''}${item.needsShipping ? `<span class="shipping-alert">📦 SHIP TO HOME</span>` : ''}</div>`).join('')}</div><div class="footer">${new Date(order.created_at).toLocaleString()}<br><strong>Total Items: ${order.cart_data.length}</strong></div></body></html>`);
     printWindow.document.close();
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
-  // --- ROBUST EXCEL BULK UPLOAD ---
+  // --- PARANOID MODE BULK UPLOAD ---
   const handleBulkUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    setUploadLog(["Reading file..."]);
     setLoading(true);
 
     const reader = new FileReader();
@@ -115,98 +105,106 @@ export default function AdminPage() {
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws);
 
-            if (!data || data.length === 0) return alert("File appears empty!");
+            if (!data || data.length === 0) { setUploadLog(["❌ Error: File empty."]); setLoading(false); return; }
 
-            let successCount = 0;
+            // 1. Get VALID Product IDs from DB to force matching
+            const { data: dbProducts } = await supabase.from('products').select('id');
+            const validIds = {}; 
+            if (dbProducts) dbProducts.forEach(p => validIds[p.id.toLowerCase()] = p.id);
 
-            for (const row of data) {
-                // Normalize keys (handle excel capitalization or spaces)
+            const logs = [];
+            let updatedCount = 0;
+            let errorCount = 0;
+
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i];
+                // Normalize keys
                 const normalizedRow = {};
-                Object.keys(row).forEach(k => {
-                    normalizedRow[k.toLowerCase().trim()] = row[k];
-                });
+                Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().trim()] = row[k]; });
 
                 const pid = normalizedRow['product_id'];
                 const size = normalizedRow['size'];
                 const count = normalizedRow['count'];
 
-                if (pid && size && count !== undefined) {
-                    const cleanPid = String(pid).trim();
-                    const cleanSize = String(size).trim();
-                    const cleanCount = parseInt(count);
+                if (!pid || !size || count === undefined) {
+                    logs.push(`⚠️ Row ${i+2}: Skipped (Missing Data)`);
+                    continue;
+                }
 
-                    const { data: existing } = await supabase
-                        .from('inventory')
-                        .select('id')
-                        .eq('product_id', cleanPid)
-                        .eq('size', cleanSize)
-                        .single();
+                // SMART MATCHING
+                const rawId = String(pid).trim();
+                let finalId = rawId;
+                if (!validIds[rawId] && validIds[rawId.toLowerCase()]) { finalId = validIds[rawId.toLowerCase()]; }
 
-                    if (existing) {
-                        await supabase.from('inventory').update({ count: cleanCount }).eq('id', existing.id);
-                        successCount++;
+                const cleanSize = String(size).trim();
+                const cleanCount = parseInt(count);
+
+                // --- THE PARANOID CHECK ---
+                // Find existing
+                const { data: existing, error: findError } = await supabase.from('inventory').select('id').eq('product_id', finalId).eq('size', cleanSize).single();
+
+                if (findError && findError.code !== 'PGRST116') { // PGRST116 is "Row not found", which is fine
+                     logs.push(`❌ Row ${i+2}: DB Find Error: ${findError.message}`);
+                     errorCount++;
+                     continue;
+                }
+
+                if (existing) {
+                    // UPDATE
+                    const { error: updateError } = await supabase.from('inventory').update({ count: cleanCount }).eq('id', existing.id);
+                    if (updateError) {
+                        logs.push(`❌ Row ${i+2}: Update Failed! ${updateError.message}`);
+                        errorCount++;
                     } else {
-                        // Create if missing
-                        await supabase.from('inventory').insert([{ product_id: cleanPid, size: cleanSize, count: cleanCount, active: true }]);
-                        successCount++;
+                        logs.push(`✅ Row ${i+2}: Updated ${finalId} (${cleanSize}) -> ${cleanCount}`);
+                        updatedCount++;
+                    }
+                } else {
+                    // INSERT
+                    const { error: insertError } = await supabase.from('inventory').insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]);
+                    if (insertError) {
+                        logs.push(`❌ Row ${i+2}: Insert Failed! ${insertError.message}`);
+                        errorCount++;
+                    } else {
+                        logs.push(`✨ Row ${i+2}: Created ${finalId} (${cleanSize}) -> ${cleanCount}`);
+                        updatedCount++;
                     }
                 }
             }
             
-            // --- THE FIX: FORCE RELOAD TO SHOW NEW DATA ---
-            alert(`✅ SUCCESS! Updated ${successCount} items.\n\nThe page will now refresh to show the new stock.`);
-            window.location.reload(); 
+            if (errorCount > 0) {
+                setUploadLog([`⚠️ COMPLETED WITH ERRORS: ${errorCount} failed.`, ...logs]);
+            } else {
+                setUploadLog([`🎉 SUCCESS! Processed ${updatedCount} items.`, ...logs]);
+            }
+            
+            await fetchInventory(); // Explicit fetch after done
 
-        } catch (err) {
-            console.error(err);
-            alert("Error parsing file. Ensure headers are 'product_id', 'size', 'count'.");
-            setLoading(false);
-        }
+        } catch (err) { console.error(err); setUploadLog(["❌ FATAL ERROR:", err.message]); }
+        setLoading(false);
+        e.target.value = null; 
     };
     reader.readAsBinaryString(file);
   };
 
   const downloadTemplate = () => {
     if (inventory.length === 0) return alert("No inventory data found!");
-    
-    // Explicitly define headers
-    const data = inventory.map(item => ({
-        product_id: item.product_id, 
-        size: item.size, 
-        count: item.count,
-        _Reference_Name: getProductName(item.product_id) 
-    }));
-
-    data.sort((a, b) => {
-        if (a._Reference_Name !== b._Reference_Name) return a._Reference_Name.localeCompare(b._Reference_Name);
-        return SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size);
-    });
-
+    const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, _Reference_Name: getProductName(item.product_id) }));
+    data.sort((a, b) => { if (a._Reference_Name !== b._Reference_Name) return a._Reference_Name.localeCompare(b._Reference_Name); return SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size); });
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventory");
     XLSX.writeFile(wb, "Lev_Inventory_Update.xlsx");
   };
 
-  // --- ACTIONS & HANDLERS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   const fetchOrders = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); setLoading(false); };
-  const fetchInventory = async () => { if (!supabase) return; setLoading(true); const { data: prodData } = await supabase.from('products').select('*').order('sort_order'); const { data: invData } = await supabase.from('inventory').select('*'); if (prodData) setProducts(prodData); if (invData) setInventory(invData); setLoading(false); };
+  const fetchInventory = async () => { if (!supabase) return; setLoading(true); const { data: prodData } = await supabase.from('products').select('*').order('sort_order'); const { data: invData } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (prodData) setProducts(prodData); if (invData) setInventory(invData); setLoading(false); };
   const fetchLogos = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); setLoading(false); };
   const fetchSettings = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); } setLoading(false); };
   const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, offer_back_names: offerBackNames, offer_metallic: offerMetallic }).eq('id', 1); alert("Event Settings Saved!"); };
   const closeEvent = async () => { const input = prompt("⚠️ CLOSE EVENT? Type 'CLOSE' to confirm:"); if (input !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
-
-  const handleStatusChange = async (orderId, newStatus) => {
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-    await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
-    if (newStatus === 'ready' || newStatus === 'partially_fulfilled') { 
-        const order = orders.find(o => o.id === orderId);
-        let msg = newStatus === 'ready' ? "READY for pickup!" : "PARTIALLY READY. Pick up available items!";
-        if (order) try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is ${msg}` }) }); } catch (e) {} 
-    }
-  };
-
+  const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); if (newStatus === 'ready' || newStatus === 'partially_fulfilled') { const order = orders.find(o => o.id === orderId); let msg = newStatus === 'ready' ? "READY for pickup!" : "PARTIALLY READY. Pick up available items!"; if (order) try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is ${msg}` }) }); } catch (e) {} } };
   const deleteOrder = async (orderId, cartData) => { if (!confirm("⚠️ Cancel Order & Restore Inventory?")) return; setLoading(true); if (cartData && Array.isArray(cartData)) { for (const item of cartData) { if (item.productId && item.size) { const { data: currentItem } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (currentItem) { await supabase.from('inventory').update({ count: currentItem.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); alert("Order deleted and inventory restored."); };
   const addLogo = async (e) => { e.preventDefault(); if (!newLogoName) return; await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, sort_order: logos.length + 1 }]); setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); };
   const deleteLogo = async (id) => { if (!confirm("Delete this logo?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
@@ -218,23 +216,7 @@ export default function AdminPage() {
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
 
   const handleAddProductWithSizeUpdates = async (e) => {
-    e.preventDefault();
-    if (!newProdId || !newProdName) return alert("Missing fields");
-    
-    const { error } = await supabase.from('products').insert([{ 
-        id: newProdId.toLowerCase().replace(/\s/g, '_'), 
-        name: newProdName, 
-        base_price: newProdPrice, 
-        image_url: newProdImage, 
-        type: 'top', 
-        sort_order: 99 
-    }]);
-
-    if (error) return alert("Error: " + error.message);
-    const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
-    const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }));
-    await supabase.from('inventory').insert(invRows);
-    alert("Product Created!"); setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory();
+    e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing fields"); const { error } = await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: 'top', sort_order: 99 }]); if (error) return alert("Error: " + error.message); const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL']; const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true })); await supabase.from('inventory').insert(invRows); alert("Product Created!"); setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory();
   };
 
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
@@ -290,7 +272,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* INVENTORY TAB - UPDATED WITH SMART UPLOAD */}
+        {/* INVENTORY TAB - UPDATED WITH PARANOID LOG */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1 space-y-6">
@@ -305,12 +287,18 @@ export default function AdminPage() {
                         </form>
                     </div>
 
-                    {/* BULK UPLOAD BOX */}
                     <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200">
                         <h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2>
                         <p className="text-xs text-blue-800 mb-4">1. Download Current Stock<br/>2. Edit "count" numbers<br/>3. Upload back</p>
                         <div className="flex gap-2 mb-4"><button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Current Stock</button></div>
                         <input type="file" accept=".xlsx, .xls" onChange={handleBulkUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200" />
+                        
+                        {/* DEBUG LOG */}
+                        {uploadLog.length > 0 && (
+                            <div className="mt-4 p-2 bg-black text-green-400 text-xs font-mono h-48 overflow-y-auto rounded border border-gray-700">
+                                {uploadLog.map((log, i) => <div key={i} className="mb-1 border-b border-gray-800 pb-1">{log}</div>)}
+                            </div>
+                        )}
                     </div>
                 </div>
 
