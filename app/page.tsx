@@ -22,40 +22,77 @@ export default function OrderForm() {
   const [shippingZip, setShippingZip] = useState('');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [inventory, setInventory] = useState({}); 
+  const [inventory, setInventory] = useState({}); // Counts
+  const [activeItems, setActiveItems] = useState({}); // True/False visibility
 
   // Form State
-  const [selectedProduct, setSelectedProduct] = useState(PRODUCTS[0]);
-  const [size, setSize] = useState('Adult M');
+  const [selectedProduct, setSelectedProduct] = useState(null); // Null initially
+  const [size, setSize] = useState('');
   const [logos, setLogos] = useState([]); 
   const [names, setNames] = useState([]);
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
 
-  // Load Inventory
+  // Load Inventory & Active Status
   useEffect(() => {
     const fetchInventory = async () => {
       if (!supabase) return;
       const { data } = await supabase.from('inventory').select('*');
       if (data) {
-        // Create a lookup map: "productID_Size" -> count
         const stockMap = {};
+        const activeMap = {};
+        
         data.forEach(item => {
             const key = `${item.product_id}_${item.size}`;
             stockMap[key] = item.count;
+            activeMap[key] = item.active;
         });
         setInventory(stockMap);
+        setActiveItems(activeMap);
       }
     };
     fetchInventory();
   }, []);
 
-  // --- NEW: CHECK STOCK BY SIZE ---
-  const stockKey = `${selectedProduct.id}_${size}`;
-  const currentStock = inventory[stockKey] ?? 0; // Default to 0 if size missing
+  // --- FILTER PRODUCTS BASED ON "ACTIVE" STATUS ---
+  // A product is visible ONLY if at least one size is marked active in DB
+  const visibleProducts = PRODUCTS.filter(p => {
+    // Check if ANY key starting with this product ID is active
+    return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
+  });
+
+  // Set default product once inventory loads
+  useEffect(() => {
+    if (!selectedProduct && visibleProducts.length > 0) {
+      setSelectedProduct(visibleProducts[0]);
+    }
+  }, [visibleProducts, selectedProduct]);
+
+  // --- FILTER SIZES BASED ON "ACTIVE" STATUS ---
+  const getVisibleSizes = () => {
+    if (!selectedProduct) return [];
+    // We look at the inventory keys to find sizes for this product that are active
+    return Object.keys(activeItems)
+      .filter(key => key.startsWith(selectedProduct.id) && activeItems[key] === true)
+      .map(key => key.split('_')[1]); // Extract "Adult M" from "hoodie_aqua_Adult M"
+  };
+
+  const visibleSizes = getVisibleSizes();
+
+  // Set default size when product changes
+  useEffect(() => {
+    if (visibleSizes.length > 0 && !visibleSizes.includes(size)) {
+      setSize(visibleSizes[0]);
+    }
+  }, [selectedProduct, visibleSizes, size]);
+
+  // Inventory Checks
+  const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
+  const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
   const calculateTotal = () => {
+    if (!selectedProduct) return 0;
     let total = selectedProduct.basePrice;
     total += logos.length * 5;      
     total += names.length * 5;      
@@ -69,6 +106,7 @@ export default function OrderForm() {
   };
 
   const handleAddToCart = () => {
+    if (!selectedProduct) return;
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
     if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Logo and Name."); return; }
@@ -87,7 +125,7 @@ export default function OrderForm() {
   };
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
-  const getValidPositions = () => POSITIONS[selectedProduct.type] || POSITIONS.top;
+  const getValidPositions = () => selectedProduct ? (POSITIONS[selectedProduct.type] || POSITIONS.top) : [];
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
 
@@ -102,16 +140,10 @@ export default function OrderForm() {
         return;
       }
     }
-
-    if (!supabase) { alert("System Error: Database not connected."); return; }
     
     setIsSubmitting(true);
-
     const { error } = await supabase.from('orders').insert([{ 
-      customer_name: customerName, 
-      phone: customerPhone, 
-      cart_data: cart, 
-      total_price: calculateGrandTotal(),
+      customer_name: customerName, phone: customerPhone, cart_data: cart, total_price: calculateGrandTotal(),
       shipping_address: cartRequiresShipping ? shippingAddress : null,
       shipping_city: cartRequiresShipping ? shippingCity : null,
       shipping_state: cartRequiresShipping ? shippingState : null,
@@ -119,40 +151,19 @@ export default function OrderForm() {
       status: cartRequiresShipping ? 'pending_shipping' : 'pending' 
     }]);
 
-    if (error) {
-       console.error(error); 
-       alert('Error saving to database. Check console.'); 
-       setIsSubmitting(false); 
-       return;
-    }
+    if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
+
+    try { await fetch('/api/send-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customerEmail, customerName, cart, total: calculateGrandTotal() }) }); } catch (e) {}
 
     try {
-      await fetch('/api/send-receipt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            email: customerEmail, 
-            customerName, 
-            cart, 
-            total: calculateGrandTotal() 
-        }),
-      });
-    } catch (e) { console.error(e); }
-
-    try {
-      const response = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart, customerName }),
-      });
+      const response = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, customerName }) });
       const data = await response.json();
       if (data.url) window.location.href = data.url; 
-      else alert("Error creating payment session");
-    } catch (err) {
-      alert("Checkout failed unexpectedly.");
-      setIsSubmitting(false);
-    }
+      else alert("Payment Error");
+    } catch (err) { alert("Checkout failed."); setIsSubmitting(false); }
   };
+
+  if (!selectedProduct) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
 
   return (
     <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900">
@@ -167,10 +178,9 @@ export default function OrderForm() {
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
                 
-                {/* DYNAMIC STOCK ALERT */}
                 {isOutOfStock ? (
                   <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert">
-                    <p className="font-bold">⚠️ {selectedProduct.name} ({size}) is Out of Stock.</p>
+                    <p className="font-bold">⚠️ Out of Stock at Event</p>
                     <p className="text-sm">We can ship this to your home!</p>
                   </div>
                 ) : (
@@ -182,21 +192,21 @@ export default function OrderForm() {
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Item</label>
-                    <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(PRODUCTS.find(p => p.id === e.target.value))} value={selectedProduct.id}>
-                      {PRODUCTS.map(p => <option key={p.id} value={p.id}>{p.name} - ${p.basePrice}</option>)}
+                    <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct.id}>
+                      {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} - ${p.basePrice}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Size</label>
                     <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size} onChange={(e) => setSize(e.target.value)}>
-                      <optgroup label="Youth"><option>Youth S</option><option>Youth M</option><option>Youth L</option><option>Youth XL</option></optgroup>
-                      <optgroup label="Adult"><option>Adult S</option><option>Adult M</option><option>Adult L</option><option>Adult XL</option></optgroup>
+                      {/* Sort sizes roughly if needed, or just map them */}
+                      {visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                 </div>
               </section>
 
-              {/* SECTIONS 2-5 (Standard) */}
+              {/* SECTIONS 2-5 (Logos, Names) */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
                 {logos.map((logo, index) => (
