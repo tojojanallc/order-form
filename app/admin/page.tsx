@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'; 
 
-import React, { useState, useEffect } from 'react'; 
+import React, { useState, useEffect, useRef } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -29,6 +29,10 @@ export default function AdminPage() {
   const [logos, setLogos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ revenue: 0, count: 0, topItem: '-' });
+
+  // Auto-Print State
+  const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
+  const audioRef = useRef(null);
 
   // Forms & Settings
   const [newProdId, setNewProdId] = useState('');
@@ -58,9 +62,50 @@ export default function AdminPage() {
     }
   }, [orders]);
 
+  // --- AUTO-PRINT POLLER ---
+  useEffect(() => {
+    let interval;
+    if (isAuthorized && autoPrintEnabled) {
+        interval = setInterval(() => {
+            checkForNewLabels();
+        }, 5000); // Check every 5 seconds
+    }
+    return () => clearInterval(interval);
+  }, [isAuthorized, autoPrintEnabled, orders]);
+
+  const checkForNewLabels = () => {
+    // Find oldest unprinted order that is NOT completed
+    const unprinted = orders
+        .filter(o => !o.printed && o.status !== 'completed' && o.status !== 'shipped')
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Oldest first
+
+    if (unprinted.length > 0) {
+        const nextOrder = unprinted[0];
+        
+        // 1. Play Sound
+        if (audioRef.current) {
+            audioRef.current.play().catch(e => console.log("Audio play failed", e));
+        }
+
+        // 2. Print
+        printLabel(nextOrder);
+    }
+  };
+
   // --- THERMAL PRINTER LABEL FUNCTION ---
-  const printLabel = (order) => {
+  const printLabel = async (order) => {
+    // 1. Mark as printed in DB immediately so we don't loop print
+    // Optimistic update locally first
+    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
+    await supabase.from('orders').update({ printed: true }).eq('id', order.id);
+
+    // 2. Open Print Window
     const printWindow = window.open('', '', 'width=400,height=600');
+    if (!printWindow) {
+        alert("⚠️ POPUP BLOCKED: Please allow popups for this site to use Auto-Print.");
+        return;
+    }
+
     printWindow.document.write(`
       <html>
         <head>
@@ -137,7 +182,7 @@ export default function AdminPage() {
     setTimeout(() => {
         printWindow.focus();
         printWindow.print();
-        printWindow.close();
+        printWindow.close(); 
     }, 500);
   };
 
@@ -177,6 +222,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-black font-sans">
+      <audio ref={audioRef} src="/ding.mp3" preload="auto" />
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <h1 className="text-3xl font-black text-gray-900">Admin Dashboard</h1>
@@ -195,21 +241,37 @@ export default function AdminPage() {
                     <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Total Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div>
                     <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Top Seller</p><p className="text-lg font-bold text-gray-800 truncate" title={stats.topItem}>{stats.topItem}</p></div>
                  </div>
-                 <div className="flex justify-end mb-4 gap-2">
-                    <button onClick={downloadCSV} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">📥 CSV</button>
-                    <button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button>
+                 
+                 {/* AUTO PRINT TOGGLE */}
+                 <div className="flex justify-between items-center mb-4 bg-gray-100 p-4 rounded border border-gray-200">
+                    <div className="flex items-center gap-3">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" className="sr-only peer" checked={autoPrintEnabled} onChange={e => setAutoPrintEnabled(e.target.checked)} />
+                            <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-900"></div>
+                            <span className="ml-3 font-bold text-gray-900">Auto-Print New Orders</span>
+                        </label>
+                        <span className="text-xs text-gray-500 hidden md:inline">(Plays sound + Opens print window)</span>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={downloadCSV} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">📥 CSV</button>
+                        <button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button>
+                    </div>
                  </div>
+
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto">
                     <table className="w-full text-left min-w-[800px]">
                     <thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead>
                     <tbody>
                         {orders.map((order) => (
-                        <tr key={order.id} className="border-b hover:bg-gray-50">
+                        <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
                             <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
                             <td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                             <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
                             <td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size}){item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                            <td className="p-4 align-top text-right"><button onClick={() => printLabel(order)} className="bg-gray-200 hover:bg-gray-300 p-2 rounded mr-2" title="Print Label">🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td>
+                            <td className="p-4 align-top text-right">
+                                <button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button>
+                                <button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button>
+                            </td>
                         </tr>
                         ))}
                     </tbody>
