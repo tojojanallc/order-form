@@ -38,7 +38,7 @@ export default function AdminPage() {
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
-  const [newProdImage, setNewProdImage] = useState(''); // NEW IMAGE STATE
+  const [newProdImage, setNewProdImage] = useState(''); 
   const [newLogoName, setNewLogoName] = useState('');
   const [newLogoUrl, setNewLogoUrl] = useState('');
   const [eventName, setEventName] = useState('');
@@ -129,18 +129,23 @@ export default function AdminPage() {
     e.preventDefault();
     if (!newProdId || !newProdName) return alert("Missing fields");
     
-    // NEW: Include image_url
     const { error } = await supabase.from('products').insert([{ 
         id: newProdId.toLowerCase().replace(/\s/g, '_'), 
         name: newProdName, 
         base_price: newProdPrice, 
-        image_url: newProdImage, // <--- SAVING IMAGE
+        image_url: newProdImage, 
         type: 'top', 
         sort_order: 99 
     }]);
 
     if (error) return alert("Error: " + error.message);
-    const sizes = ['Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL'];
+    
+    // UPDATED SIZES LIST
+    const sizes = [
+        'Youth XS', 'Youth S', 'Youth M', 'Youth L', 
+        'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'
+    ];
+    
     const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }));
     await supabase.from('inventory').insert(invRows);
     
@@ -171,6 +176,7 @@ export default function AdminPage() {
                     <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Total Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div>
                     <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Top Seller</p><p className="text-lg font-bold text-gray-800 truncate" title={stats.topItem}>{stats.topItem}</p></div>
                  </div>
+                 
                  <div className="flex justify-between items-center mb-4 bg-gray-100 p-4 rounded border border-gray-200">
                     <div className="flex items-center gap-3">
                         <label className="relative inline-flex items-center cursor-pointer">

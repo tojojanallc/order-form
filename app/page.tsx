@@ -9,8 +9,11 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-// --- DEFINE CORRECT SIZE ORDER ---
-const SIZE_ORDER = ['Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL'];
+// --- DEFINE CORRECT SIZE ORDER (UPDATED) ---
+const SIZE_ORDER = [
+    'Youth XS', 'Youth S', 'Youth M', 'Youth L', 
+    'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'
+];
 
 export default function OrderForm() {
   const [cart, setCart] = useState([]); 
