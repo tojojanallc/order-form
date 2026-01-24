@@ -19,6 +19,7 @@ export default function OrderForm() {
   const [cart, setCart] = useState([]); 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State
@@ -65,7 +66,7 @@ export default function OrderForm() {
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
 
   const handleCheckout = async () => {
-    if (!customerName || !customerPhone) { alert("Please enter your Name and Phone Number"); return; }
+    if (!customerName || !customerPhone || !customerEmail) { alert("Please enter Name, Email, and Phone");  return; }
     if (!supabase) { alert("System Error: Database not connected."); return; }
     
     setIsSubmitting(true);
@@ -97,6 +98,24 @@ export default function OrderForm() {
     }
     // ----------------------------------
     
+// --- NEW: SEND EMAIL RECEIPT ---
+    try {
+      await fetch('/api/send-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          email: customerEmail,
+          customerName: customerName,
+          cart: cart,
+          total: calculateGrandTotal()
+        }),
+      });
+    } catch (emailError) {
+      console.error("Email Failed", emailError);
+    }
+    // -------------------------------
+
+
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
@@ -207,6 +226,7 @@ export default function OrderForm() {
               <div className="p-4 bg-gray-100 border-t border-gray-300 rounded-b-xl">
                 <h3 className="font-bold text-black mb-2">6. Customer Info</h3>
                 <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Email Address" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
                 <input className="w-full p-2 border border-gray-400 rounded mb-4 text-sm text-black" placeholder="Phone Number" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
                 <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>
                 <button onClick={handleCheckout} disabled={isSubmitting} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting ? 'bg-gray-500' : 'bg-blue-800 hover:bg-blue-900'}`}>{isSubmitting ? "Processing..." : "Pay Now with Stripe"}</button>
