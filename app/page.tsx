@@ -29,7 +29,7 @@ export default function OrderForm() {
   const [logoOptions, setLogoOptions] = useState([]); 
 
   // Event Settings
-  const [eventName, setEventName] = useState('Swag Shop');
+  const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
   
   // NEW: Customization Settings
