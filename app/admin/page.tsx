@@ -35,13 +35,36 @@ export default function AdminPage() {
   const [newLogoName, setNewLogoName] = useState('');
   const [newLogoUrl, setNewLogoUrl] = useState('');
 
-  // Event Settings
+  // Settings
   const [eventName, setEventName] = useState('');
   const [eventLogo, setEventLogo] = useState('');
   const [offerBackNames, setOfferBackNames] = useState(true);
   const [offerMetallic, setOfferMetallic] = useState(true);
 
-  const handleLogin = (e) => { e.preventDefault(); if (passcode === 'swim2025') { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } };
+  // --- NEW: SECURE LOGIN ---
+  const handleLogin = async (e) => { 
+    e.preventDefault(); 
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passcode })
+      });
+      const data = await res.json();
+
+      if (data.success) { 
+        setIsAuthorized(true); 
+        fetchOrders(); 
+      } else { 
+        alert("Wrong password"); 
+      }
+    } catch (err) {
+      alert("Login failed");
+    }
+    setLoading(false);
+  };
 
   // --- FETCHERS ---
   const fetchOrders = async () => {
@@ -94,10 +117,63 @@ export default function AdminPage() {
     alert("Event Settings Saved!");
   };
 
-  const handleStatusChange = async (orderId, newStatus, customerName, phone) => {
+  const handleStatusChange = async (orderId, newStatus) => {
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
-    if (newStatus === 'ready') { try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone, message: `Hi ${customerName}! Your Swag Order is READY for pickup!` }) }); } catch (e) {} }
+    
+    // Only send text if moving TO ready status
+    if (newStatus === 'ready') { 
+        const order = orders.find(o => o.id === orderId);
+        if (order) {
+            try { 
+                await fetch('/api/send-text', { 
+                    method: 'POST', 
+                    body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is READY for pickup!` }) 
+                }); 
+            } catch (e) {} 
+        }
+    }
+  };
+
+  // --- NEW: DELETE ORDER & RESTORE STOCK ---
+  const deleteOrder = async (orderId, cartData) => {
+    const confirmed = confirm("⚠️ Cancel Order & Restore Inventory?\n\nOK = Delete & Add Stock Back\nCancel = Do Nothing");
+    if (!confirmed) return;
+    
+    setLoading(true);
+
+    // 1. Restore Inventory Loop
+    if (cartData && Array.isArray(cartData)) {
+        for (const item of cartData) {
+            // Only restore if we have valid IDs
+            if (item.productId && item.size) {
+                // Get current count
+                const { data: currentItem } = await supabase
+                    .from('inventory')
+                    .select('count')
+                    .eq('product_id', item.productId)
+                    .eq('size', item.size)
+                    .single();
+                
+                if (currentItem) {
+                    // Add 1 back
+                    await supabase
+                        .from('inventory')
+                        .update({ count: currentItem.count + 1 })
+                        .eq('product_id', item.productId)
+                        .eq('size', item.size);
+                }
+            }
+        }
+    }
+
+    // 2. Delete Order Row
+    await supabase.from('orders').delete().eq('id', orderId);
+    
+    fetchOrders();
+    fetchInventory(); // Refresh counts
+    setLoading(false);
+    alert("Order deleted and inventory restored.");
   };
 
   const addLogo = async (e) => {
@@ -108,7 +184,6 @@ export default function AdminPage() {
   };
 
   const deleteLogo = async (id) => { if (!confirm("Delete this logo?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
-  const deleteOrder = async (id) => { if (!confirm("Delete this order?")) return; await supabase.from('orders').delete().eq('id', id); fetchOrders(); };
   
   const deleteProduct = async (id) => {
     if (!confirm("Are you sure? This deletes the product AND inventory.")) return;
@@ -182,10 +257,10 @@ export default function AdminPage() {
                     <tbody>
                         {orders.map((order) => (
                         <tr key={order.id} className="border-b hover:bg-gray-50">
-                            <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value, order.customer_name, order.phone)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
+                            <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
                             <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
                             <td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size}){item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                            <td className="p-4 align-top text-right"><button onClick={() => deleteOrder(order.id)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Delete Order">🗑️</button></td>
+                            <td className="p-4 align-top text-right"><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td>
                         </tr>
                         ))}
                     </tbody>
@@ -194,6 +269,8 @@ export default function AdminPage() {
             </div>
         )}
 
+        {/* ... (Other tabs 'inventory', 'logos', 'settings' remain identical to previous versions, code omitted for brevity but should be kept in your file) ... */}
+        {/* I am pasting the FULL file content in the block below to ensure nothing is lost */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1">
@@ -210,8 +287,7 @@ export default function AdminPage() {
                 <div className="md:col-span-2 space-y-6">
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                         <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Prices</div>
-                        <table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th><th className="p-3 text-right">Action</th></tr></thead>
-                        <tbody>{products.map((prod) => (<tr key={prod.id} className="border-b hover:bg-gray-50"><td className="p-3 font-bold text-gray-700">{prod.name}</td><td className="p-3"><div className="flex items-center gap-1"><span className="text-gray-500 font-bold">$</span><input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price} onChange={(e) => updatePrice(prod.id, e.target.value)} /></div></td><td className="p-3 text-right"><button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button></td></tr>))}</tbody></table>
+                        <table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th><th className="p-3 text-right">Action</th></tr></thead><tbody>{products.map((prod) => (<tr key={prod.id} className="border-b hover:bg-gray-50"><td className="p-3 font-bold text-gray-700">{prod.name}</td><td className="p-3"><div className="flex items-center gap-1"><span className="text-gray-500 font-bold">$</span><input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price} onChange={(e) => updatePrice(prod.id, e.target.value)} /></div></td><td className="p-3 text-right"><button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button></td></tr>))}</tbody></table>
                     </div>
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                         <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Stock</div>
@@ -232,19 +308,7 @@ export default function AdminPage() {
                     </form>
                  </div>
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Logo Label</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead>
-                        <tbody>
-                            {logos.map((logo) => (
-                                <tr key={logo.id} className="border-b hover:bg-gray-50">
-                                    <td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td>
-                                    <td className="p-4 font-bold text-lg">{logo.label}</td>
-                                    <td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td>
-                                    <td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    <table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Logo Label</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b hover:bg-gray-50"><td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td><td className="p-4 font-bold text-lg">{logo.label}</td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td></tr>))}</tbody></table>
                  </div>
             </div>
         )}
@@ -253,46 +317,10 @@ export default function AdminPage() {
             <div className="max-w-xl mx-auto">
                 <div className="bg-white p-8 rounded-lg shadow border border-gray-200">
                     <h2 className="font-bold text-2xl mb-6">Event Settings</h2>
-                    
-                    <div className="mb-4">
-                        <label className="block text-gray-700 font-bold mb-2">Event Name</label>
-                        <input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} />
-                    </div>
-
-                    <div className="mb-6">
-                        <label className="block text-gray-700 font-bold mb-2">Event Logo URL</label>
-                        <input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />
-                        {eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}
-                    </div>
-
-                    {/* NEW: CUSTOMIZATION TOGGLES */}
-                    <div className="mb-6 bg-gray-50 p-4 rounded border">
-                        <label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label>
-                        
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="font-bold text-gray-800">Offer Back Name List?</span>
-                            <input 
-                                type="checkbox" 
-                                checked={offerBackNames} 
-                                onChange={(e) => setOfferBackNames(e.target.checked)} 
-                                className="w-6 h-6"
-                            />
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                            <span className="font-bold text-gray-800">Offer Metallic Upgrade?</span>
-                            <input 
-                                type="checkbox" 
-                                checked={offerMetallic} 
-                                onChange={(e) => setOfferMetallic(e.target.checked)} 
-                                className="w-6 h-6"
-                            />
-                        </div>
-                    </div>
-
-                    <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow">
-                        Save Changes
-                    </button>
+                    <div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div>
+                    <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div>
+                    <div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div></div>
+                    <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow">Save Changes</button>
                 </div>
             </div>
         )}
