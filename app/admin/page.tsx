@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
+import * as XLSX from 'xlsx'; // <--- NEW IMPORT
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -96,6 +97,73 @@ export default function AdminPage() {
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
+  // --- NEW: EXCEL BULK UPLOAD ---
+  const handleBulkUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+        try {
+            const bstr = evt.target.result;
+            const wb = XLSX.read(bstr, { type: 'binary' });
+            const wsname = wb.SheetNames[0];
+            const ws = wb.Sheets[wsname];
+            const data = XLSX.utils.sheet_to_json(ws);
+
+            if (!data || data.length === 0) return alert("Empty file!");
+
+            setLoading(true);
+            let successCount = 0;
+
+            for (const row of data) {
+                // Expected columns: product_id, size, count
+                if (row.product_id && row.size && row.count !== undefined) {
+                    // Try to find if this row exists first
+                    const { data: existing } = await supabase
+                        .from('inventory')
+                        .select('id')
+                        .eq('product_id', row.product_id)
+                        .eq('size', row.size)
+                        .single();
+
+                    if (existing) {
+                        // Update existing
+                        await supabase.from('inventory').update({ count: row.count }).eq('id', existing.id);
+                    } else {
+                        // Insert new (e.g. for new sizes added via Excel)
+                        await supabase.from('inventory').insert([{ 
+                            product_id: row.product_id, 
+                            size: row.size, 
+                            count: row.count,
+                            active: true 
+                        }]);
+                    }
+                    successCount++;
+                }
+            }
+            alert(`Successfully updated/inserted ${successCount} rows!`);
+            fetchInventory();
+        } catch (err) {
+            console.error(err);
+            alert("Error parsing file. Make sure headers are: product_id, size, count");
+        }
+        setLoading(false);
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const downloadTemplate = () => {
+    const data = [
+        { product_id: 'hoodie_aqua', size: 'Adult M', count: 50 },
+        { product_id: 'tee_red', size: 'Youth S', count: 20 },
+    ];
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+    XLSX.writeFile(wb, "inventory_template.xlsx");
+  };
+
   // --- ACTIONS & HANDLERS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   const fetchOrders = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); setLoading(false); };
@@ -121,11 +189,12 @@ export default function AdminPage() {
   const deleteProduct = async (id) => { if (!confirm("Are you sure? This deletes the product AND inventory.")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
   const updateStock = async (productId, size, field, value) => { setInventory(inventory.map(i => (i.product_id === productId && i.size === size) ? { ...i, [field]: value } : i)); await supabase.from('inventory').update({ [field]: value }).eq('product_id', productId).eq('size', size); };
   const updatePrice = async (productId, newPrice) => { setProducts(products.map(p => p.id === productId ? { ...p, base_price: newPrice } : p)); await supabase.from('products').update({ base_price: newPrice }).eq('id', productId); };
+  const handleAddProduct = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing fields"); const { error } = await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, type: 'top', sort_order: 99 }]); if (error) return alert("Error: " + error.message); const sizes = ['Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL']; const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true })); await supabase.from('inventory').insert(invRows); alert("Product Created!"); setNewProdId(''); setNewProdName(''); fetchInventory(); };
+  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   const toggleLogo = async (id, currentStatus) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !currentStatus } : l)); await supabase.from('logos').update({ active: !currentStatus }).eq('id', id); };
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | '); return [o.id, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
-  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
 
-  const handleAddProduct = async (e) => {
+  const handleAddProductWithSizeUpdates = async (e) => {
     e.preventDefault();
     if (!newProdId || !newProdName) return alert("Missing fields");
     
@@ -140,7 +209,7 @@ export default function AdminPage() {
 
     if (error) return alert("Error: " + error.message);
     
-    // UPDATED SIZES LIST
+    // GENERATE FULL SIZE RUN
     const sizes = [
         'Youth XS', 'Youth S', 'Youth M', 'Youth L', 
         'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'
@@ -206,13 +275,14 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* INVENTORY TAB - UPDATED WITH IMAGES */}
+        {/* INVENTORY TAB - UPDATED WITH BULK UPLOAD */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
-                <div className="md:col-span-1">
-                    <div className="bg-white p-6 rounded-lg shadow border border-gray-200 sticky top-4">
+                <div className="md:col-span-1 space-y-6">
+                    {/* ADD NEW ITEM */}
+                    <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
                         <h2 className="font-bold text-xl mb-4">Add New Item</h2>
-                        <form onSubmit={handleAddProduct} className="space-y-3">
+                        <form onSubmit={handleAddProductWithSizeUpdates} className="space-y-3">
                             <div><label className="text-xs font-bold uppercase">ID (Unique)</label><input className="w-full border p-2 rounded" placeholder="e.g. hat_blue" value={newProdId} onChange={e => setNewProdId(e.target.value)} /></div>
                             <div><label className="text-xs font-bold uppercase">Display Name</label><input className="w-full border p-2 rounded" placeholder="e.g. Blue Hat" value={newProdName} onChange={e => setNewProdName(e.target.value)} /></div>
                             <div><label className="text-xs font-bold uppercase">Image URL (Optional)</label><input className="w-full border p-2 rounded" placeholder="https://..." value={newProdImage} onChange={e => setNewProdImage(e.target.value)} /></div>
@@ -220,7 +290,25 @@ export default function AdminPage() {
                             <button className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700">Create Product</button>
                         </form>
                     </div>
+
+                    {/* BULK UPLOAD BOX */}
+                    <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200">
+                        <h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2>
+                        <p className="text-xs text-blue-800 mb-4">Upload an Excel file to update stock counts instantly.</p>
+                        
+                        <div className="flex gap-2 mb-4">
+                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Template</button>
+                        </div>
+
+                        <input 
+                            type="file" 
+                            accept=".xlsx, .xls" 
+                            onChange={handleBulkUpload} 
+                            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"
+                        />
+                    </div>
                 </div>
+
                 <div className="md:col-span-2 space-y-6">
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                         <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Prices</div>
@@ -250,7 +338,8 @@ export default function AdminPage() {
                             </tbody>
                         </table>
                     </div>
-                    {/* Stock Manager (Hidden for brevity but included in full code block) */}
+                    
+                    {/* Stock Manager */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Stock</div><table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead><tbody>{inventory.map((item) => (<tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}><td className="p-4 font-bold">{getProductName(item.product_id)}</td><td className="p-4">{item.size}</td><td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td><td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td></tr>))}</tbody></table></div>
                 </div>
             </div>
