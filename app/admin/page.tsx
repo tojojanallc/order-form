@@ -20,7 +20,7 @@ const STATUSES = {
 export default function AdminPage() {
   const [passcode, setPasscode] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [activeTab, setActiveTab] = useState('orders'); // orders, inventory, logos
+  const [activeTab, setActiveTab] = useState('orders');
   
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -28,11 +28,14 @@ export default function AdminPage() {
   const [logos, setLogos] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Form States
+  // Forms
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
+  
+  // NEW: Logo Form
   const [newLogoName, setNewLogoName] = useState('');
+  const [newLogoUrl, setNewLogoUrl] = useState(''); // Store the image link
 
   const handleLogin = (e) => { e.preventDefault(); if (passcode === 'swim2025') { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } };
 
@@ -54,7 +57,6 @@ export default function AdminPage() {
     setLoading(false);
   };
 
-  // --- LOGO LOGIC ---
   const fetchLogos = async () => {
     if (!supabase) return;
     setLoading(true);
@@ -66,13 +68,17 @@ export default function AdminPage() {
   const addLogo = async (e) => {
     e.preventDefault();
     if (!newLogoName) return;
-    await supabase.from('logos').insert([{ label: newLogoName, sort_order: logos.length + 1 }]);
+    await supabase.from('logos').insert([{ 
+        label: newLogoName, 
+        image_url: newLogoUrl, // Save the URL
+        sort_order: logos.length + 1 
+    }]);
     setNewLogoName('');
+    setNewLogoUrl('');
     fetchLogos();
   };
 
   const toggleLogo = async (id, currentStatus) => {
-    // Optimistic
     setLogos(logos.map(l => l.id === id ? { ...l, active: !currentStatus } : l));
     await supabase.from('logos').update({ active: !currentStatus }).eq('id', id);
   };
@@ -174,21 +180,25 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'logos' && (
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-4xl mx-auto">
                  <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
                     <h2 className="font-bold text-xl mb-4">Add New Logo Option</h2>
-                    <form onSubmit={addLogo} className="flex gap-4">
-                        <input className="flex-1 border p-2 rounded" placeholder="e.g. State Champs 2026" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} />
-                        <button className="bg-blue-900 text-white font-bold px-6 rounded hover:bg-blue-800">Add</button>
+                    <form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4">
+                        <input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} />
+                        <input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} />
+                        <button className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Logo</button>
                     </form>
                  </div>
 
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                     <table className="w-full text-left">
-                        <thead className="bg-gray-800 text-white"><tr><th className="p-4">Logo Label</th><th className="p-4 text-right">Visible?</th></tr></thead>
+                        <thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Logo Label</th><th className="p-4 text-right">Visible?</th></tr></thead>
                         <tbody>
                             {logos.map((logo) => (
                                 <tr key={logo.id} className="border-b hover:bg-gray-50">
+                                    <td className="p-4">
+                                        {logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}
+                                    </td>
                                     <td className="p-4 font-bold text-lg">{logo.label}</td>
                                     <td className="p-4 text-right">
                                         <input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" />

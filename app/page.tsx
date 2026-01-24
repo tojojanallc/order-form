@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { POSITIONS } from './config'; // Only Positions remain in config
+import { POSITIONS } from './config'; 
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -26,7 +26,9 @@ export default function OrderForm() {
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
-  const [logoOptions, setLogoOptions] = useState([]); // Loaded from DB
+  
+  // LOGO DATA (Now stores object {label, image_url})
+  const [logoOptions, setLogoOptions] = useState([]); 
 
   // Form State
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -44,8 +46,9 @@ export default function OrderForm() {
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
 
-      const { data: logoData } = await supabase.from('logos').select('label').eq('active', true).order('sort_order');
-      if (logoData) setLogoOptions(logoData.map(l => l.label));
+      // FETCH LOGOS (Get label AND image_url)
+      const { data: logoData } = await supabase.from('logos').select('label, image_url').eq('active', true).order('sort_order');
+      if (logoData) setLogoOptions(logoData);
 
       const { data: invData } = await supabase.from('inventory').select('*');
       if (invData) {
@@ -63,7 +66,6 @@ export default function OrderForm() {
     fetchData();
   }, []);
 
-  // Filter Active Products
   const visibleProducts = products.filter(p => {
     return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
   });
@@ -74,7 +76,6 @@ export default function OrderForm() {
     }
   }, [visibleProducts, selectedProduct]);
 
-  // Filter Active Sizes
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
     return Object.keys(activeItems)
@@ -133,13 +134,15 @@ export default function OrderForm() {
 
   const cartRequiresShipping = cart.some(item => item.needsShipping);
 
+  // Helper to find image for current selection
+  const getLogoImage = (type) => {
+    const found = logoOptions.find(l => l.label === type);
+    return found ? found.image_url : null;
+  };
+
   const handleCheckout = async () => {
     if (!customerName || !customerPhone || !customerEmail) { alert("Please enter Name, Email, and Phone"); return; }
-    
-    if (cartRequiresShipping) {
-      if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { alert("Shipping Address Required!"); return; }
-    }
-    
+    if (cartRequiresShipping) { if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { alert("Shipping Address Required!"); return; } }
     setIsSubmitting(true);
     const { error } = await supabase.from('orders').insert([{ 
       customer_name: customerName, phone: customerPhone, cart_data: cart, total_price: calculateGrandTotal(),
@@ -203,17 +206,35 @@ export default function OrderForm() {
                 </div>
               </section>
 
+              {/* SECTIONS 2: LOGOS WITH IMAGES */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
-                {logos.map((logo, index) => (
-                  <div key={index} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                    <select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>{logoOptions.map(opt => <option key={opt}>{opt}</option>)}</select>
-                    <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
-                    <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
-                  </div>
-                ))}
-                <button onClick={() => setLogos([...logos, { type: logoOptions[0] || 'Logo', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Logo</button>
+                {logos.map((logo, index) => {
+                  const currentImage = getLogoImage(logo.type);
+                  return (
+                    <div key={index} className="flex flex-col gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
+                      <div className="flex flex-col md:flex-row gap-2">
+                        <select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>
+                            {logoOptions.map(opt => <option key={opt.label} value={opt.label}>{opt.label}</option>)}
+                        </select>
+                        <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
+                            <option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
+                        </select>
+                        <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
+                      </div>
+                      
+                      {/* SHOW IMAGE IF AVAILABLE */}
+                      {currentImage && (
+                          <div className="bg-white border rounded p-2 self-start">
+                             <img src={currentImage} alt="Logo Preview" className="h-16 w-auto object-contain" />
+                          </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <button onClick={() => setLogos([...logos, { type: logoOptions[0]?.label || 'Logo', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Logo</button>
               </section>
+
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Names</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
                 {names.map((nameItem, index) => (
