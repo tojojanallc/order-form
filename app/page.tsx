@@ -9,6 +9,9 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
+// --- DEFINE CORRECT SIZE ORDER ---
+const SIZE_ORDER = ['Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL'];
+
 export default function OrderForm() {
   const [cart, setCart] = useState([]); 
   const [customerName, setCustomerName] = useState('');
@@ -75,11 +78,17 @@ export default function OrderForm() {
     if (!selectedProduct && visibleProducts.length > 0) setSelectedProduct(visibleProducts[0]);
   }, [visibleProducts, selectedProduct]);
 
+  // --- SORTED SIZES ---
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    return Object.keys(activeItems)
+    const unsorted = Object.keys(activeItems)
       .filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true)
       .map(key => key.replace(`${selectedProduct.id}_`, ''));
+      
+    // Sort based on the SIZE_ORDER array
+    return unsorted.sort((a, b) => {
+        return SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b);
+    });
   };
   const visibleSizes = getVisibleSizes();
 
@@ -165,11 +174,9 @@ export default function OrderForm() {
             </div>
             <div className="p-6 space-y-8">
               
-              {/* SECTION 1: GARMENT SELECTOR */}
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
                 
-                {/* NEW: PRODUCT IMAGE DISPLAY */}
                 {selectedProduct && selectedProduct.image_url && (
                     <div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center">
                         <img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
