@@ -35,6 +35,10 @@ export default function AdminPage() {
   const [newLogoName, setNewLogoName] = useState('');
   const [newLogoUrl, setNewLogoUrl] = useState('');
 
+  // Event Settings
+  const [eventName, setEventName] = useState('');
+  const [eventLogo, setEventLogo] = useState('');
+
   const handleLogin = (e) => { e.preventDefault(); if (passcode === 'swim2025') { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } };
 
   // --- FETCHERS ---
@@ -64,7 +68,23 @@ export default function AdminPage() {
     setLoading(false);
   };
 
+  const fetchSettings = async () => {
+    if (!supabase) return;
+    setLoading(true);
+    const { data } = await supabase.from('event_settings').select('*').single();
+    if (data) {
+        setEventName(data.event_name);
+        setEventLogo(data.event_logo_url || '');
+    }
+    setLoading(false);
+  };
+
   // --- ACTIONS ---
+  const saveSettings = async () => {
+    await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo }).eq('id', 1);
+    alert("Event Settings Saved!");
+  };
+
   const handleStatusChange = async (orderId, newStatus, customerName, phone) => {
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
@@ -78,19 +98,16 @@ export default function AdminPage() {
     setNewLogoName(''); setNewLogoUrl(''); fetchLogos();
   };
 
-  const deleteLogo = async (id) => {
-    if (!confirm("Delete this logo?")) return;
-    await supabase.from('logos').delete().eq('id', id);
-    fetchLogos();
+  const deleteLogo = async (id) => { if (!confirm("Delete this logo?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
+  const deleteOrder = async (id) => { if (!confirm("Delete this order?")) return; await supabase.from('orders').delete().eq('id', id); fetchOrders(); };
+  
+  const deleteProduct = async (id) => {
+    if (!confirm("Are you sure? This deletes the product AND inventory.")) return;
+    await supabase.from('inventory').delete().eq('product_id', id);
+    await supabase.from('products').delete().eq('id', id);
+    fetchInventory();
   };
 
-  const deleteOrder = async (id) => {
-    if (!confirm("Delete this order?")) return;
-    await supabase.from('orders').delete().eq('id', id);
-    fetchOrders();
-  };
-
-  // --- INVENTORY & PRICE UPDATES ---
   const updateStock = async (productId, size, field, value) => {
     setInventory(inventory.map(i => (i.product_id === productId && i.size === size) ? { ...i, [field]: value } : i));
     await supabase.from('inventory').update({ [field]: value }).eq('product_id', productId).eq('size', size);
@@ -110,23 +127,6 @@ export default function AdminPage() {
     const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }));
     await supabase.from('inventory').insert(invRows);
     alert("Product Created!"); setNewProdId(''); setNewProdName(''); fetchInventory();
-  };
-
-  // --- NEW: DELETE PRODUCT ---
-  const deleteProduct = async (id) => {
-    if (!confirm("Are you sure? This will delete the product AND all its inventory counts.")) return;
-    
-    // 1. Delete Inventory first (Clean up FKs)
-    await supabase.from('inventory').delete().eq('product_id', id);
-    
-    // 2. Delete Product
-    const { error } = await supabase.from('products').delete().eq('id', id);
-    
-    if (error) {
-        alert("Error deleting product: " + error.message);
-    } else {
-        fetchInventory(); // Refresh list
-    }
   };
 
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
@@ -155,8 +155,9 @@ export default function AdminPage() {
           <h1 className="text-3xl font-black text-gray-900">Admin Dashboard</h1>
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
             <button onClick={() => { setActiveTab('orders'); fetchOrders(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'orders' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Orders</button>
-            <button onClick={() => { setActiveTab('inventory'); fetchInventory(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'inventory' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Products & Stock</button>
+            <button onClick={() => { setActiveTab('inventory'); fetchInventory(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'inventory' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Products</button>
             <button onClick={() => { setActiveTab('logos'); fetchLogos(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'logos' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Logos</button>
+            <button onClick={() => { setActiveTab('settings'); fetchSettings(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'settings' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Settings</button>
           </div>
         </div>
 
@@ -198,46 +199,14 @@ export default function AdminPage() {
                     </div>
                 </div>
                 <div className="md:col-span-2 space-y-6">
-                    {/* PRODUCT PRICE MANAGER */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                         <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Prices</div>
-                        <table className="w-full text-left">
-                            <thead className="bg-gray-100 border-b"><tr><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th><th className="p-3 text-right">Action</th></tr></thead>
-                            <tbody>
-                                {products.map((prod) => (
-                                    <tr key={prod.id} className="border-b hover:bg-gray-50">
-                                        <td className="p-3 font-bold text-gray-700">{prod.name}</td>
-                                        <td className="p-3">
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-gray-500 font-bold">$</span>
-                                                <input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price} onChange={(e) => updatePrice(prod.id, e.target.value)} />
-                                            </div>
-                                        </td>
-                                        <td className="p-3 text-right">
-                                            <button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        <table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th><th className="p-3 text-right">Action</th></tr></thead>
+                        <tbody>{products.map((prod) => (<tr key={prod.id} className="border-b hover:bg-gray-50"><td className="p-3 font-bold text-gray-700">{prod.name}</td><td className="p-3"><div className="flex items-center gap-1"><span className="text-gray-500 font-bold">$</span><input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price} onChange={(e) => updatePrice(prod.id, e.target.value)} /></div></td><td className="p-3 text-right"><button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button></td></tr>))}</tbody></table>
                     </div>
-
-                    {/* STOCK MANAGER */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                         <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Stock</div>
-                        <table className="w-full text-left">
-                            <thead className="bg-gray-100 border-b"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead>
-                            <tbody>
-                                {inventory.map((item) => (
-                                <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
-                                    <td className="p-4 font-bold">{getProductName(item.product_id)}</td>
-                                    <td className="p-4">{item.size}</td>
-                                    <td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td>
-                                    <td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td>
-                                </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        <table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead><tbody>{inventory.map((item) => (<tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}><td className="p-4 font-bold">{getProductName(item.product_id)}</td><td className="p-4">{item.size}</td><td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td><td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td></tr>))}</tbody></table>
                     </div>
                 </div>
             </div>
@@ -253,7 +222,6 @@ export default function AdminPage() {
                         <button className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Logo</button>
                     </form>
                  </div>
-
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                     <table className="w-full text-left">
                         <thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Logo Label</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead>
@@ -269,6 +237,39 @@ export default function AdminPage() {
                         </tbody>
                     </table>
                  </div>
+            </div>
+        )}
+
+        {activeTab === 'settings' && (
+            <div className="max-w-xl mx-auto">
+                <div className="bg-white p-8 rounded-lg shadow border border-gray-200">
+                    <h2 className="font-bold text-2xl mb-6">Event Settings</h2>
+                    
+                    <div className="mb-4">
+                        <label className="block text-gray-700 font-bold mb-2">Event Name</label>
+                        <input 
+                            className="w-full border p-3 rounded text-lg" 
+                            placeholder="e.g. 2026 Winter Regionals" 
+                            value={eventName} 
+                            onChange={e => setEventName(e.target.value)} 
+                        />
+                    </div>
+
+                    <div className="mb-6">
+                        <label className="block text-gray-700 font-bold mb-2">Event Logo URL</label>
+                        <input 
+                            className="w-full border p-3 rounded text-lg" 
+                            placeholder="https://..." 
+                            value={eventLogo} 
+                            onChange={e => setEventLogo(e.target.value)} 
+                        />
+                        {eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}
+                    </div>
+
+                    <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow">
+                        Save Changes
+                    </button>
+                </div>
             </div>
         )}
 

@@ -26,9 +26,11 @@ export default function OrderForm() {
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
-  
-  // LOGO DATA (Now stores object {label, image_url})
   const [logoOptions, setLogoOptions] = useState([]); 
+
+  // Event Settings
+  const [eventName, setEventName] = useState('Swag Shop');
+  const [eventLogo, setEventLogo] = useState('');
 
   // Form State
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -46,7 +48,6 @@ export default function OrderForm() {
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
 
-      // FETCH LOGOS (Get label AND image_url)
       const { data: logoData } = await supabase.from('logos').select('label, image_url').eq('active', true).order('sort_order');
       if (logoData) setLogoOptions(logoData);
 
@@ -61,6 +62,13 @@ export default function OrderForm() {
         });
         setInventory(stockMap);
         setActiveItems(activeMap);
+      }
+
+      // FETCH EVENT SETTINGS
+      const { data: settings } = await supabase.from('event_settings').select('*').single();
+      if (settings) {
+        setEventName(settings.event_name);
+        setEventLogo(settings.event_logo_url);
       }
     };
     fetchData();
@@ -133,12 +141,7 @@ export default function OrderForm() {
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
 
   const cartRequiresShipping = cart.some(item => item.needsShipping);
-
-  // Helper to find image for current selection
-  const getLogoImage = (type) => {
-    const found = logoOptions.find(l => l.label === type);
-    return found ? found.image_url : null;
-  };
+  const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
   const handleCheckout = async () => {
     if (!customerName || !customerPhone || !customerEmail) { alert("Please enter Name, Email, and Phone"); return; }
@@ -171,10 +174,17 @@ export default function OrderForm() {
       <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
+            
+            {/* DYNAMIC HEADER */}
             <div className="bg-blue-900 text-white p-6 text-center">
-              <h1 className="text-2xl font-bold uppercase tracking-wide">2025 Championships</h1>
-              <p className="text-blue-100 text-sm mt-1">Order Form</p>
+              {eventLogo ? (
+                <img src={eventLogo} alt="Event Logo" className="h-16 mx-auto mb-2" />
+              ) : (
+                <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>
+              )}
+              <p className="text-blue-100 text-sm mt-1">{eventLogo ? eventName : 'Order Form'}</p>
             </div>
+
             <div className="p-6 space-y-8">
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
@@ -206,7 +216,6 @@ export default function OrderForm() {
                 </div>
               </section>
 
-              {/* SECTIONS 2: LOGOS WITH IMAGES */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
                 {logos.map((logo, index) => {
@@ -222,13 +231,7 @@ export default function OrderForm() {
                         </select>
                         <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                       </div>
-                      
-                      {/* SHOW IMAGE IF AVAILABLE */}
-                      {currentImage && (
-                          <div className="bg-white border rounded p-2 self-start">
-                             <img src={currentImage} alt="Logo Preview" className="h-16 w-auto object-contain" />
-                          </div>
-                      )}
+                      {currentImage && (<div className="bg-white border rounded p-2 self-start"><img src={currentImage} alt="Logo Preview" className="h-16 w-auto object-contain" /></div>)}
                     </div>
                   );
                 })}
