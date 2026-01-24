@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { PRODUCTS, LOGO_OPTIONS, POSITIONS } from './config';
+import { LOGO_OPTIONS, POSITIONS } from './config'; // We kept Logos/Positions in config for now
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -22,27 +22,35 @@ export default function OrderForm() {
   const [shippingZip, setShippingZip] = useState('');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [inventory, setInventory] = useState({}); // Counts
-  const [activeItems, setActiveItems] = useState({}); // True/False visibility
+  
+  // Dynamic Data State
+  const [products, setProducts] = useState([]); // Loaded from DB
+  const [inventory, setInventory] = useState({});
+  const [activeItems, setActiveItems] = useState({});
 
   // Form State
-  const [selectedProduct, setSelectedProduct] = useState(null); // Null initially
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [size, setSize] = useState('');
   const [logos, setLogos] = useState([]); 
   const [names, setNames] = useState([]);
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
 
-  // Load Inventory & Active Status
+  // Load Data
   useEffect(() => {
-    const fetchInventory = async () => {
+    const fetchData = async () => {
       if (!supabase) return;
-      const { data } = await supabase.from('inventory').select('*');
-      if (data) {
+      
+      // 1. Fetch Products
+      const { data: productData } = await supabase.from('products').select('*').order('sort_order');
+      if (productData) setProducts(productData);
+
+      // 2. Fetch Inventory
+      const { data: invData } = await supabase.from('inventory').select('*');
+      if (invData) {
         const stockMap = {};
         const activeMap = {};
-        
-        data.forEach(item => {
+        invData.forEach(item => {
             const key = `${item.product_id}_${item.size}`;
             stockMap[key] = item.count;
             activeMap[key] = item.active;
@@ -51,49 +59,44 @@ export default function OrderForm() {
         setActiveItems(activeMap);
       }
     };
-    fetchInventory();
+    fetchData();
   }, []);
 
-  // --- FILTER PRODUCTS BASED ON "ACTIVE" STATUS ---
-  // A product is visible ONLY if at least one size is marked active in DB
-  const visibleProducts = PRODUCTS.filter(p => {
-    // Check if ANY key starting with this product ID is active
+  // Filter Active Products
+  const visibleProducts = products.filter(p => {
     return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
   });
 
-  // Set default product once inventory loads
+  // Default Selection
   useEffect(() => {
     if (!selectedProduct && visibleProducts.length > 0) {
       setSelectedProduct(visibleProducts[0]);
     }
   }, [visibleProducts, selectedProduct]);
 
-  // --- FILTER SIZES BASED ON "ACTIVE" STATUS ---
+  // Filter Active Sizes
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    // We look at the inventory keys to find sizes for this product that are active
     return Object.keys(activeItems)
       .filter(key => key.startsWith(selectedProduct.id) && activeItems[key] === true)
-      .map(key => key.split('_')[1]); // Extract "Adult M" from "hoodie_aqua_Adult M"
+      .map(key => key.split('_')[1]);
   };
-
   const visibleSizes = getVisibleSizes();
 
-  // Set default size when product changes
   useEffect(() => {
     if (visibleSizes.length > 0 && !visibleSizes.includes(size)) {
       setSize(visibleSizes[0]);
     }
   }, [selectedProduct, visibleSizes, size]);
 
-  // Inventory Checks
+  // Calculations
   const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
   const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
   const calculateTotal = () => {
     if (!selectedProduct) return 0;
-    let total = selectedProduct.basePrice;
+    let total = selectedProduct.base_price; // Note: using base_price from DB
     total += logos.length * 5;      
     total += names.length * 5;      
     if (backNameList) total += 5;   
@@ -135,10 +138,7 @@ export default function OrderForm() {
     if (!customerName || !customerPhone || !customerEmail) { alert("Please enter Name, Email, and Phone"); return; }
     
     if (cartRequiresShipping) {
-      if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) {
-        alert("Since some items are out of stock, we need your Shipping Address!");
-        return;
-      }
+      if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { alert("Shipping Address Required!"); return; }
     }
     
     setIsSubmitting(true);
@@ -154,16 +154,15 @@ export default function OrderForm() {
     if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
 
     try { await fetch('/api/send-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customerEmail, customerName, cart, total: calculateGrandTotal() }) }); } catch (e) {}
-
     try {
       const response = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, customerName }) });
       const data = await response.json();
-      if (data.url) window.location.href = data.url; 
-      else alert("Payment Error");
+      if (data.url) window.location.href = data.url; else alert("Payment Error");
     } catch (err) { alert("Checkout failed."); setIsSubmitting(false); }
   };
 
-  if (!selectedProduct) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
+  if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
+  if (!selectedProduct) return <div className="p-10 text-center">No active products available.</div>;
 
   return (
     <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900">
@@ -193,13 +192,12 @@ export default function OrderForm() {
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Item</label>
                     <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct.id}>
-                      {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} - ${p.basePrice}</option>)}
+                      {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} - ${p.base_price}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Size</label>
                     <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size} onChange={(e) => setSize(e.target.value)}>
-                      {/* Sort sizes roughly if needed, or just map them */}
                       {visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
