@@ -3,11 +3,8 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 
-// 1. Setup Stripe
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeKey ? new Stripe(stripeKey) : null;
-
-// 2. Setup Supabase (Admin Access)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
@@ -21,27 +18,25 @@ export async function POST(request) {
     const body = await request.json();
     const { cart, customerName } = body;
 
-    // --- NEW: DECREMENT INVENTORY ---
-    // We loop through the cart and subtract 1 for each item found in inventory
+    // --- DECREMENT INVENTORY ---
     for (const item of cart) {
-        // We only decrement if the item HAS an entry in the inventory table
-        // (This prevents errors if you add a new product but forget to add it to the DB)
+        if (!item.productId) continue; // Skip if no product ID
+
         const { data: currentStock } = await supabase
             .from('inventory')
             .select('count')
-            .eq('id', item.id) // Matches 'hoodie_aqua' etc.
+            .eq('id', item.productId) // <--- CRITICAL FIX: Use productId, not item.id
             .single();
 
         if (currentStock) {
             await supabase
                 .from('inventory')
                 .update({ count: currentStock.count - 1 })
-                .eq('id', item.id);
+                .eq('id', item.productId);
         }
     }
-    // --------------------------------
+    // ---------------------------
 
-    // Convert Cart to Stripe Items
     const lineItems = cart.map((item) => {
         const descriptionParts = [
             `Size: ${item.size}`,

@@ -22,7 +22,7 @@ export default function OrderForm() {
   const [shippingZip, setShippingZip] = useState('');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [inventory, setInventory] = useState({}); // Stores stock counts
+  const [inventory, setInventory] = useState({}); 
 
   // Form State
   const [selectedProduct, setSelectedProduct] = useState(PRODUCTS[0]);
@@ -46,8 +46,7 @@ export default function OrderForm() {
     fetchInventory();
   }, []);
 
-  // Check if current item is out of stock
-  const currentStock = inventory[selectedProduct.id] ?? 0; // Default to 0 if not found
+  const currentStock = inventory[selectedProduct.id] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
   const calculateTotal = () => {
@@ -55,9 +54,7 @@ export default function OrderForm() {
     total += logos.length * 5;      
     total += names.length * 5;      
     if (backNameList) total += 5;   
-    if (metallicHighlight) total += 5;
-    // Optional: Add Shipping Fee? 
-    // if (isOutOfStock) total += 10; 
+    if (metallicHighlight) total += 5; 
     return total;
   };
 
@@ -71,10 +68,10 @@ export default function OrderForm() {
     if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Logo and Name."); return; }
 
     const newItem = {
-      id: Date.now(),
+      id: Date.now(), // Unique ID for the cart UI
+      productId: selectedProduct.id, // <--- CRITICAL FIX: The ID for the Database
       productName: selectedProduct.name,
       size: size,
-      // Mark if this specific item needs shipping
       needsShipping: isOutOfStock, 
       customizations: { logos, names, backList: backNameList, metallic: metallicHighlight },
       finalPrice: calculateTotal()
@@ -88,13 +85,11 @@ export default function OrderForm() {
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
 
-  // Check if ANY item in the cart requires shipping
   const cartRequiresShipping = cart.some(item => item.needsShipping);
 
   const handleCheckout = async () => {
     if (!customerName || !customerPhone || !customerEmail) { alert("Please enter Name, Email, and Phone"); return; }
     
-    // Validate Address if needed
     if (cartRequiresShipping) {
       if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) {
         alert("Since some items are out of stock, we need your Shipping Address!");
@@ -111,7 +106,6 @@ export default function OrderForm() {
       phone: customerPhone, 
       cart_data: cart, 
       total_price: calculateGrandTotal(),
-      // Save Shipping Info
       shipping_address: cartRequiresShipping ? shippingAddress : null,
       shipping_city: cartRequiresShipping ? shippingCity : null,
       shipping_state: cartRequiresShipping ? shippingState : null,
@@ -126,7 +120,6 @@ export default function OrderForm() {
        return;
     }
 
-    // Send Email Receipt
     try {
       await fetch('/api/send-receipt', {
         method: 'POST',
@@ -140,7 +133,6 @@ export default function OrderForm() {
       });
     } catch (e) { console.error(e); }
 
-    // Redirect to Stripe
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
@@ -159,20 +151,15 @@ export default function OrderForm() {
   return (
     <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900">
       <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
-        {/* LEFT COLUMN */}
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
             <div className="bg-blue-900 text-white p-6 text-center">
               <h1 className="text-2xl font-bold uppercase tracking-wide">2025 Championships</h1>
               <p className="text-blue-100 text-sm mt-1">Order Form</p>
             </div>
-            
             <div className="p-6 space-y-8">
-              {/* SECTION 1 */}
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
-                
-                {/* STOCK ALERT */}
                 {isOutOfStock ? (
                   <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert">
                     <p className="font-bold">⚠️ Out of Stock at Event</p>
@@ -183,7 +170,6 @@ export default function OrderForm() {
                     ✓ In Stock ({currentStock} available)
                   </div>
                 )}
-
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Item</label>
@@ -201,7 +187,6 @@ export default function OrderForm() {
                 </div>
               </section>
 
-              {/* SECTIONS 2-5 (Logos, Names, etc - same as before) */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
                 {logos.map((logo, index) => (
@@ -232,8 +217,6 @@ export default function OrderForm() {
             <div className="bg-gray-900 text-white p-6 sticky bottom-0 flex justify-between items-center"><div><p className="text-gray-300 text-xs uppercase">Current Item</p><p className="text-2xl font-bold">${calculateTotal()}</p></div><button onClick={handleAddToCart} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform">Add to Cart</button></div>
           </div>
         </div>
-
-        {/* RIGHT COLUMN: CART */}
         <div className="md:col-span-1">
           <div className="bg-white shadow-xl rounded-xl border border-gray-300 sticky top-4">
             <div className="bg-gray-800 text-white p-4 rounded-t-xl"><h2 className="font-bold text-lg">Your Cart</h2><p className="text-gray-300 text-sm">{cart.length} items</p></div>
@@ -242,26 +225,19 @@ export default function OrderForm() {
                 <div key={item.id} className="border-b border-gray-200 pb-4 last:border-0 relative group">
                   <button onClick={() => removeItem(item.id)} className="absolute top-0 right-0 text-red-500 hover:text-red-700 font-bold text-xs p-1">REMOVE</button>
                   <p className="font-black text-black text-lg">{item.productName}</p>
-                  
-                  {/* SHOW IF SHIPPING NEEDED */}
                   {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
-                  
                   <p className="text-sm text-gray-800 font-medium">Size: {item.size}</p>
                   <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">{item.customizations.logos.map((l, i) => <div key={i}>• {l.type} ({l.position})</div>)}{item.customizations.names.map((n, i) => <div key={i}>• "{n.text}" ({n.position})</div>)}</div>
                   <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice}.00</p>
                 </div>
               ))}
             </div>
-
-            {/* CHECKOUT FORM */}
             {cart.length > 0 && (
               <div className="p-4 bg-gray-100 border-t border-gray-300 rounded-b-xl">
                 <h3 className="font-bold text-black mb-2">6. Customer Info</h3>
                 <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
                 <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
                 <input className="w-full p-2 border border-gray-400 rounded mb-4 text-sm text-black" placeholder="Phone Number" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
-                
-                {/* DYNAMIC SHIPPING ADDRESS FORM */}
                 {cartRequiresShipping && (
                   <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once">
                     <h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4>
@@ -273,7 +249,6 @@ export default function OrderForm() {
                     <input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} />
                   </div>
                 )}
-
                 <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>
                 <button onClick={handleCheckout} disabled={isSubmitting} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting ? 'bg-gray-500' : 'bg-blue-800 hover:bg-blue-900'}`}>{isSubmitting ? "Processing..." : "Pay Now with Stripe"}</button>
               </div>
