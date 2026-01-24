@@ -21,7 +21,7 @@ export default function AdminPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [notifying, setNotifying] = useState(null);
+  const [processingId, setProcessingId] = useState(null); // Tracks active operations
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -36,7 +36,6 @@ export default function AdminPage() {
   const fetchOrders = async () => {
     if (!supabase) return alert("Database connection missing");
     setLoading(true);
-    // Fetch orders, newest first
     const { data, error } = await supabase
       .from('orders')
       .select('*')
@@ -47,12 +46,20 @@ export default function AdminPage() {
     setLoading(false);
   };
 
-  // --- NEW: UPDATE STATUS ---
-  const handleStatusChange = async (orderId, newStatus) => {
-    // 1. Optimistic Update (Update UI instantly)
+  // --- MAIN STATUS HANDLER ---
+  const handleStatusChange = async (orderId, newStatus, customerName, phone) => {
+    // 1. Confirmation for "Ready" status (since it sends a text)
+    if (newStatus === 'ready') {
+      const confirmText = confirm(`Mark as Ready and text ${customerName}?`);
+      if (!confirmText) return; // Cancel if they clicked 'No'
+    }
+
+    setProcessingId(orderId);
+
+    // 2. Optimistic UI Update
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
 
-    // 2. Update Database
+    // 3. Update Database
     const { error } = await supabase
       .from('orders')
       .update({ status: newStatus })
@@ -60,13 +67,42 @@ export default function AdminPage() {
 
     if (error) {
       alert("Failed to save status");
-      fetchOrders(); // Revert on error
+      fetchOrders(); // Revert
+      setProcessingId(null);
+      return;
     }
+
+    // 4. AUTOMATIC TEXT TRIGGER
+    if (newStatus === 'ready') {
+      try {
+        const response = await fetch('/api/send-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            phone: phone, 
+            message: `Hi ${customerName}! Your Swag Order is READY for pickup at the main booth. See you soon!` 
+          }),
+        });
+
+        if (response.ok) {
+          // Success! (Maybe show a small toast notification if you want, but alert is fine for now)
+          console.log("Auto-text sent successfully");
+        } else {
+          alert("Status saved, but TEXT FAILED to send.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Status saved, but TEXT FAILED to send.");
+      }
+    }
+
+    setProcessingId(null);
   };
 
-  const handleNotifyPickup = async (orderId, customerName, phone) => {
-    if (!confirm(`Send "Ready for Pickup" text to ${customerName}?`)) return;
-    setNotifying(orderId);
+  // Manual Text Button (Backup)
+  const handleManualText = async (orderId, customerName, phone) => {
+    if (!confirm(`Resend "Ready" text to ${customerName}?`)) return;
+    setProcessingId(orderId);
 
     const response = await fetch('/api/send-text', {
       method: 'POST',
@@ -77,13 +113,10 @@ export default function AdminPage() {
       }),
     });
 
-    if (response.ok) {
-      alert("Text Sent!");
-      handleStatusChange(orderId, 'ready'); // Auto-update status to "Ready"
-    } else {
-      alert("Failed to send text.");
-    }
-    setNotifying(null);
+    if (response.ok) alert("Text Sent!");
+    else alert("Failed to send text.");
+    
+    setProcessingId(null);
   };
 
   const formatCart = (cartItems) => {
@@ -127,10 +160,10 @@ export default function AdminPage() {
             <table className="w-full text-left border-collapse">
               <thead className="bg-gray-200">
                 <tr>
-                  <th className="p-4 border-b border-gray-300 font-black text-gray-900 w-32">Status</th>
+                  <th className="p-4 border-b border-gray-300 font-black text-gray-900 w-40">Status</th>
                   <th className="p-4 border-b border-gray-300 font-black text-gray-900">Customer</th>
                   <th className="p-4 border-b border-gray-300 font-black text-gray-900">Items</th>
-                  <th className="p-4 border-b border-gray-300 font-black text-gray-900 text-right">Action</th>
+                  <th className="p-4 border-b border-gray-300 font-black text-gray-900 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -142,13 +175,15 @@ export default function AdminPage() {
                       <td className="p-4 align-top">
                         <select 
                           value={currentStatus}
-                          onChange={(e) => handleStatusChange(order.id, e.target.value)}
-                          className={`text-xs font-bold uppercase p-2 rounded border-2 ${STATUSES[currentStatus]?.color || 'bg-white border-gray-300'}`}
+                          onChange={(e) => handleStatusChange(order.id, e.target.value, order.customer_name, order.phone)}
+                          disabled={processingId === order.id}
+                          className={`text-xs font-bold uppercase p-2 rounded border-2 cursor-pointer ${STATUSES[currentStatus]?.color || 'bg-white border-gray-300'}`}
                         >
                           {Object.entries(STATUSES).map(([key, val]) => (
                             <option key={key} value={key}>{val.label}</option>
                           ))}
                         </select>
+                        {processingId === order.id && <div className="text-xs text-blue-600 font-bold mt-1">Processing...</div>}
                       </td>
 
                       <td className="p-4 align-top">
@@ -163,13 +198,15 @@ export default function AdminPage() {
                       </td>
                       
                       <td className="p-4 text-right align-top">
-                        <button 
-                            onClick={() => handleNotifyPickup(order.id, order.customer_name, order.phone)}
-                            disabled={notifying === order.id || currentStatus === 'completed'}
-                            className={`${notifying === order.id ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700'} text-white text-xs font-bold px-3 py-2 rounded shadow whitespace-nowrap`}
-                        >
-                            {notifying === order.id ? "Sending..." : "📲 Text: Ready"}
-                        </button>
+                        {/* Only show "Resend" if it's already Ready/Completed, just in case they missed it */}
+                        {(currentStatus === 'ready' || currentStatus === 'completed') && (
+                          <button 
+                              onClick={() => handleManualText(order.id, order.customer_name, order.phone)}
+                              className="text-blue-600 hover:text-blue-800 text-xs font-bold underline"
+                          >
+                              Resend Text
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
