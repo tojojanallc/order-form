@@ -1,19 +1,18 @@
 // @ts-nocheck
 'use client'; 
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Added useEffect
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-// --- UPDATED STATUSES WITH PARTIALLY FULFILLED ---
 const STATUSES = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
   pending_shipping: { label: 'To Be Shipped', color: 'bg-purple-100 text-purple-800 border-purple-300' },
   in_progress: { label: 'In Progress', color: 'bg-blue-100 text-blue-800 border-blue-300' },
-  partially_fulfilled: { label: 'Partially Fulfilled', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' }, // <--- NEW
+  partially_fulfilled: { label: 'Partially Fulfilled', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
   ready: { label: 'Ready for Pickup', color: 'bg-green-100 text-green-800 border-green-300' },
   shipped: { label: 'Shipped', color: 'bg-green-200 text-green-900 border-green-400' },
   completed: { label: 'Completed', color: 'bg-gray-200 text-gray-600 border-gray-400' },
@@ -30,6 +29,9 @@ export default function AdminPage() {
   const [logos, setLogos] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Analytics State
+  const [stats, setStats] = useState({ revenue: 0, count: 0, topItem: '-' });
+
   // Forms
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
@@ -43,23 +45,78 @@ export default function AdminPage() {
   const [offerBackNames, setOfferBackNames] = useState(true);
   const [offerMetallic, setOfferMetallic] = useState(true);
 
+  // --- ANALYTICS CALCULATOR ---
+  useEffect(() => {
+    if (orders.length > 0) {
+        const revenue = orders.reduce((sum, o) => sum + (o.total_price || 0), 0);
+        const count = orders.length;
+        
+        // Find Top Item
+        const itemCounts = {};
+        orders.forEach(o => {
+            o.cart_data.forEach(item => {
+                const key = `${item.productName} (${item.size})`;
+                itemCounts[key] = (itemCounts[key] || 0) + 1;
+            });
+        });
+        const topItem = Object.entries(itemCounts).sort((a, b) => b[1] - a[1])[0];
+
+        setStats({
+            revenue: revenue,
+            count: count,
+            topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-'
+        });
+    }
+  }, [orders]);
+
+  // --- PRINT LABEL FUNCTION ---
+  const printLabel = (order) => {
+    const printWindow = window.open('', '', 'width=400,height=600');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Order #${order.id}</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; text-align: center; }
+            h1 { font-size: 24px; margin-bottom: 5px; }
+            h2 { font-size: 18px; margin-top: 0; color: #555; }
+            .items { text-align: left; margin-top: 20px; border-top: 2px dashed black; padding-top: 10px; }
+            .item { margin-bottom: 10px; font-size: 14px; }
+            .logos { font-size: 12px; color: #666; margin-left: 10px; }
+            .footer { margin-top: 30px; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>${order.customer_name}</h1>
+          <h2>Order #${order.id}</h2>
+          <div class="items">
+            ${order.cart_data.map(item => `
+              <div class="item">
+                <strong>${item.productName}</strong> - ${item.size}<br>
+                ${item.customizations.logos.length > 0 ? `<div class="logos">Logos: ${item.customizations.logos.map(l => l.type).join(', ')}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+          <div class="footer">
+            ${new Date(order.created_at).toLocaleString()}
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  };
+
   // --- SECURE LOGIN ---
   const handleLogin = async (e) => { 
     e.preventDefault(); 
     setLoading(true);
     try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passcode })
-      });
+      const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) });
       const data = await res.json();
-      if (data.success) { 
-        setIsAuthorized(true); 
-        fetchOrders(); 
-      } else { 
-        alert("Wrong password"); 
-      }
+      if (data.success) { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); }
     } catch (err) { alert("Login failed"); }
     setLoading(false);
   };
@@ -113,29 +170,15 @@ export default function AdminPage() {
   const handleStatusChange = async (orderId, newStatus) => {
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
-    
-    // --- TEXT MESSAGE LOGIC ---
-    const order = orders.find(o => o.id === orderId);
-    if (order) {
-        let message = '';
-        
-        if (newStatus === 'ready') {
-            message = `Hi ${order.customer_name}! Your Swag Order is READY for pickup!`;
-        } 
-        else if (newStatus === 'partially_fulfilled') {
-            message = `Hi ${order.customer_name}! Your Swag Order is PARTIALLY READY. Please pick up your available items at the booth!`;
-        }
-
-        if (message) {
-            try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message }) }); } catch (e) {} 
-        }
+    if (newStatus === 'ready' || newStatus === 'partially_fulfilled') { 
+        const order = orders.find(o => o.id === orderId);
+        let msg = newStatus === 'ready' ? "READY for pickup!" : "PARTIALLY READY. Pick up available items!";
+        if (order) try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is ${msg}` }) }); } catch (e) {} 
     }
   };
 
   const deleteOrder = async (orderId, cartData) => {
-    const confirmed = confirm("⚠️ Cancel Order & Restore Inventory?\n\nOK = Delete & Add Stock Back\nCancel = Do Nothing");
-    if (!confirmed) return;
-    
+    if (!confirm("⚠️ Cancel Order & Restore Inventory?")) return;
     setLoading(true);
     if (cartData && Array.isArray(cartData)) {
         for (const item of cartData) {
@@ -210,6 +253,8 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-black font-sans">
       <div className="max-w-7xl mx-auto">
+        
+        {/* HEADER & TABS */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <h1 className="text-3xl font-black text-gray-900">Admin Dashboard</h1>
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
@@ -220,10 +265,29 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* --- ANALYTICS BAR --- */}
+        {activeTab === 'orders' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-white p-4 rounded shadow border border-gray-200">
+                    <p className="text-xs text-gray-500 font-bold uppercase">Total Revenue</p>
+                    <p className="text-3xl font-black text-green-700">${stats.revenue}</p>
+                </div>
+                <div className="bg-white p-4 rounded shadow border border-gray-200">
+                    <p className="text-xs text-gray-500 font-bold uppercase">Total Orders</p>
+                    <p className="text-3xl font-black text-blue-900">{stats.count}</p>
+                </div>
+                <div className="bg-white p-4 rounded shadow border border-gray-200">
+                    <p className="text-xs text-gray-500 font-bold uppercase">Top Seller</p>
+                    <p className="text-lg font-bold text-gray-800 truncate" title={stats.topItem}>{stats.topItem}</p>
+                </div>
+            </div>
+        )}
+
+        {/* ORDERS TAB */}
         {activeTab === 'orders' && (
             <div>
                  <div className="flex justify-end mb-4 gap-2">
-                    <button onClick={downloadCSV} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">📥 Export CSV</button>
+                    <button onClick={downloadCSV} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">📥 CSV</button>
                     <button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button>
                  </div>
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto">
@@ -234,7 +298,7 @@ export default function AdminPage() {
                         <th className="p-4">Date</th>
                         <th className="p-4">Customer</th>
                         <th className="p-4">Items</th>
-                        <th className="p-4">Action</th>
+                        <th className="p-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -244,7 +308,10 @@ export default function AdminPage() {
                             <td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                             <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
                             <td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size}){item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                            <td className="p-4 align-top text-right"><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td>
+                            <td className="p-4 align-top text-right">
+                                <button onClick={() => printLabel(order)} className="bg-gray-200 hover:bg-gray-300 p-2 rounded mr-2" title="Print Label">🖨️</button>
+                                <button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button>
+                            </td>
                         </tr>
                         ))}
                     </tbody>
@@ -253,7 +320,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* ... INVENTORY / LOGOS / SETTINGS TABS (Unchanged from previous turn, just pasting for completeness to prevent errors) ... */}
+        {/* ... OTHER TABS (Inventory, Logos, Settings) preserved below ... */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1">
