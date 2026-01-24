@@ -36,6 +36,9 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ revenue: 0, count: 0, topItem: '-' });
 
+  // Upload Log State
+  const [uploadLog, setUploadLog] = useState([]); 
+
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
   const audioRef = useRef(null);
 
@@ -99,10 +102,13 @@ export default function AdminPage() {
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
-  // --- IMPROVED EXCEL BULK UPLOAD ---
+  // --- DEBUGGING BULK UPLOAD ---
   const handleBulkUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    setUploadLog(["Reading file...", "Please wait..."]);
+    setLoading(true);
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -113,44 +119,63 @@ export default function AdminPage() {
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws);
 
-            if (!data || data.length === 0) return alert("File appears empty!");
+            if (!data || data.length === 0) {
+                setUploadLog(["❌ Error: File appears empty."]);
+                setLoading(false);
+                return;
+            }
 
-            setLoading(true);
-            let successCount = 0;
-            let skippedCount = 0;
+            const logs = [];
+            let updatedCount = 0;
 
-            for (const row of data) {
-                // Fuzzy match headers (ignore case and spacing)
-                // We look for any property that looks like "product_id" or "size"
-                const keys = Object.keys(row);
-                
-                const pidKey = keys.find(k => k.toLowerCase().replace(/_/g, '').trim() === 'productid');
-                const sizeKey = keys.find(k => k.toLowerCase().trim() === 'size');
-                const countKey = keys.find(k => k.toLowerCase().trim() === 'count');
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i];
+                // Normalize keys (lowercase, trim)
+                const normalizedRow = {};
+                Object.keys(row).forEach(k => {
+                    normalizedRow[k.toLowerCase().trim()] = row[k];
+                });
 
-                const pid = pidKey ? String(row[pidKey]).trim() : null;
-                const size = sizeKey ? String(row[sizeKey]).trim() : null;
-                const count = countKey ? row[countKey] : null;
+                // Look for fields
+                const pid = normalizedRow['product_id'];
+                const size = normalizedRow['size'];
+                const count = normalizedRow['count'];
 
-                if (pid && size && count !== null && count !== undefined) {
-                    const { data: existing } = await supabase.from('inventory').select('id').eq('product_id', pid).eq('size', size).single();
-                    if (existing) {
-                        await supabase.from('inventory').update({ count: parseInt(count) }).eq('id', existing.id);
-                        successCount++;
-                    } else {
-                        // Create if it doesn't exist
-                        await supabase.from('inventory').insert([{ product_id: pid, size: size, count: parseInt(count), active: true }]);
-                        successCount++;
-                    }
+                if (!pid || !size || count === undefined) {
+                    logs.push(`⚠️ Row ${i+2}: Skipped. Missing 'product_id', 'size', or 'count'. Found: ${JSON.stringify(row)}`);
+                    continue;
+                }
+
+                // Clean data
+                const cleanPid = String(pid).trim();
+                const cleanSize = String(size).trim();
+                const cleanCount = parseInt(count);
+
+                // Find Item
+                const { data: existing, error } = await supabase
+                    .from('inventory')
+                    .select('id')
+                    .eq('product_id', cleanPid)
+                    .eq('size', cleanSize)
+                    .single();
+
+                if (existing) {
+                    await supabase.from('inventory').update({ count: cleanCount }).eq('id', existing.id);
+                    logs.push(`✅ Row ${i+2}: Updated ${cleanPid} (${cleanSize}) to ${cleanCount}`);
+                    updatedCount++;
                 } else {
-                    skippedCount++;
+                    logs.push(`❌ Row ${i+2}: Failed. Could not find item in DB: ${cleanPid} / ${cleanSize}`);
                 }
             }
-            alert(`✅ Updated ${successCount} items.\n⚠️ Skipped ${skippedCount} rows (missing ID, Size, or Count).`);
+
+            setUploadLog([`🎉 DONE! Updated ${updatedCount} items.`, ...logs]);
             fetchInventory();
-        } catch (err) { console.error(err); alert("Error parsing file. Ensure headers are 'product_id', 'size', 'count'."); }
+        } catch (err) {
+            console.error(err);
+            setUploadLog(["❌ CRITICAL ERROR:", err.message]);
+        }
         setLoading(false);
-        e.target.value = null; // Reset input so you can upload again if needed
+        e.target.value = null; 
     };
     reader.readAsBinaryString(file);
   };
@@ -158,15 +183,14 @@ export default function AdminPage() {
   const downloadTemplate = () => {
     if (inventory.length === 0) return alert("No inventory data found!");
     
-    // Explicitly define headers to match the upload logic
+    // Explicitly define headers
     const data = inventory.map(item => ({
         product_id: item.product_id, 
         size: item.size, 
         count: item.count,
-        _Reference_Name: getProductName(item.product_id) // Added with underscore so upload ignores it
+        _Reference_Name: getProductName(item.product_id) 
     }));
 
-    // Sort by name then size
     data.sort((a, b) => {
         if (a._Reference_Name !== b._Reference_Name) return a._Reference_Name.localeCompare(b._Reference_Name);
         return SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size);
@@ -280,7 +304,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* INVENTORY TAB - UPDATED WITH SMART UPLOAD */}
+        {/* INVENTORY TAB - UPDATED WITH DEBUG LOG */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1 space-y-6">
@@ -299,18 +323,17 @@ export default function AdminPage() {
                     {/* BULK UPLOAD BOX */}
                     <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200">
                         <h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2>
-                        <p className="text-xs text-blue-800 mb-4">1. Download Current Stock<br/>2. Edit "count" numbers<br/>3. Upload back</p>
-                        
                         <div className="flex gap-2 mb-4">
-                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Current Stock</button>
+                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Inventory</button>
                         </div>
-
-                        <input 
-                            type="file" 
-                            accept=".xlsx, .xls" 
-                            onChange={handleBulkUpload} 
-                            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"
-                        />
+                        <input type="file" accept=".xlsx, .xls" onChange={handleBulkUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200" />
+                        
+                        {/* UPLOAD LOG */}
+                        {uploadLog.length > 0 && (
+                            <div className="mt-4 p-2 bg-black text-green-400 text-xs font-mono h-48 overflow-y-auto rounded border border-gray-700">
+                                {uploadLog.map((log, i) => <div key={i} className="mb-1 border-b border-gray-800 pb-1">{log}</div>)}
+                            </div>
+                        )}
                     </div>
                 </div>
 
