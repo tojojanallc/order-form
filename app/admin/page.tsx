@@ -36,11 +36,9 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ revenue: 0, count: 0, topItem: '-' });
 
-  // Auto-Print State
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
   const audioRef = useRef(null);
 
-  // Forms & Settings
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
@@ -89,7 +87,6 @@ export default function AdminPage() {
     }
   };
 
-  // --- THERMAL PRINTER LABEL FUNCTION ---
   const printLabel = async (order) => {
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
     await supabase.from('orders').update({ printed: true }).eq('id', order.id);
@@ -102,7 +99,7 @@ export default function AdminPage() {
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
-  // --- NEW: EXCEL BULK UPLOAD ---
+  // --- IMPROVED EXCEL BULK UPLOAD ---
   const handleBulkUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -116,54 +113,68 @@ export default function AdminPage() {
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws);
 
-            if (!data || data.length === 0) return alert("Empty file!");
+            if (!data || data.length === 0) return alert("File appears empty!");
 
             setLoading(true);
             let successCount = 0;
+            let skippedCount = 0;
 
             for (const row of data) {
-                // Expected columns: product_id, size, count
-                if (row.product_id && row.size && row.count !== undefined) {
-                    const { data: existing } = await supabase.from('inventory').select('id').eq('product_id', row.product_id).eq('size', row.size).single();
+                // Fuzzy match headers (ignore case and spacing)
+                // We look for any property that looks like "product_id" or "size"
+                const keys = Object.keys(row);
+                
+                const pidKey = keys.find(k => k.toLowerCase().replace(/_/g, '').trim() === 'productid');
+                const sizeKey = keys.find(k => k.toLowerCase().trim() === 'size');
+                const countKey = keys.find(k => k.toLowerCase().trim() === 'count');
+
+                const pid = pidKey ? String(row[pidKey]).trim() : null;
+                const size = sizeKey ? String(row[sizeKey]).trim() : null;
+                const count = countKey ? row[countKey] : null;
+
+                if (pid && size && count !== null && count !== undefined) {
+                    const { data: existing } = await supabase.from('inventory').select('id').eq('product_id', pid).eq('size', size).single();
                     if (existing) {
-                        await supabase.from('inventory').update({ count: row.count }).eq('id', existing.id);
+                        await supabase.from('inventory').update({ count: parseInt(count) }).eq('id', existing.id);
+                        successCount++;
                     } else {
-                        await supabase.from('inventory').insert([{ product_id: row.product_id, size: row.size, count: row.count, active: true }]);
+                        // Create if it doesn't exist
+                        await supabase.from('inventory').insert([{ product_id: pid, size: size, count: parseInt(count), active: true }]);
+                        successCount++;
                     }
-                    successCount++;
+                } else {
+                    skippedCount++;
                 }
             }
-            alert(`Successfully updated ${successCount} items!`);
+            alert(`✅ Updated ${successCount} items.\n⚠️ Skipped ${skippedCount} rows (missing ID, Size, or Count).`);
             fetchInventory();
-        } catch (err) { console.error(err); alert("Error parsing file."); }
+        } catch (err) { console.error(err); alert("Error parsing file. Ensure headers are 'product_id', 'size', 'count'."); }
         setLoading(false);
+        e.target.value = null; // Reset input so you can upload again if needed
     };
     reader.readAsBinaryString(file);
   };
 
-  // --- UPDATED DOWNLOAD TEMPLATE (Current Stock) ---
   const downloadTemplate = () => {
     if (inventory.length === 0) return alert("No inventory data found!");
     
-    // Create rows from current inventory
+    // Explicitly define headers to match the upload logic
     const data = inventory.map(item => ({
-        // We add "Product Name" column so it's easier for you to read
-        // The uploader will ignore this column, but it helps you know what "hat_blue" is
-        Product_Name: getProductName(item.product_id),
         product_id: item.product_id, 
         size: item.size, 
-        count: item.count 
+        count: item.count,
+        _Reference_Name: getProductName(item.product_id) // Added with underscore so upload ignores it
     }));
 
-    // Sort comfortably (by Product Name, then by Size Order)
+    // Sort by name then size
     data.sort((a, b) => {
-        if (a.Product_Name !== b.Product_Name) return a.Product_Name.localeCompare(b.Product_Name);
+        if (a._Reference_Name !== b._Reference_Name) return a._Reference_Name.localeCompare(b._Reference_Name);
         return SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size);
     });
 
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Current_Inventory");
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
     XLSX.writeFile(wb, "Lev_Inventory_Update.xlsx");
   };
 
@@ -210,18 +221,10 @@ export default function AdminPage() {
     }]);
 
     if (error) return alert("Error: " + error.message);
-    
-    // GENERATE FULL SIZE RUN
-    const sizes = [
-        'Youth XS', 'Youth S', 'Youth M', 'Youth L', 
-        'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'
-    ];
-    
+    const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
     const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }));
     await supabase.from('inventory').insert(invRows);
-    
-    alert("Product Created!"); 
-    setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory();
+    alert("Product Created!"); setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory();
   };
 
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
@@ -277,7 +280,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* INVENTORY TAB - UPDATED WITH DYNAMIC DOWNLOAD */}
+        {/* INVENTORY TAB - UPDATED WITH SMART UPLOAD */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1 space-y-6">
@@ -296,10 +299,10 @@ export default function AdminPage() {
                     {/* BULK UPLOAD BOX */}
                     <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200">
                         <h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2>
-                        <p className="text-xs text-blue-800 mb-4">Download your CURRENT inventory, edit the numbers, and upload it back.</p>
+                        <p className="text-xs text-blue-800 mb-4">1. Download Current Stock<br/>2. Edit "count" numbers<br/>3. Upload back</p>
                         
                         <div className="flex gap-2 mb-4">
-                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Inventory</button>
+                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Current Stock</button>
                         </div>
 
                         <input 
