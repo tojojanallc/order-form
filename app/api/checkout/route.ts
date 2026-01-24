@@ -18,24 +18,26 @@ export async function POST(request) {
     const body = await request.json();
     const { cart, customerName } = body;
 
-    // --- DECREMENT INVENTORY ---
+    // --- DECREMENT INVENTORY (BY PRODUCT ID + SIZE) ---
     for (const item of cart) {
-        if (!item.productId) continue; // Skip if no product ID
+        if (!item.productId || !item.size) continue;
 
         const { data: currentStock } = await supabase
             .from('inventory')
             .select('count')
-            .eq('id', item.productId) // <--- CRITICAL FIX: Use productId, not item.id
+            .eq('product_id', item.productId) // Matches ID
+            .eq('size', item.size)            // Matches Size
             .single();
 
         if (currentStock) {
             await supabase
                 .from('inventory')
                 .update({ count: currentStock.count - 1 })
-                .eq('id', item.productId);
+                .eq('product_id', item.productId)
+                .eq('size', item.size);
         }
     }
-    // ---------------------------
+    // --------------------------------------------------
 
     const lineItems = cart.map((item) => {
         const descriptionParts = [

@@ -32,21 +32,27 @@ export default function OrderForm() {
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
 
-  // Load Inventory on Start
+  // Load Inventory
   useEffect(() => {
     const fetchInventory = async () => {
       if (!supabase) return;
       const { data } = await supabase.from('inventory').select('*');
       if (data) {
+        // Create a lookup map: "productID_Size" -> count
         const stockMap = {};
-        data.forEach(item => stockMap[item.id] = item.count);
+        data.forEach(item => {
+            const key = `${item.product_id}_${item.size}`;
+            stockMap[key] = item.count;
+        });
         setInventory(stockMap);
       }
     };
     fetchInventory();
   }, []);
 
-  const currentStock = inventory[selectedProduct.id] ?? 0;
+  // --- NEW: CHECK STOCK BY SIZE ---
+  const stockKey = `${selectedProduct.id}_${size}`;
+  const currentStock = inventory[stockKey] ?? 0; // Default to 0 if size missing
   const isOutOfStock = currentStock <= 0;
 
   const calculateTotal = () => {
@@ -68,8 +74,8 @@ export default function OrderForm() {
     if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Logo and Name."); return; }
 
     const newItem = {
-      id: Date.now(), // Unique ID for the cart UI
-      productId: selectedProduct.id, // <--- CRITICAL FIX: The ID for the Database
+      id: Date.now(),
+      productId: selectedProduct.id,
       productName: selectedProduct.name,
       size: size,
       needsShipping: isOutOfStock, 
@@ -125,10 +131,10 @@ export default function OrderForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          email: customerEmail,
-          customerName: customerName,
-          cart: cart,
-          total: calculateGrandTotal()
+            email: customerEmail, 
+            customerName, 
+            cart, 
+            total: calculateGrandTotal() 
         }),
       });
     } catch (e) { console.error(e); }
@@ -160,9 +166,11 @@ export default function OrderForm() {
             <div className="p-6 space-y-8">
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
+                
+                {/* DYNAMIC STOCK ALERT */}
                 {isOutOfStock ? (
                   <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert">
-                    <p className="font-bold">⚠️ Out of Stock at Event</p>
+                    <p className="font-bold">⚠️ {selectedProduct.name} ({size}) is Out of Stock.</p>
                     <p className="text-sm">We can ship this to your home!</p>
                   </div>
                 ) : (
@@ -170,6 +178,7 @@ export default function OrderForm() {
                     ✓ In Stock ({currentStock} available)
                   </div>
                 )}
+
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Item</label>
@@ -187,6 +196,7 @@ export default function OrderForm() {
                 </div>
               </section>
 
+              {/* SECTIONS 2-5 (Standard) */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
                 {logos.map((logo, index) => (
