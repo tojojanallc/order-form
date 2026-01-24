@@ -70,12 +70,12 @@ export default function OrderForm() {
     }
   }, [visibleProducts, selectedProduct]);
 
-  // Filter Active Sizes
+  // --- FIXED: GET SIZES CORRECTLY ---
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
     return Object.keys(activeItems)
-      .filter(key => key.startsWith(selectedProduct.id) && activeItems[key] === true)
-      .map(key => key.split('_')[1]);
+      .filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true)
+      .map(key => key.replace(`${selectedProduct.id}_`, '')); // <--- FIX: Removes ID to leave just the Size
   };
   const visibleSizes = getVisibleSizes();
 
@@ -190,7 +190,6 @@ export default function OrderForm() {
                       {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} - ${p.base_price}</option>)}
                     </select>
                   </div>
-                  {/* --- THIS IS THE SIZE SELECTOR --- */}
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Size</label>
                     <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size} onChange={(e) => setSize(e.target.value)}>
@@ -200,6 +199,7 @@ export default function OrderForm() {
                 </div>
               </section>
 
+              {/* SECTIONS 2-5 */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
                 {logos.map((logo, index) => (

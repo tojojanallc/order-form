@@ -22,20 +22,18 @@ export default function AdminPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
   
-  // Data State
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // New Product Form State
+  // New Product Form
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
 
   const handleLogin = (e) => { e.preventDefault(); if (passcode === 'swim2025') { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } };
 
-  // --- ORDERS LOGIC ---
   const fetchOrders = async () => {
     if (!supabase) return;
     setLoading(true);
@@ -45,7 +43,6 @@ export default function AdminPage() {
   };
 
   const handleStatusChange = async (orderId, newStatus, customerName, phone) => {
-    // Optimistic Update
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
 
@@ -68,7 +65,6 @@ export default function AdminPage() {
     link.click();
   };
 
-  // --- INVENTORY LOGIC ---
   const fetchInventory = async () => {
     if (!supabase) return;
     setLoading(true);
@@ -129,7 +125,7 @@ export default function AdminPage() {
                     <button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button>
                  </div>
                  
-                 {/* DETAILED ORDERS TABLE */}
+                 {/* RESTORED DETAILED ORDERS TABLE */}
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto">
                     <table className="w-full text-left min-w-[800px]">
                     <thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Customer</th><th className="p-4">Items</th></tr></thead>
