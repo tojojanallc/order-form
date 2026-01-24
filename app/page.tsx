@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LOGO_OPTIONS, POSITIONS } from './config'; // We kept Logos/Positions in config for now
+import { LOGO_OPTIONS, POSITIONS } from './config'; 
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -23,8 +23,7 @@ export default function OrderForm() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Dynamic Data State
-  const [products, setProducts] = useState([]); // Loaded from DB
+  const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
 
@@ -41,11 +40,9 @@ export default function OrderForm() {
     const fetchData = async () => {
       if (!supabase) return;
       
-      // 1. Fetch Products
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
 
-      // 2. Fetch Inventory
       const { data: invData } = await supabase.from('inventory').select('*');
       if (invData) {
         const stockMap = {};
@@ -67,7 +64,6 @@ export default function OrderForm() {
     return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
   });
 
-  // Default Selection
   useEffect(() => {
     if (!selectedProduct && visibleProducts.length > 0) {
       setSelectedProduct(visibleProducts[0]);
@@ -89,14 +85,13 @@ export default function OrderForm() {
     }
   }, [selectedProduct, visibleSizes, size]);
 
-  // Calculations
   const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
   const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
   const calculateTotal = () => {
     if (!selectedProduct) return 0;
-    let total = selectedProduct.base_price; // Note: using base_price from DB
+    let total = selectedProduct.base_price; 
     total += logos.length * 5;      
     total += names.length * 5;      
     if (backNameList) total += 5;   
@@ -195,6 +190,7 @@ export default function OrderForm() {
                       {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} - ${p.base_price}</option>)}
                     </select>
                   </div>
+                  {/* --- THIS IS THE SIZE SELECTOR --- */}
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Size</label>
                     <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size} onChange={(e) => setSize(e.target.value)}>
@@ -204,7 +200,6 @@ export default function OrderForm() {
                 </div>
               </section>
 
-              {/* SECTIONS 2-5 (Logos, Names) */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
                 {logos.map((logo, index) => (
