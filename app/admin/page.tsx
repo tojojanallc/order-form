@@ -8,7 +8,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-// Status Options & Colors
+// Status Options
 const STATUSES = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
   in_progress: { label: 'In Progress', color: 'bg-blue-100 text-blue-800 border-blue-300' },
@@ -21,7 +21,7 @@ export default function AdminPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [processingId, setProcessingId] = useState(null); // Tracks active operations
+  const [processingId, setProcessingId] = useState(null);
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -46,77 +46,84 @@ export default function AdminPage() {
     setLoading(false);
   };
 
-  // --- MAIN STATUS HANDLER ---
   const handleStatusChange = async (orderId, newStatus, customerName, phone) => {
-    // 1. Confirmation for "Ready" status (since it sends a text)
     if (newStatus === 'ready') {
       const confirmText = confirm(`Mark as Ready and text ${customerName}?`);
-      if (!confirmText) return; // Cancel if they clicked 'No'
+      if (!confirmText) return;
     }
 
     setProcessingId(orderId);
+    setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); // Optimistic
 
-    // 2. Optimistic UI Update
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-
-    // 3. Update Database
-    const { error } = await supabase
-      .from('orders')
-      .update({ status: newStatus })
-      .eq('id', orderId);
+    const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
 
     if (error) {
       alert("Failed to save status");
-      fetchOrders(); // Revert
+      fetchOrders();
       setProcessingId(null);
       return;
     }
 
-    // 4. AUTOMATIC TEXT TRIGGER
     if (newStatus === 'ready') {
       try {
-        const response = await fetch('/api/send-text', {
+        await fetch('/api/send-text', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            phone: phone, 
-            message: `Hi ${customerName}! Your Swag Order is READY for pickup at the main booth. See you soon!` 
-          }),
+          body: JSON.stringify({ phone: phone, message: `Hi ${customerName}! Your Swag Order is READY for pickup at the main booth. See you soon!` }),
         });
-
-        if (response.ok) {
-          // Success! (Maybe show a small toast notification if you want, but alert is fine for now)
-          console.log("Auto-text sent successfully");
-        } else {
-          alert("Status saved, but TEXT FAILED to send.");
-        }
-      } catch (err) {
-        console.error(err);
-        alert("Status saved, but TEXT FAILED to send.");
-      }
+      } catch (err) { console.error(err); alert("Status saved, but TEXT FAILED."); }
     }
-
     setProcessingId(null);
   };
 
-  // Manual Text Button (Backup)
   const handleManualText = async (orderId, customerName, phone) => {
     if (!confirm(`Resend "Ready" text to ${customerName}?`)) return;
     setProcessingId(orderId);
-
     const response = await fetch('/api/send-text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        phone: phone, 
-        message: `Hi ${customerName}! Your Swag Order is READY for pickup at the main booth. See you soon!` 
-      }),
+      body: JSON.stringify({ phone: phone, message: `Hi ${customerName}! Your Swag Order is READY for pickup at the main booth. See you soon!` }),
+    });
+    if (response.ok) alert("Text Sent!"); else alert("Failed to send text.");
+    setProcessingId(null);
+  };
+
+  // --- NEW: CSV EXPORT FUNCTION ---
+  const downloadCSV = () => {
+    if (orders.length === 0) return alert("No orders to export.");
+
+    // 1. Define Headers
+    const headers = ['Order ID', 'Date', 'Time', 'Customer', 'Phone', 'Status', 'Total Price', 'Items Summary'];
+    
+    // 2. Build Rows
+    const rows = orders.map(o => {
+      const date = new Date(o.created_at);
+      // Create a readable summary of items
+      const itemsSummary = o.cart_data.map(i => 
+        `${i.productName} (${i.size})`
+      ).join(' | ');
+
+      return [
+        o.id,
+        date.toLocaleDateString(),
+        date.toLocaleTimeString(),
+        `"${o.customer_name}"`, // Quote strings to handle commas
+        o.phone,
+        o.status || 'pending',
+        o.total_price,
+        `"${itemsSummary}"`
+      ].join(',');
     });
 
-    if (response.ok) alert("Text Sent!");
-    else alert("Failed to send text.");
-    
-    setProcessingId(null);
+    // 3. Combine and Download
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `orders_export_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const formatCart = (cartItems) => {
@@ -152,7 +159,15 @@ export default function AdminPage() {
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-black text-gray-900">Production Dashboard</h1>
-          <button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 text-black font-bold border border-gray-300">Refresh Data</button>
+          <div className="space-x-4">
+             {/* NEW EXPORT BUTTON */}
+             <button onClick={downloadCSV} className="bg-green-600 px-4 py-2 rounded hover:bg-green-700 text-white font-bold border border-green-700 shadow-sm">
+              📥 Export Excel
+            </button>
+            <button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 text-black font-bold border border-gray-300 shadow-sm">
+              Refresh Data
+            </button>
+          </div>
         </div>
 
         {loading ? <p className="text-black font-bold">Loading orders...</p> : (
@@ -171,7 +186,6 @@ export default function AdminPage() {
                   const currentStatus = order.status || 'pending';
                   return (
                     <tr key={order.id} className={`border-b border-gray-200 ${currentStatus === 'completed' ? 'opacity-50 bg-gray-50' : 'hover:bg-gray-50'}`}>
-                      {/* STATUS DROPDOWN */}
                       <td className="p-4 align-top">
                         <select 
                           value={currentStatus}
@@ -179,33 +193,21 @@ export default function AdminPage() {
                           disabled={processingId === order.id}
                           className={`text-xs font-bold uppercase p-2 rounded border-2 cursor-pointer ${STATUSES[currentStatus]?.color || 'bg-white border-gray-300'}`}
                         >
-                          {Object.entries(STATUSES).map(([key, val]) => (
-                            <option key={key} value={key}>{val.label}</option>
-                          ))}
+                          {Object.entries(STATUSES).map(([key, val]) => (<option key={key} value={key}>{val.label}</option>))}
                         </select>
-                        {processingId === order.id && <div className="text-xs text-blue-600 font-bold mt-1">Processing...</div>}
                       </td>
-
                       <td className="p-4 align-top">
                         <div className="font-bold text-black">{order.customer_name}</div>
                         <div className="text-sm text-gray-800 font-medium">{order.phone}</div>
                         <div className="text-xs text-gray-500 mt-1">{new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
                       </td>
-                      
                       <td className="p-4 align-top bg-gray-50 border-l border-r border-gray-200">
                         {formatCart(order.cart_data)}
                         <div className="mt-2 text-right font-black text-green-800">${order.total_price}</div>
                       </td>
-                      
                       <td className="p-4 text-right align-top">
-                        {/* Only show "Resend" if it's already Ready/Completed, just in case they missed it */}
                         {(currentStatus === 'ready' || currentStatus === 'completed') && (
-                          <button 
-                              onClick={() => handleManualText(order.id, order.customer_name, order.phone)}
-                              className="text-blue-600 hover:text-blue-800 text-xs font-bold underline"
-                          >
-                              Resend Text
-                          </button>
+                          <button onClick={() => handleManualText(order.id, order.customer_name, order.phone)} className="text-blue-600 hover:text-blue-800 text-xs font-bold underline">Resend Text</button>
                         )}
                       </td>
                     </tr>
