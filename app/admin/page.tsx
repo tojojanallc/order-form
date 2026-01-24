@@ -36,9 +36,6 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ revenue: 0, count: 0, topItem: '-' });
 
-  // Upload Log State
-  const [uploadLog, setUploadLog] = useState([]); 
-
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
   const audioRef = useRef(null);
 
@@ -102,12 +99,11 @@ export default function AdminPage() {
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
-  // --- DEBUGGING BULK UPLOAD ---
+  // --- ROBUST EXCEL BULK UPLOAD ---
   const handleBulkUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    setUploadLog(["Reading file...", "Please wait..."]);
     setLoading(true);
 
     const reader = new FileReader();
@@ -119,63 +115,53 @@ export default function AdminPage() {
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws);
 
-            if (!data || data.length === 0) {
-                setUploadLog(["❌ Error: File appears empty."]);
-                setLoading(false);
-                return;
-            }
+            if (!data || data.length === 0) return alert("File appears empty!");
 
-            const logs = [];
-            let updatedCount = 0;
+            let successCount = 0;
 
-            for (let i = 0; i < data.length; i++) {
-                const row = data[i];
-                // Normalize keys (lowercase, trim)
+            for (const row of data) {
+                // Normalize keys (handle excel capitalization or spaces)
                 const normalizedRow = {};
                 Object.keys(row).forEach(k => {
                     normalizedRow[k.toLowerCase().trim()] = row[k];
                 });
 
-                // Look for fields
                 const pid = normalizedRow['product_id'];
                 const size = normalizedRow['size'];
                 const count = normalizedRow['count'];
 
-                if (!pid || !size || count === undefined) {
-                    logs.push(`⚠️ Row ${i+2}: Skipped. Missing 'product_id', 'size', or 'count'. Found: ${JSON.stringify(row)}`);
-                    continue;
-                }
+                if (pid && size && count !== undefined) {
+                    const cleanPid = String(pid).trim();
+                    const cleanSize = String(size).trim();
+                    const cleanCount = parseInt(count);
 
-                // Clean data
-                const cleanPid = String(pid).trim();
-                const cleanSize = String(size).trim();
-                const cleanCount = parseInt(count);
+                    const { data: existing } = await supabase
+                        .from('inventory')
+                        .select('id')
+                        .eq('product_id', cleanPid)
+                        .eq('size', cleanSize)
+                        .single();
 
-                // Find Item
-                const { data: existing, error } = await supabase
-                    .from('inventory')
-                    .select('id')
-                    .eq('product_id', cleanPid)
-                    .eq('size', cleanSize)
-                    .single();
-
-                if (existing) {
-                    await supabase.from('inventory').update({ count: cleanCount }).eq('id', existing.id);
-                    logs.push(`✅ Row ${i+2}: Updated ${cleanPid} (${cleanSize}) to ${cleanCount}`);
-                    updatedCount++;
-                } else {
-                    logs.push(`❌ Row ${i+2}: Failed. Could not find item in DB: ${cleanPid} / ${cleanSize}`);
+                    if (existing) {
+                        await supabase.from('inventory').update({ count: cleanCount }).eq('id', existing.id);
+                        successCount++;
+                    } else {
+                        // Create if missing
+                        await supabase.from('inventory').insert([{ product_id: cleanPid, size: cleanSize, count: cleanCount, active: true }]);
+                        successCount++;
+                    }
                 }
             }
+            
+            // --- THE FIX: FORCE RELOAD TO SHOW NEW DATA ---
+            alert(`✅ SUCCESS! Updated ${successCount} items.\n\nThe page will now refresh to show the new stock.`);
+            window.location.reload(); 
 
-            setUploadLog([`🎉 DONE! Updated ${updatedCount} items.`, ...logs]);
-            fetchInventory();
         } catch (err) {
             console.error(err);
-            setUploadLog(["❌ CRITICAL ERROR:", err.message]);
+            alert("Error parsing file. Ensure headers are 'product_id', 'size', 'count'.");
+            setLoading(false);
         }
-        setLoading(false);
-        e.target.value = null; 
     };
     reader.readAsBinaryString(file);
   };
@@ -304,11 +290,10 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* INVENTORY TAB - UPDATED WITH DEBUG LOG */}
+        {/* INVENTORY TAB - UPDATED WITH SMART UPLOAD */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1 space-y-6">
-                    {/* ADD NEW ITEM */}
                     <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
                         <h2 className="font-bold text-xl mb-4">Add New Item</h2>
                         <form onSubmit={handleAddProductWithSizeUpdates} className="space-y-3">
@@ -323,17 +308,9 @@ export default function AdminPage() {
                     {/* BULK UPLOAD BOX */}
                     <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200">
                         <h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2>
-                        <div className="flex gap-2 mb-4">
-                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Inventory</button>
-                        </div>
+                        <p className="text-xs text-blue-800 mb-4">1. Download Current Stock<br/>2. Edit "count" numbers<br/>3. Upload back</p>
+                        <div className="flex gap-2 mb-4"><button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Current Stock</button></div>
                         <input type="file" accept=".xlsx, .xls" onChange={handleBulkUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200" />
-                        
-                        {/* UPLOAD LOG */}
-                        {uploadLog.length > 0 && (
-                            <div className="mt-4 p-2 bg-black text-green-400 text-xs font-mono h-48 overflow-y-auto rounded border border-gray-700">
-                                {uploadLog.map((log, i) => <div key={i} className="mb-1 border-b border-gray-800 pb-1">{log}</div>)}
-                            </div>
-                        )}
                     </div>
                 </div>
 
@@ -367,7 +344,6 @@ export default function AdminPage() {
                         </table>
                     </div>
                     
-                    {/* Stock Manager */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Stock</div><table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead><tbody>{inventory.map((item) => (<tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}><td className="p-4 font-bold">{getProductName(item.product_id)}</td><td className="p-4">{item.size}</td><td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td><td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td></tr>))}</tbody></table></div>
                 </div>
             </div>
