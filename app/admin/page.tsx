@@ -41,11 +41,10 @@ export default function AdminPage() {
   const [offerBackNames, setOfferBackNames] = useState(true);
   const [offerMetallic, setOfferMetallic] = useState(true);
 
-  // --- NEW: SECURE LOGIN ---
+  // --- SECURE LOGIN ---
   const handleLogin = async (e) => { 
     e.preventDefault(); 
     setLoading(true);
-
     try {
       const res = await fetch('/api/auth', {
         method: 'POST',
@@ -53,16 +52,13 @@ export default function AdminPage() {
         body: JSON.stringify({ password: passcode })
       });
       const data = await res.json();
-
       if (data.success) { 
         setIsAuthorized(true); 
         fetchOrders(); 
       } else { 
         alert("Wrong password"); 
       }
-    } catch (err) {
-      alert("Login failed");
-    }
+    } catch (err) { alert("Login failed"); }
     setLoading(false);
   };
 
@@ -108,12 +104,7 @@ export default function AdminPage() {
 
   // --- ACTIONS ---
   const saveSettings = async () => {
-    await supabase.from('event_settings').update({ 
-        event_name: eventName, 
-        event_logo_url: eventLogo,
-        offer_back_names: offerBackNames,
-        offer_metallic: offerMetallic
-    }).eq('id', 1);
+    await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, offer_back_names: offerBackNames, offer_metallic: offerMetallic }).eq('id', 1);
     alert("Event Settings Saved!");
   };
 
@@ -121,57 +112,29 @@ export default function AdminPage() {
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
     
-    // Only send text if moving TO ready status
     if (newStatus === 'ready') { 
         const order = orders.find(o => o.id === orderId);
         if (order) {
-            try { 
-                await fetch('/api/send-text', { 
-                    method: 'POST', 
-                    body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is READY for pickup!` }) 
-                }); 
-            } catch (e) {} 
+            try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is READY for pickup!` }) }); } catch (e) {} 
         }
     }
   };
 
-  // --- NEW: DELETE ORDER & RESTORE STOCK ---
   const deleteOrder = async (orderId, cartData) => {
     const confirmed = confirm("⚠️ Cancel Order & Restore Inventory?\n\nOK = Delete & Add Stock Back\nCancel = Do Nothing");
     if (!confirmed) return;
     
     setLoading(true);
-
-    // 1. Restore Inventory Loop
     if (cartData && Array.isArray(cartData)) {
         for (const item of cartData) {
-            // Only restore if we have valid IDs
             if (item.productId && item.size) {
-                // Get current count
-                const { data: currentItem } = await supabase
-                    .from('inventory')
-                    .select('count')
-                    .eq('product_id', item.productId)
-                    .eq('size', item.size)
-                    .single();
-                
-                if (currentItem) {
-                    // Add 1 back
-                    await supabase
-                        .from('inventory')
-                        .update({ count: currentItem.count + 1 })
-                        .eq('product_id', item.productId)
-                        .eq('size', item.size);
-                }
+                const { data: currentItem } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single();
+                if (currentItem) { await supabase.from('inventory').update({ count: currentItem.count + 1 }).eq('product_id', item.productId).eq('size', item.size); }
             }
         }
     }
-
-    // 2. Delete Order Row
     await supabase.from('orders').delete().eq('id', orderId);
-    
-    fetchOrders();
-    fetchInventory(); // Refresh counts
+    fetchOrders(); fetchInventory();
     setLoading(false);
     alert("Order deleted and inventory restored.");
   };
@@ -253,11 +216,25 @@ export default function AdminPage() {
                  </div>
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto">
                     <table className="w-full text-left min-w-[800px]">
-                    <thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4">Action</th></tr></thead>
+                    <thead className="bg-gray-200">
+                      <tr>
+                        <th className="p-4 w-40">Status</th>
+                        <th className="p-4">Date</th> {/* NEW COLUMN */}
+                        <th className="p-4">Customer</th>
+                        <th className="p-4">Items</th>
+                        <th className="p-4">Action</th>
+                      </tr>
+                    </thead>
                     <tbody>
                         {orders.map((order) => (
                         <tr key={order.id} className="border-b hover:bg-gray-50">
                             <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
+                            
+                            {/* NEW DATE CELL */}
+                            <td className="p-4 align-top text-sm text-gray-500 font-medium">
+                                {new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                            </td>
+
                             <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
                             <td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size}){item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
                             <td className="p-4 align-top text-right"><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td>
@@ -269,8 +246,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* ... (Other tabs 'inventory', 'logos', 'settings' remain identical to previous versions, code omitted for brevity but should be kept in your file) ... */}
-        {/* I am pasting the FULL file content in the block below to ensure nothing is lost */}
+        {/* ... INVENTORY / LOGOS / SETTINGS TABS (Code hidden for brevity as it is unchanged) ... */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1">
