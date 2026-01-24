@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { LOGO_OPTIONS, POSITIONS } from './config'; 
+import { POSITIONS } from './config'; // Only Positions remain in config
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -26,6 +26,7 @@ export default function OrderForm() {
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
+  const [logoOptions, setLogoOptions] = useState([]); // Loaded from DB
 
   // Form State
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -42,6 +43,9 @@ export default function OrderForm() {
       
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
+
+      const { data: logoData } = await supabase.from('logos').select('label').eq('active', true).order('sort_order');
+      if (logoData) setLogoOptions(logoData.map(l => l.label));
 
       const { data: invData } = await supabase.from('inventory').select('*');
       if (invData) {
@@ -70,12 +74,12 @@ export default function OrderForm() {
     }
   }, [visibleProducts, selectedProduct]);
 
-  // --- FIXED: GET SIZES CORRECTLY ---
+  // Filter Active Sizes
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
     return Object.keys(activeItems)
       .filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true)
-      .map(key => key.replace(`${selectedProduct.id}_`, '')); // <--- FIX: Removes ID to leave just the Size
+      .map(key => key.replace(`${selectedProduct.id}_`, ''));
   };
   const visibleSizes = getVisibleSizes();
 
@@ -199,17 +203,16 @@ export default function OrderForm() {
                 </div>
               </section>
 
-              {/* SECTIONS 2-5 */}
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
                 {logos.map((logo, index) => (
                   <div key={index} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                    <select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>{LOGO_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}</select>
+                    <select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>{logoOptions.map(opt => <option key={opt}>{opt}</option>)}</select>
                     <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
                     <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                   </div>
                 ))}
-                <button onClick={() => setLogos([...logos, { type: 'Butterfly', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Logo</button>
+                <button onClick={() => setLogos([...logos, { type: logoOptions[0] || 'Logo', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Logo</button>
               </section>
               <section>
                 <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Names</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
