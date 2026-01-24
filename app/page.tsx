@@ -14,13 +14,10 @@ export default function OrderForm() {
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  
-  // Shipping State
   const [shippingAddress, setShippingAddress] = useState('');
   const [shippingCity, setShippingCity] = useState('');
   const [shippingState, setShippingState] = useState('');
   const [shippingZip, setShippingZip] = useState('');
-  
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [products, setProducts] = useState([]); 
@@ -28,15 +25,11 @@ export default function OrderForm() {
   const [activeItems, setActiveItems] = useState({});
   const [logoOptions, setLogoOptions] = useState([]); 
 
-  // Event Settings
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
-  
-  // NEW: Customization Settings
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
 
-  // Form State
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [size, setSize] = useState('');
   const [logos, setLogos] = useState([]); 
@@ -44,11 +37,9 @@ export default function OrderForm() {
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
 
-  // Load Data
   useEffect(() => {
     const fetchData = async () => {
       if (!supabase) return;
-      
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
 
@@ -67,8 +58,6 @@ export default function OrderForm() {
         setInventory(stockMap);
         setActiveItems(activeMap);
       }
-
-      // FETCH EVENT SETTINGS
       const { data: settings } = await supabase.from('event_settings').select('*').single();
       if (settings) {
         setEventName(settings.event_name);
@@ -80,14 +69,10 @@ export default function OrderForm() {
     fetchData();
   }, []);
 
-  const visibleProducts = products.filter(p => {
-    return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
-  });
+  const visibleProducts = products.filter(p => Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true));
 
   useEffect(() => {
-    if (!selectedProduct && visibleProducts.length > 0) {
-      setSelectedProduct(visibleProducts[0]);
-    }
+    if (!selectedProduct && visibleProducts.length > 0) setSelectedProduct(visibleProducts[0]);
   }, [visibleProducts, selectedProduct]);
 
   const getVisibleSizes = () => {
@@ -99,9 +84,7 @@ export default function OrderForm() {
   const visibleSizes = getVisibleSizes();
 
   useEffect(() => {
-    if (visibleSizes.length > 0 && !visibleSizes.includes(size)) {
-      setSize(visibleSizes[0]);
-    }
+    if (visibleSizes.length > 0 && !visibleSizes.includes(size)) setSize(visibleSizes[0]);
   }, [selectedProduct, visibleSizes, size]);
 
   const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
@@ -118,9 +101,7 @@ export default function OrderForm() {
     return total;
   };
 
-  const calculateGrandTotal = () => {
-    return cart.reduce((sum, item) => sum + item.finalPrice, 0);
-  };
+  const calculateGrandTotal = () => cart.reduce((sum, item) => sum + item.finalPrice, 0);
 
   const handleAddToCart = () => {
     if (!selectedProduct) return;
@@ -161,9 +142,7 @@ export default function OrderForm() {
       shipping_zip: cartRequiresShipping ? shippingZip : null,
       status: cartRequiresShipping ? 'pending_shipping' : 'pending' 
     }]);
-
     if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
-
     try { await fetch('/api/send-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customerEmail, customerName, cart, total: calculateGrandTotal() }) }); } catch (e) {}
     try {
       const response = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, customerName }) });
@@ -180,30 +159,29 @@ export default function OrderForm() {
       <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
-            
             <div className="bg-blue-900 text-white p-6 text-center">
-              {eventLogo ? (
-                <img src={eventLogo} alt="Event Logo" className="h-16 mx-auto mb-2" />
-              ) : (
-                <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>
-              )}
+              {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-16 mx-auto mb-2" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               <p className="text-blue-100 text-sm mt-1">{eventLogo ? eventName : 'Order Form'}</p>
             </div>
-
             <div className="p-6 space-y-8">
+              
+              {/* SECTION 1: GARMENT SELECTOR */}
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
                 
+                {/* NEW: PRODUCT IMAGE DISPLAY */}
+                {selectedProduct && selectedProduct.image_url && (
+                    <div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center">
+                        <img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
+                    </div>
+                )}
+
                 {isOutOfStock ? (
                   <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert">
                     <p className="font-bold">⚠️ Out of Stock at Event</p>
                     <p className="text-sm">We can ship this to your home!</p>
                   </div>
-                ) : (
-                  <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">
-                    ✓ In Stock ({currentStock} available)
-                  </div>
-                )}
+                ) : <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">✓ In Stock ({currentStock} available)</div>}
 
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
@@ -228,12 +206,8 @@ export default function OrderForm() {
                   return (
                     <div key={index} className="flex flex-col gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                       <div className="flex flex-col md:flex-row gap-2">
-                        <select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>
-                            {logoOptions.map(opt => <option key={opt.label} value={opt.label}>{opt.label}</option>)}
-                        </select>
-                        <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
-                            <option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
-                        </select>
+                        <select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>{logoOptions.map(opt => <option key={opt.label} value={opt.label}>{opt.label}</option>)}</select>
+                        <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
                         <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                       </div>
                       {currentImage && (<div className="bg-white border rounded p-2 self-start"><img src={currentImage} alt="Logo Preview" className="h-16 w-auto object-contain" /></div>)}
@@ -255,20 +229,10 @@ export default function OrderForm() {
                 <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Name</button>
               </section>
               
-              {/* CONDITIONALLY RENDER THIS SECTION */}
               {showBackNames && (
                   <section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300">
-                    <label className="flex items-center gap-3 mb-2 cursor-pointer">
-                        <input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} />
-                        <span className="font-bold text-black">Back Name List (+$5)</span>
-                    </label>
-                    {/* ONLY SHOW METALLIC IF ENABLED */}
-                    {showMetallic && (
-                        <label className="flex items-center gap-3 cursor-pointer">
-                            <input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} />
-                            <span className="font-bold text-black">Metallic Highlight (+$5)</span>
-                        </label>
-                    )}
+                    <label className="flex items-center gap-3 mb-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} /><span className="font-bold text-black">Back Name List (+$5)</span></label>
+                    {showMetallic && (<label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} /><span className="font-bold text-black">Metallic Highlight (+$5)</span></label>)}
                   </section>
               )}
 
@@ -301,10 +265,7 @@ export default function OrderForm() {
                   <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once">
                     <h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4>
                     <input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} />
-                    <div className="grid grid-cols-2 gap-2">
-                        <input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} />
-                        <input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} />
-                    </div>
+                    <div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div>
                     <input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} />
                   </div>
                 )}

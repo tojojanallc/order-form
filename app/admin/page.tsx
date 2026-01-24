@@ -38,6 +38,7 @@ export default function AdminPage() {
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
+  const [newProdImage, setNewProdImage] = useState(''); // NEW IMAGE STATE
   const [newLogoName, setNewLogoName] = useState('');
   const [newLogoUrl, setNewLogoUrl] = useState('');
   const [eventName, setEventName] = useState('');
@@ -66,124 +67,33 @@ export default function AdminPage() {
   useEffect(() => {
     let interval;
     if (isAuthorized && autoPrintEnabled) {
-        interval = setInterval(() => {
-            checkForNewLabels();
-        }, 5000); // Check every 5 seconds
+        interval = setInterval(() => { checkForNewLabels(); }, 5000);
     }
     return () => clearInterval(interval);
   }, [isAuthorized, autoPrintEnabled, orders]);
 
   const checkForNewLabels = () => {
-    // Find oldest unprinted order that is NOT completed
     const unprinted = orders
         .filter(o => !o.printed && o.status !== 'completed' && o.status !== 'shipped')
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // Oldest first
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
     if (unprinted.length > 0) {
-        const nextOrder = unprinted[0];
-        
-        // 1. Play Sound
-        if (audioRef.current) {
-            audioRef.current.play().catch(e => console.log("Audio play failed", e));
-        }
-
-        // 2. Print
-        printLabel(nextOrder);
+        if (audioRef.current) audioRef.current.play().catch(e => console.log("Audio play failed", e));
+        printLabel(unprinted[0]);
     }
   };
 
   // --- THERMAL PRINTER LABEL FUNCTION ---
   const printLabel = async (order) => {
-    // 1. Mark as printed in DB immediately so we don't loop print
-    // Optimistic update locally first
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
     await supabase.from('orders').update({ printed: true }).eq('id', order.id);
 
-    // 2. Open Print Window
     const printWindow = window.open('', '', 'width=400,height=600');
-    if (!printWindow) {
-        alert("⚠️ POPUP BLOCKED: Please allow popups for this site to use Auto-Print.");
-        return;
-    }
+    if (!printWindow) { alert("⚠️ POPUP BLOCKED"); return; }
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Order #${order.id}</title>
-          <style>
-            @page { size: 4in 6in; margin: 0; }
-            body { 
-                font-family: 'Courier New', monospace; 
-                margin: 0.1in; 
-                padding: 0; 
-                width: 3.8in;
-            }
-            .header { text-align: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 15px; }
-            h1 { font-size: 28px; font-weight: 900; margin: 0; text-transform: uppercase; line-height: 1.1; }
-            h2 { font-size: 16px; margin: 5px 0 0 0; color: #333; }
-            
-            .items { text-align: left; }
-            .item { 
-                margin-bottom: 15px; 
-                font-size: 18px; 
-                font-weight: bold; 
-                border-bottom: 1px dashed #999; 
-                padding-bottom: 5px;
-            }
-            .details { font-size: 14px; font-weight: normal; margin-top: 2px; }
-            .footer { 
-                margin-top: 30px; 
-                text-align: center; 
-                font-size: 12px; 
-                border-top: 2px solid black; 
-                padding-top: 10px;
-            }
-            .shipping-alert {
-                display: block;
-                margin-top: 5px;
-                background: black;
-                color: white;
-                font-size: 12px;
-                padding: 2px 5px;
-                border-radius: 4px;
-                width: fit-content;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>${order.customer_name}</h1>
-            <h2>Order #${order.id}</h2>
-          </div>
-          <div class="items">
-            ${order.cart_data.map(item => `
-              <div class="item">
-                <div style="display:flex; justify-content:space-between;">
-                    <span>${item.productName}</span>
-                    <span>${item.size}</span>
-                </div>
-                ${item.customizations.logos.length > 0 ? `<div class="details">Logos: ${item.customizations.logos.map(l => l.type).join(', ')}</div>` : ''}
-                ${item.customizations.names.length > 0 ? `<div class="details">Names: ${item.customizations.names.map(n => n.text).join(', ')}</div>` : ''}
-                ${item.needsShipping ? `<span class="shipping-alert">📦 SHIP TO HOME</span>` : ''}
-              </div>
-            `).join('')}
-          </div>
-          <div class="footer">
-            ${new Date(order.created_at).toLocaleString()}
-            <br>
-            <strong>Total Items: ${order.cart_data.length}</strong>
-          </div>
-        </body>
-      </html>
-    `);
+    printWindow.document.write(`<html><head><title>Order #${order.id}</title><style>@page { size: 4in 6in; margin: 0; } body { font-family: 'Courier New', monospace; margin: 0.1in; padding: 0; width: 3.8in; } .header { text-align: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 15px; } h1 { font-size: 28px; font-weight: 900; margin: 0; text-transform: uppercase; line-height: 1.1; } h2 { font-size: 16px; margin: 5px 0 0 0; color: #333; } .items { text-align: left; } .item { margin-bottom: 15px; font-size: 18px; font-weight: bold; border-bottom: 1px dashed #999; padding-bottom: 5px; } .details { font-size: 14px; font-weight: normal; margin-top: 2px; } .footer { margin-top: 30px; text-align: center; font-size: 12px; border-top: 2px solid black; padding-top: 10px; } .shipping-alert { display: block; margin-top: 5px; background: black; color: white; font-size: 12px; padding: 2px 5px; border-radius: 4px; width: fit-content; }</style></head><body><div class="header"><h1>${order.customer_name}</h1><h2>Order #${order.id}</h2></div><div class="items">${order.cart_data.map(item => `<div class="item"><div style="display:flex; justify-content:space-between;"><span>${item.productName}</span><span>${item.size}</span></div>${item.customizations.logos.length > 0 ? `<div class="details">Logos: ${item.customizations.logos.map(l => l.type).join(', ')}</div>` : ''}${item.customizations.names.length > 0 ? `<div class="details">Names: ${item.customizations.names.map(n => n.text).join(', ')}</div>` : ''}${item.needsShipping ? `<span class="shipping-alert">📦 SHIP TO HOME</span>` : ''}</div>`).join('')}</div><div class="footer">${new Date(order.created_at).toLocaleString()}<br><strong>Total Items: ${order.cart_data.length}</strong></div></body></html>`);
     printWindow.document.close();
-    
-    // Slight delay to ensure styles load before printing
-    setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-        printWindow.close(); 
-    }, 500);
+    setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
   // --- ACTIONS & HANDLERS ---
@@ -193,7 +103,6 @@ export default function AdminPage() {
   const fetchLogos = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); setLoading(false); };
   const fetchSettings = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); } setLoading(false); };
   const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, offer_back_names: offerBackNames, offer_metallic: offerMetallic }).eq('id', 1); alert("Event Settings Saved!"); };
-  
   const closeEvent = async () => { const input = prompt("⚠️ CLOSE EVENT? Type 'CLOSE' to confirm:"); if (input !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
 
   const handleStatusChange = async (orderId, newStatus) => {
@@ -207,16 +116,37 @@ export default function AdminPage() {
   };
 
   const deleteOrder = async (orderId, cartData) => { if (!confirm("⚠️ Cancel Order & Restore Inventory?")) return; setLoading(true); if (cartData && Array.isArray(cartData)) { for (const item of cartData) { if (item.productId && item.size) { const { data: currentItem } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (currentItem) { await supabase.from('inventory').update({ count: currentItem.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); alert("Order deleted and inventory restored."); };
-
   const addLogo = async (e) => { e.preventDefault(); if (!newLogoName) return; await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, sort_order: logos.length + 1 }]); setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); };
   const deleteLogo = async (id) => { if (!confirm("Delete this logo?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   const deleteProduct = async (id) => { if (!confirm("Are you sure? This deletes the product AND inventory.")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
   const updateStock = async (productId, size, field, value) => { setInventory(inventory.map(i => (i.product_id === productId && i.size === size) ? { ...i, [field]: value } : i)); await supabase.from('inventory').update({ [field]: value }).eq('product_id', productId).eq('size', size); };
   const updatePrice = async (productId, newPrice) => { setProducts(products.map(p => p.id === productId ? { ...p, base_price: newPrice } : p)); await supabase.from('products').update({ base_price: newPrice }).eq('id', productId); };
-  const handleAddProduct = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing fields"); const { error } = await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, type: 'top', sort_order: 99 }]); if (error) return alert("Error: " + error.message); const sizes = ['Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL']; const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true })); await supabase.from('inventory').insert(invRows); alert("Product Created!"); setNewProdId(''); setNewProdName(''); fetchInventory(); };
-  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   const toggleLogo = async (id, currentStatus) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !currentStatus } : l)); await supabase.from('logos').update({ active: !currentStatus }).eq('id', id); };
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | '); return [o.id, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
+  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
+
+  const handleAddProduct = async (e) => {
+    e.preventDefault();
+    if (!newProdId || !newProdName) return alert("Missing fields");
+    
+    // NEW: Include image_url
+    const { error } = await supabase.from('products').insert([{ 
+        id: newProdId.toLowerCase().replace(/\s/g, '_'), 
+        name: newProdName, 
+        base_price: newProdPrice, 
+        image_url: newProdImage, // <--- SAVING IMAGE
+        type: 'top', 
+        sort_order: 99 
+    }]);
+
+    if (error) return alert("Error: " + error.message);
+    const sizes = ['Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL'];
+    const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }));
+    await supabase.from('inventory').insert(invRows);
+    
+    alert("Product Created!"); 
+    setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory();
+  };
 
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
@@ -241,23 +171,16 @@ export default function AdminPage() {
                     <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Total Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div>
                     <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Top Seller</p><p className="text-lg font-bold text-gray-800 truncate" title={stats.topItem}>{stats.topItem}</p></div>
                  </div>
-                 
-                 {/* AUTO PRINT TOGGLE */}
                  <div className="flex justify-between items-center mb-4 bg-gray-100 p-4 rounded border border-gray-200">
                     <div className="flex items-center gap-3">
                         <label className="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" className="sr-only peer" checked={autoPrintEnabled} onChange={e => setAutoPrintEnabled(e.target.checked)} />
                             <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-900"></div>
-                            <span className="ml-3 font-bold text-gray-900">Auto-Print New Orders</span>
+                            <span className="ml-3 font-bold text-gray-900">Auto-Print</span>
                         </label>
-                        <span className="text-xs text-gray-500 hidden md:inline">(Plays sound + Opens print window)</span>
                     </div>
-                    <div className="flex gap-2">
-                        <button onClick={downloadCSV} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">📥 CSV</button>
-                        <button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button>
-                    </div>
+                    <div className="flex gap-2"><button onClick={downloadCSV} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">📥 CSV</button><button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button></div>
                  </div>
-
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto">
                     <table className="w-full text-left min-w-[800px]">
                     <thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead>
@@ -268,10 +191,7 @@ export default function AdminPage() {
                             <td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                             <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
                             <td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size}){item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                            <td className="p-4 align-top text-right">
-                                <button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button>
-                                <button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button>
-                            </td>
+                            <td className="p-4 align-top text-right"><button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td>
                         </tr>
                         ))}
                     </tbody>
@@ -280,9 +200,60 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* ... OTHER TABS (Inventory, Logos, Settings) preserved below ... */}
-        {activeTab === 'inventory' && (<div className="grid md:grid-cols-3 gap-6"><div className="md:col-span-1"><div className="bg-white p-6 rounded-lg shadow border border-gray-200 sticky top-4"><h2 className="font-bold text-xl mb-4">Add New Item</h2><form onSubmit={handleAddProduct} className="space-y-3"><div><label className="text-xs font-bold uppercase">ID (Unique)</label><input className="w-full border p-2 rounded" placeholder="e.g. hat_blue" value={newProdId} onChange={e => setNewProdId(e.target.value)} /></div><div><label className="text-xs font-bold uppercase">Display Name</label><input className="w-full border p-2 rounded" placeholder="e.g. Blue Hat" value={newProdName} onChange={e => setNewProdName(e.target.value)} /></div><div><label className="text-xs font-bold uppercase">Price ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div><button className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700">Create Product</button></form></div></div><div className="md:col-span-2 space-y-6"><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Prices</div><table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th><th className="p-3 text-right">Action</th></tr></thead><tbody>{products.map((prod) => (<tr key={prod.id} className="border-b hover:bg-gray-50"><td className="p-3 font-bold text-gray-700">{prod.name}</td><td className="p-3"><div className="flex items-center gap-1"><span className="text-gray-500 font-bold">$</span><input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price} onChange={(e) => updatePrice(prod.id, e.target.value)} /></div></td><td className="p-3 text-right"><button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button></td></tr>))}</tbody></table></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Stock</div><table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead><tbody>{inventory.map((item) => (<tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}><td className="p-4 font-bold">{getProductName(item.product_id)}</td><td className="p-4">{item.size}</td><td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td><td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td></tr>))}</tbody></table></div></div></div>)}
+        {/* INVENTORY TAB - UPDATED WITH IMAGES */}
+        {activeTab === 'inventory' && (
+            <div className="grid md:grid-cols-3 gap-6">
+                <div className="md:col-span-1">
+                    <div className="bg-white p-6 rounded-lg shadow border border-gray-200 sticky top-4">
+                        <h2 className="font-bold text-xl mb-4">Add New Item</h2>
+                        <form onSubmit={handleAddProduct} className="space-y-3">
+                            <div><label className="text-xs font-bold uppercase">ID (Unique)</label><input className="w-full border p-2 rounded" placeholder="e.g. hat_blue" value={newProdId} onChange={e => setNewProdId(e.target.value)} /></div>
+                            <div><label className="text-xs font-bold uppercase">Display Name</label><input className="w-full border p-2 rounded" placeholder="e.g. Blue Hat" value={newProdName} onChange={e => setNewProdName(e.target.value)} /></div>
+                            <div><label className="text-xs font-bold uppercase">Image URL (Optional)</label><input className="w-full border p-2 rounded" placeholder="https://..." value={newProdImage} onChange={e => setNewProdImage(e.target.value)} /></div>
+                            <div><label className="text-xs font-bold uppercase">Price ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div>
+                            <button className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700">Create Product</button>
+                        </form>
+                    </div>
+                </div>
+                <div className="md:col-span-2 space-y-6">
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
+                        <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Prices</div>
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-100 border-b">
+                                <tr>
+                                    <th className="p-3">Image</th>
+                                    <th className="p-3">Product Name</th>
+                                    <th className="p-3">Base Price ($)</th>
+                                    <th className="p-3 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {products.map((prod) => (
+                                    <tr key={prod.id} className="border-b hover:bg-gray-50">
+                                        <td className="p-3">
+                                            {prod.image_url ? 
+                                                <img src={prod.image_url} alt={prod.name} className="w-12 h-12 object-contain border rounded bg-gray-50" /> 
+                                                : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">No Img</div>
+                                            }
+                                        </td>
+                                        <td className="p-3 font-bold text-gray-700">{prod.name}</td>
+                                        <td className="p-3"><div className="flex items-center gap-1"><span className="text-gray-500 font-bold">$</span><input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price} onChange={(e) => updatePrice(prod.id, e.target.value)} /></div></td>
+                                        <td className="p-3 text-right"><button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {/* Stock Manager (Hidden for brevity but included in full code block) */}
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Stock</div><table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead><tbody>{inventory.map((item) => (<tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}><td className="p-4 font-bold">{getProductName(item.product_id)}</td><td className="p-4">{item.size}</td><td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td><td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td></tr>))}</tbody></table></div>
+                </div>
+            </div>
+        )}
+
+        {/* LOGOS TAB */}
         {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><button className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Logo</button></form></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Logo Label</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b hover:bg-gray-50"><td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td><td className="p-4 font-bold text-lg">{logo.label}</td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td></tr>))}</tbody></table></div></div>)}
+        
+        {/* SETTINGS TAB */}
         {activeTab === 'settings' && (<div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div><div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div></div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><p className="text-gray-500 text-sm mb-4">Clicking this will mark ALL active orders as "Completed" (clearing the TV Board). This does not delete sales data.</p><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>)}
 
       </div>
