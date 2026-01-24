@@ -32,13 +32,12 @@ export default function AdminPage() {
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
-  
-  // NEW: Logo Form
   const [newLogoName, setNewLogoName] = useState('');
-  const [newLogoUrl, setNewLogoUrl] = useState(''); // Store the image link
+  const [newLogoUrl, setNewLogoUrl] = useState('');
 
   const handleLogin = (e) => { e.preventDefault(); if (passcode === 'swim2025') { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } };
 
+  // --- FETCHERS ---
   const fetchOrders = async () => {
     if (!supabase) return;
     setLoading(true);
@@ -65,42 +64,19 @@ export default function AdminPage() {
     setLoading(false);
   };
 
+  // --- ACTIONS ---
   const addLogo = async (e) => {
     e.preventDefault();
     if (!newLogoName) return;
-    await supabase.from('logos').insert([{ 
-        label: newLogoName, 
-        image_url: newLogoUrl, // Save the URL
-        sort_order: logos.length + 1 
-    }]);
-    setNewLogoName('');
-    setNewLogoUrl('');
+    await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, sort_order: logos.length + 1 }]);
+    setNewLogoName(''); setNewLogoUrl('');
     fetchLogos();
-  };
-
-  const toggleLogo = async (id, currentStatus) => {
-    setLogos(logos.map(l => l.id === id ? { ...l, active: !currentStatus } : l));
-    await supabase.from('logos').update({ active: !currentStatus }).eq('id', id);
   };
 
   const handleStatusChange = async (orderId, newStatus, customerName, phone) => {
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
     if (newStatus === 'ready') { try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone, message: `Hi ${customerName}! Your Swag Order is READY for pickup!` }) }); } catch (e) {} }
-  };
-
-  const downloadCSV = () => {
-    if (!orders.length) return;
-    const headers = ['ID', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items'];
-    const rows = orders.map(o => {
-      const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup";
-      const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | ');
-      return [o.id, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(',');
-    });
-    const link = document.createElement("a");
-    link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n'));
-    link.download = "orders.csv";
-    link.click();
   };
 
   const updateStock = async (productId, size, field, value) => {
@@ -119,7 +95,37 @@ export default function AdminPage() {
     alert("Product Created!"); setNewProdId(''); setNewProdName(''); fetchInventory();
   };
 
+  // --- DELETE FUNCTIONS ---
+  const deleteLogo = async (id) => {
+    if (!confirm("Are you sure you want to delete this logo?")) return;
+    await supabase.from('logos').delete().eq('id', id);
+    fetchLogos();
+  };
+
+  const deleteOrder = async (id) => {
+    if (!confirm("Delete this order? This cannot be undone.")) return;
+    await supabase.from('orders').delete().eq('id', id);
+    fetchOrders();
+  };
+
+  // Note: Deleting products is risky because of inventory links, so we'll just hide them for now via Active toggle.
+  
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
+  const toggleLogo = async (id, currentStatus) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !currentStatus } : l)); await supabase.from('logos').update({ active: !currentStatus }).eq('id', id); };
+
+  const downloadCSV = () => {
+    if (!orders.length) return;
+    const headers = ['ID', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items'];
+    const rows = orders.map(o => {
+      const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup";
+      const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | ');
+      return [o.id, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(',');
+    });
+    const link = document.createElement("a");
+    link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n'));
+    link.download = "orders.csv";
+    link.click();
+  };
 
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
@@ -143,13 +149,16 @@ export default function AdminPage() {
                  </div>
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto">
                     <table className="w-full text-left min-w-[800px]">
-                    <thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Customer</th><th className="p-4">Items</th></tr></thead>
+                    <thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4">Action</th></tr></thead>
                     <tbody>
                         {orders.map((order) => (
                         <tr key={order.id} className="border-b hover:bg-gray-50">
                             <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value, order.customer_name, order.phone)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
                             <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
                             <td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size}){item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
+                            <td className="p-4 align-top text-right">
+                                <button onClick={() => deleteOrder(order.id)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Delete Order">🗑️</button>
+                            </td>
                         </tr>
                         ))}
                     </tbody>
@@ -192,7 +201,7 @@ export default function AdminPage() {
 
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                     <table className="w-full text-left">
-                        <thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Logo Label</th><th className="p-4 text-right">Visible?</th></tr></thead>
+                        <thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Logo Label</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead>
                         <tbody>
                             {logos.map((logo) => (
                                 <tr key={logo.id} className="border-b hover:bg-gray-50">
@@ -200,8 +209,11 @@ export default function AdminPage() {
                                         {logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}
                                     </td>
                                     <td className="p-4 font-bold text-lg">{logo.label}</td>
-                                    <td className="p-4 text-right">
+                                    <td className="p-4 text-center">
                                         <input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" />
+                                    </td>
+                                    <td className="p-4 text-right">
+                                        <button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button>
                                     </td>
                                 </tr>
                             ))}
