@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
-import * as XLSX from 'xlsx'; // <--- NEW IMPORT
+import * as XLSX from 'xlsx'; 
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -18,6 +18,11 @@ const STATUSES = {
   shipped: { label: 'Shipped', color: 'bg-green-200 text-green-900 border-green-400' },
   completed: { label: 'Completed', color: 'bg-gray-200 text-gray-600 border-gray-400' },
 };
+
+const SIZE_ORDER = [
+    'Youth XS', 'Youth S', 'Youth M', 'Youth L', 
+    'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'
+];
 
 export default function AdminPage() {
   const [passcode, setPasscode] = useState('');
@@ -119,49 +124,47 @@ export default function AdminPage() {
             for (const row of data) {
                 // Expected columns: product_id, size, count
                 if (row.product_id && row.size && row.count !== undefined) {
-                    // Try to find if this row exists first
-                    const { data: existing } = await supabase
-                        .from('inventory')
-                        .select('id')
-                        .eq('product_id', row.product_id)
-                        .eq('size', row.size)
-                        .single();
-
+                    const { data: existing } = await supabase.from('inventory').select('id').eq('product_id', row.product_id).eq('size', row.size).single();
                     if (existing) {
-                        // Update existing
                         await supabase.from('inventory').update({ count: row.count }).eq('id', existing.id);
                     } else {
-                        // Insert new (e.g. for new sizes added via Excel)
-                        await supabase.from('inventory').insert([{ 
-                            product_id: row.product_id, 
-                            size: row.size, 
-                            count: row.count,
-                            active: true 
-                        }]);
+                        await supabase.from('inventory').insert([{ product_id: row.product_id, size: row.size, count: row.count, active: true }]);
                     }
                     successCount++;
                 }
             }
-            alert(`Successfully updated/inserted ${successCount} rows!`);
+            alert(`Successfully updated ${successCount} items!`);
             fetchInventory();
-        } catch (err) {
-            console.error(err);
-            alert("Error parsing file. Make sure headers are: product_id, size, count");
-        }
+        } catch (err) { console.error(err); alert("Error parsing file."); }
         setLoading(false);
     };
     reader.readAsBinaryString(file);
   };
 
+  // --- UPDATED DOWNLOAD TEMPLATE (Current Stock) ---
   const downloadTemplate = () => {
-    const data = [
-        { product_id: 'hoodie_aqua', size: 'Adult M', count: 50 },
-        { product_id: 'tee_red', size: 'Youth S', count: 20 },
-    ];
+    if (inventory.length === 0) return alert("No inventory data found!");
+    
+    // Create rows from current inventory
+    const data = inventory.map(item => ({
+        // We add "Product Name" column so it's easier for you to read
+        // The uploader will ignore this column, but it helps you know what "hat_blue" is
+        Product_Name: getProductName(item.product_id),
+        product_id: item.product_id, 
+        size: item.size, 
+        count: item.count 
+    }));
+
+    // Sort comfortably (by Product Name, then by Size Order)
+    data.sort((a, b) => {
+        if (a.Product_Name !== b.Product_Name) return a.Product_Name.localeCompare(b.Product_Name);
+        return SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size);
+    });
+
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
-    XLSX.writeFile(wb, "inventory_template.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Current_Inventory");
+    XLSX.writeFile(wb, "Lev_Inventory_Update.xlsx");
   };
 
   // --- ACTIONS & HANDLERS ---
@@ -189,10 +192,9 @@ export default function AdminPage() {
   const deleteProduct = async (id) => { if (!confirm("Are you sure? This deletes the product AND inventory.")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
   const updateStock = async (productId, size, field, value) => { setInventory(inventory.map(i => (i.product_id === productId && i.size === size) ? { ...i, [field]: value } : i)); await supabase.from('inventory').update({ [field]: value }).eq('product_id', productId).eq('size', size); };
   const updatePrice = async (productId, newPrice) => { setProducts(products.map(p => p.id === productId ? { ...p, base_price: newPrice } : p)); await supabase.from('products').update({ base_price: newPrice }).eq('id', productId); };
-  const handleAddProduct = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing fields"); const { error } = await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, type: 'top', sort_order: 99 }]); if (error) return alert("Error: " + error.message); const sizes = ['Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL']; const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true })); await supabase.from('inventory').insert(invRows); alert("Product Created!"); setNewProdId(''); setNewProdName(''); fetchInventory(); };
-  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   const toggleLogo = async (id, currentStatus) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !currentStatus } : l)); await supabase.from('logos').update({ active: !currentStatus }).eq('id', id); };
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | '); return [o.id, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
+  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
 
   const handleAddProductWithSizeUpdates = async (e) => {
     e.preventDefault();
@@ -275,7 +277,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* INVENTORY TAB - UPDATED WITH BULK UPLOAD */}
+        {/* INVENTORY TAB - UPDATED WITH DYNAMIC DOWNLOAD */}
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1 space-y-6">
@@ -294,10 +296,10 @@ export default function AdminPage() {
                     {/* BULK UPLOAD BOX */}
                     <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200">
                         <h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2>
-                        <p className="text-xs text-blue-800 mb-4">Upload an Excel file to update stock counts instantly.</p>
+                        <p className="text-xs text-blue-800 mb-4">Download your CURRENT inventory, edit the numbers, and upload it back.</p>
                         
                         <div className="flex gap-2 mb-4">
-                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Template</button>
+                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Inventory</button>
                         </div>
 
                         <input 
