@@ -31,6 +31,10 @@ export default function OrderForm() {
   // Event Settings
   const [eventName, setEventName] = useState('Swag Shop');
   const [eventLogo, setEventLogo] = useState('');
+  
+  // NEW: Customization Settings
+  const [showBackNames, setShowBackNames] = useState(true);
+  const [showMetallic, setShowMetallic] = useState(true);
 
   // Form State
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -69,6 +73,8 @@ export default function OrderForm() {
       if (settings) {
         setEventName(settings.event_name);
         setEventLogo(settings.event_logo_url);
+        setShowBackNames(settings.offer_back_names ?? true);
+        setShowMetallic(settings.offer_metallic ?? true);
       }
     };
     fetchData();
@@ -175,7 +181,6 @@ export default function OrderForm() {
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
             
-            {/* DYNAMIC HEADER */}
             <div className="bg-blue-900 text-white p-6 text-center">
               {eventLogo ? (
                 <img src={eventLogo} alt="Event Logo" className="h-16 mx-auto mb-2" />
@@ -249,10 +254,24 @@ export default function OrderForm() {
                 ))}
                 <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Name</button>
               </section>
-              <section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300">
-                <label className="flex items-center gap-3 mb-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} /><span className="font-bold text-black">Back Name List (+$5)</span></label>
-                <label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} /><span className="font-bold text-black">Metallic Highlight (+$5)</span></label>
-              </section>
+              
+              {/* CONDITIONALLY RENDER THIS SECTION */}
+              {showBackNames && (
+                  <section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300">
+                    <label className="flex items-center gap-3 mb-2 cursor-pointer">
+                        <input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} />
+                        <span className="font-bold text-black">Back Name List (+$5)</span>
+                    </label>
+                    {/* ONLY SHOW METALLIC IF ENABLED */}
+                    {showMetallic && (
+                        <label className="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} />
+                            <span className="font-bold text-black">Metallic Highlight (+$5)</span>
+                        </label>
+                    )}
+                  </section>
+              )}
+
             </div>
             <div className="bg-gray-900 text-white p-6 sticky bottom-0 flex justify-between items-center"><div><p className="text-gray-300 text-xs uppercase">Current Item</p><p className="text-2xl font-bold">${calculateTotal()}</p></div><button onClick={handleAddToCart} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform">Add to Cart</button></div>
           </div>

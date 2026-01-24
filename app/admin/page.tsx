@@ -38,6 +38,8 @@ export default function AdminPage() {
   // Event Settings
   const [eventName, setEventName] = useState('');
   const [eventLogo, setEventLogo] = useState('');
+  const [offerBackNames, setOfferBackNames] = useState(true);
+  const [offerMetallic, setOfferMetallic] = useState(true);
 
   const handleLogin = (e) => { e.preventDefault(); if (passcode === 'swim2025') { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } };
 
@@ -75,13 +77,20 @@ export default function AdminPage() {
     if (data) {
         setEventName(data.event_name);
         setEventLogo(data.event_logo_url || '');
+        setOfferBackNames(data.offer_back_names ?? true);
+        setOfferMetallic(data.offer_metallic ?? true);
     }
     setLoading(false);
   };
 
   // --- ACTIONS ---
   const saveSettings = async () => {
-    await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo }).eq('id', 1);
+    await supabase.from('event_settings').update({ 
+        event_name: eventName, 
+        event_logo_url: eventLogo,
+        offer_back_names: offerBackNames,
+        offer_metallic: offerMetallic
+    }).eq('id', 1);
     alert("Event Settings Saved!");
   };
 
@@ -247,23 +256,38 @@ export default function AdminPage() {
                     
                     <div className="mb-4">
                         <label className="block text-gray-700 font-bold mb-2">Event Name</label>
-                        <input 
-                            className="w-full border p-3 rounded text-lg" 
-                            placeholder="e.g. 2026 Winter Regionals" 
-                            value={eventName} 
-                            onChange={e => setEventName(e.target.value)} 
-                        />
+                        <input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} />
                     </div>
 
                     <div className="mb-6">
                         <label className="block text-gray-700 font-bold mb-2">Event Logo URL</label>
-                        <input 
-                            className="w-full border p-3 rounded text-lg" 
-                            placeholder="https://..." 
-                            value={eventLogo} 
-                            onChange={e => setEventLogo(e.target.value)} 
-                        />
+                        <input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />
                         {eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}
+                    </div>
+
+                    {/* NEW: CUSTOMIZATION TOGGLES */}
+                    <div className="mb-6 bg-gray-50 p-4 rounded border">
+                        <label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label>
+                        
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="font-bold text-gray-800">Offer Back Name List?</span>
+                            <input 
+                                type="checkbox" 
+                                checked={offerBackNames} 
+                                onChange={(e) => setOfferBackNames(e.target.checked)} 
+                                className="w-6 h-6"
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <span className="font-bold text-gray-800">Offer Metallic Upgrade?</span>
+                            <input 
+                                type="checkbox" 
+                                checked={offerMetallic} 
+                                onChange={(e) => setOfferMetallic(e.target.checked)} 
+                                className="w-6 h-6"
+                            />
+                        </div>
                     </div>
 
                     <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow">
