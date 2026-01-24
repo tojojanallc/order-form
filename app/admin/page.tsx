@@ -97,9 +97,7 @@ export default function AdminPage() {
   };
 
   const updatePrice = async (productId, newPrice) => {
-    // 1. Update UI
     setProducts(products.map(p => p.id === productId ? { ...p, base_price: newPrice } : p));
-    // 2. Update DB
     await supabase.from('products').update({ base_price: newPrice }).eq('id', productId);
   };
 
@@ -112,6 +110,23 @@ export default function AdminPage() {
     const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }));
     await supabase.from('inventory').insert(invRows);
     alert("Product Created!"); setNewProdId(''); setNewProdName(''); fetchInventory();
+  };
+
+  // --- NEW: DELETE PRODUCT ---
+  const deleteProduct = async (id) => {
+    if (!confirm("Are you sure? This will delete the product AND all its inventory counts.")) return;
+    
+    // 1. Delete Inventory first (Clean up FKs)
+    await supabase.from('inventory').delete().eq('product_id', id);
+    
+    // 2. Delete Product
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    
+    if (error) {
+        alert("Error deleting product: " + error.message);
+    } else {
+        fetchInventory(); // Refresh list
+    }
   };
 
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
@@ -183,11 +198,11 @@ export default function AdminPage() {
                     </div>
                 </div>
                 <div className="md:col-span-2 space-y-6">
-                    {/* NEW: PRODUCT PRICE MANAGER */}
+                    {/* PRODUCT PRICE MANAGER */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                         <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Prices</div>
                         <table className="w-full text-left">
-                            <thead className="bg-gray-100 border-b"><tr><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th></tr></thead>
+                            <thead className="bg-gray-100 border-b"><tr><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th><th className="p-3 text-right">Action</th></tr></thead>
                             <tbody>
                                 {products.map((prod) => (
                                     <tr key={prod.id} className="border-b hover:bg-gray-50">
@@ -195,13 +210,11 @@ export default function AdminPage() {
                                         <td className="p-3">
                                             <div className="flex items-center gap-1">
                                                 <span className="text-gray-500 font-bold">$</span>
-                                                <input 
-                                                    type="number" 
-                                                    className="w-20 border border-gray-300 rounded p-1 font-bold text-black" 
-                                                    value={prod.base_price} 
-                                                    onChange={(e) => updatePrice(prod.id, e.target.value)}
-                                                />
+                                                <input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price} onChange={(e) => updatePrice(prod.id, e.target.value)} />
                                             </div>
+                                        </td>
+                                        <td className="p-3 text-right">
+                                            <button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button>
                                         </td>
                                     </tr>
                                 ))}
@@ -209,7 +222,7 @@ export default function AdminPage() {
                         </table>
                     </div>
 
-                    {/* EXISTING: STOCK MANAGER */}
+                    {/* STOCK MANAGER */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                         <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Stock</div>
                         <table className="w-full text-left">
