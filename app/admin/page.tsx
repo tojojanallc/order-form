@@ -65,23 +65,42 @@ export default function AdminPage() {
   };
 
   // --- ACTIONS ---
-  const addLogo = async (e) => {
-    e.preventDefault();
-    if (!newLogoName) return;
-    await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, sort_order: logos.length + 1 }]);
-    setNewLogoName(''); setNewLogoUrl('');
-    fetchLogos();
-  };
-
   const handleStatusChange = async (orderId, newStatus, customerName, phone) => {
     setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
     await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
     if (newStatus === 'ready') { try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone, message: `Hi ${customerName}! Your Swag Order is READY for pickup!` }) }); } catch (e) {} }
   };
 
+  const addLogo = async (e) => {
+    e.preventDefault();
+    if (!newLogoName) return;
+    await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, sort_order: logos.length + 1 }]);
+    setNewLogoName(''); setNewLogoUrl(''); fetchLogos();
+  };
+
+  const deleteLogo = async (id) => {
+    if (!confirm("Delete this logo?")) return;
+    await supabase.from('logos').delete().eq('id', id);
+    fetchLogos();
+  };
+
+  const deleteOrder = async (id) => {
+    if (!confirm("Delete this order?")) return;
+    await supabase.from('orders').delete().eq('id', id);
+    fetchOrders();
+  };
+
+  // --- INVENTORY & PRICE UPDATES ---
   const updateStock = async (productId, size, field, value) => {
     setInventory(inventory.map(i => (i.product_id === productId && i.size === size) ? { ...i, [field]: value } : i));
     await supabase.from('inventory').update({ [field]: value }).eq('product_id', productId).eq('size', size);
+  };
+
+  const updatePrice = async (productId, newPrice) => {
+    // 1. Update UI
+    setProducts(products.map(p => p.id === productId ? { ...p, base_price: newPrice } : p));
+    // 2. Update DB
+    await supabase.from('products').update({ base_price: newPrice }).eq('id', productId);
   };
 
   const handleAddProduct = async (e) => {
@@ -95,21 +114,6 @@ export default function AdminPage() {
     alert("Product Created!"); setNewProdId(''); setNewProdName(''); fetchInventory();
   };
 
-  // --- DELETE FUNCTIONS ---
-  const deleteLogo = async (id) => {
-    if (!confirm("Are you sure you want to delete this logo?")) return;
-    await supabase.from('logos').delete().eq('id', id);
-    fetchLogos();
-  };
-
-  const deleteOrder = async (id) => {
-    if (!confirm("Delete this order? This cannot be undone.")) return;
-    await supabase.from('orders').delete().eq('id', id);
-    fetchOrders();
-  };
-
-  // Note: Deleting products is risky because of inventory links, so we'll just hide them for now via Active toggle.
-  
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   const toggleLogo = async (id, currentStatus) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !currentStatus } : l)); await supabase.from('logos').update({ active: !currentStatus }).eq('id', id); };
 
@@ -136,7 +140,7 @@ export default function AdminPage() {
           <h1 className="text-3xl font-black text-gray-900">Admin Dashboard</h1>
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
             <button onClick={() => { setActiveTab('orders'); fetchOrders(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'orders' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Orders</button>
-            <button onClick={() => { setActiveTab('inventory'); fetchInventory(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'inventory' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Products</button>
+            <button onClick={() => { setActiveTab('inventory'); fetchInventory(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'inventory' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Products & Stock</button>
             <button onClick={() => { setActiveTab('logos'); fetchLogos(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'logos' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Logos</button>
           </div>
         </div>
@@ -156,9 +160,7 @@ export default function AdminPage() {
                             <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value, order.customer_name, order.phone)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
                             <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
                             <td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size}){item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                            <td className="p-4 align-top text-right">
-                                <button onClick={() => deleteOrder(order.id)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Delete Order">🗑️</button>
-                            </td>
+                            <td className="p-4 align-top text-right"><button onClick={() => deleteOrder(order.id)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Delete Order">🗑️</button></td>
                         </tr>
                         ))}
                     </tbody>
@@ -180,9 +182,49 @@ export default function AdminPage() {
                         </form>
                     </div>
                 </div>
-                <div className="md:col-span-2">
+                <div className="md:col-span-2 space-y-6">
+                    {/* NEW: PRODUCT PRICE MANAGER */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
-                        <table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead><tbody>{inventory.map((item) => (<tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}><td className="p-4 font-bold">{getProductName(item.product_id)}</td><td className="p-4">{item.size}</td><td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td><td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td></tr>))}</tbody></table>
+                        <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Prices</div>
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-100 border-b"><tr><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th></tr></thead>
+                            <tbody>
+                                {products.map((prod) => (
+                                    <tr key={prod.id} className="border-b hover:bg-gray-50">
+                                        <td className="p-3 font-bold text-gray-700">{prod.name}</td>
+                                        <td className="p-3">
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-gray-500 font-bold">$</span>
+                                                <input 
+                                                    type="number" 
+                                                    className="w-20 border border-gray-300 rounded p-1 font-bold text-black" 
+                                                    value={prod.base_price} 
+                                                    onChange={(e) => updatePrice(prod.id, e.target.value)}
+                                                />
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* EXISTING: STOCK MANAGER */}
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
+                        <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide">Manage Stock</div>
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-100 border-b"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead>
+                            <tbody>
+                                {inventory.map((item) => (
+                                <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
+                                    <td className="p-4 font-bold">{getProductName(item.product_id)}</td>
+                                    <td className="p-4">{item.size}</td>
+                                    <td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td>
+                                    <td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td>
+                                </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -205,16 +247,10 @@ export default function AdminPage() {
                         <tbody>
                             {logos.map((logo) => (
                                 <tr key={logo.id} className="border-b hover:bg-gray-50">
-                                    <td className="p-4">
-                                        {logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}
-                                    </td>
+                                    <td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td>
                                     <td className="p-4 font-bold text-lg">{logo.label}</td>
-                                    <td className="p-4 text-center">
-                                        <input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" />
-                                    </td>
-                                    <td className="p-4 text-right">
-                                        <button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button>
-                                    </td>
+                                    <td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td>
+                                    <td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td>
                                 </tr>
                             ))}
                         </tbody>
