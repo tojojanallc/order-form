@@ -25,11 +25,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: "PrintNode not fully configured." }, { status: 400 });
     }
 
-    console.log(`✅ Config Found. Sending to Printer ID: ${settings.printnode_printer_id}`);
-
     // 2. Prepare Job
-    // 'content' is already base64 encoded from the frontend (btoa).
-    // PrintNode expects base64 for "raw_base64" content type.
+    // Note: We use "raw_base64" for simple text.
     const printJob = {
       printerId: parseInt(settings.printnode_printer_id),
       title: title || "Swag Order",
@@ -38,10 +35,10 @@ export async function POST(req: Request) {
       source: "Lev Custom App"
     };
 
-    // 3. Send to PrintNode API
+    // 3. Send to PrintNode API (CORRECTED URL)
     const authHeader = 'Basic ' + btoa(settings.printnode_api_key + ':');
     
-    const response = await fetch('https://api.printnode.com/printing', {
+    const response = await fetch('https://api.printnode.com/printjobs', { 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -54,7 +51,6 @@ export async function POST(req: Request) {
     console.log(`📬 PrintNode Response (${response.status}):`, responseText);
 
     if (!response.ok) {
-        // If response is 401, key is wrong. If 422, content is wrong.
         return NextResponse.json({ success: false, error: `API Error ${response.status}: ${responseText || 'Unknown PrintNode Error'}` }, { status: 500 });
     }
 
