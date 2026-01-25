@@ -62,6 +62,18 @@ export default function AdminPage() {
   const [pnPrinterId, setPnPrinterId] = useState('');
   const [availablePrinters, setAvailablePrinters] = useState([]);
 
+  // --- 1. INITIAL LOAD (The Fix is Here) ---
+  useEffect(() => {
+    if (isAuthorized) {
+        // Load EVERYTHING immediately on login
+        fetchOrders();
+        fetchSettings(); // <--- Critical Fix: Load settings (inc. PrintNode keys) immediately
+        fetchInventory();
+        fetchLogos();
+        fetchGuests();
+    }
+  }, [isAuthorized]);
+
   useEffect(() => {
     if (orders.length > 0) {
         const revenue = orders.reduce((sum, o) => sum + (o.total_price || 0), 0);
@@ -103,57 +115,26 @@ export default function AdminPage() {
       setLoading(false);
   };
 
-const printLabel = async (order) => {
-    // 1. Mark as printed locally first
+  const printLabel = async (order) => {
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
     await supabase.from('orders').update({ printed: true }).eq('id', order.id);
 
     if (pnEnabled) {
-        // Validation
-        if (!pnApiKey) return alert("❌ Error: PrintNode API Key is missing in settings.");
-        if (!pnPrinterId) return alert("❌ Error: No Printer ID selected in settings.");
-
-        // --- CLOUD PRINT ---
-        // Construct simple text receipt
-        const lines = [
-            `ORDER #${order.id}`,
-            `${order.customer_name}`,
-            `Time: ${new Date(order.created_at).toLocaleTimeString()}`,
-            `------------------------`
-        ];
-        order.cart_data.forEach(item => {
-            lines.push(`[ ] ${item.productName} (${item.size})`);
-            if(item.customizations.mainDesign) lines.push(`    Main: ${item.customizations.mainDesign}`);
-            item.customizations.logos.forEach(l => lines.push(`    + ${l.type} (${l.position})`));
-            item.customizations.names.forEach(n => lines.push(`    + Name: ${n.text}`));
-            if(item.needsShipping) lines.push(`    ** SHIP TO HOME **`);
-            lines.push(` `);
-        });
-
-        const content = lines.join("\n");
-
+        // --- CLOUD PRINT (PrintNode) ---
+        const content = `ORDER #${order.id}\n${order.customer_name}\n\n${order.cart_data.map(i => `[ ] ${i.productName} (${i.size})\n    ${i.customizations.logos.map(l=>l.type).join(', ')}`).join('\n')}`;
+        
         try {
-            // alert("Attempting to send to PrintNode..."); // Uncomment for deep debug
             const res = await fetch('/api/printnode', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content: btoa(content), title: `Order ${order.id}` }) 
             });
-            
             const data = await res.json();
-            
-            if (!data.success) {
-                alert("❌ PrintNode Failed: " + data.error);
-            } else {
-                console.log("✅ Printed! Job ID:", data.id);
-                // Success - silent (or add alert("Sent!") if you prefer)
-            }
-        } catch(e) { 
-            alert("❌ Network/Server Error: " + e.message); 
-        }
-
+            if(!data.success) alert("PrintNode Error: " + data.error);
+            else console.log("Sent to cloud");
+        } catch(e) { alert("Cloud Print Failed: " + e.message); }
     } else {
-        // --- FALLBACK: BROWSER POPUP ---
+        // --- BROWSER PRINT ---
         const printWindow = window.open('', '', 'width=800,height=600');
         if (!printWindow) { alert("⚠️ POPUP BLOCKED"); return; }
 
@@ -170,7 +151,7 @@ const printLabel = async (order) => {
   };
 
   // --- ACTIONS ---
-  const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
+  const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); /* Fetching moved to useEffect */ } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   const fetchOrders = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); setLoading(false); };
   const fetchInventory = async () => { if (!supabase) return; setLoading(true); const { data: prodData } = await supabase.from('products').select('*').order('sort_order'); const { data: invData } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (prodData) setProducts(prodData); if (invData) setInventory(invData); setLoading(false); };
   const fetchLogos = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); setLoading(false); };
@@ -225,36 +206,7 @@ const printLabel = async (order) => {
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | '); return [o.id, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing fields"); const { error } = await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: 'top', sort_order: 99 }]); if (error) return alert("Error: " + error.message); const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL']; const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true })); await supabase.from('inventory').insert(invRows); alert("Product Created!"); setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory(); };
-  
-  const handleGuestUpload = (e) => { 
-      const file = e.target.files[0]; 
-      if (!file) return; 
-      setLoading(true); 
-      const reader = new FileReader(); 
-      reader.onload = async (evt) => { 
-          try { 
-              const bstr = evt.target.result; 
-              const wb = XLSX.read(bstr, { type: 'binary' }); 
-              const ws = wb.Sheets[wb.SheetNames[0]]; 
-              const data = XLSX.utils.sheet_to_json(ws); 
-              if (!data.length) return alert("Empty"); 
-              let count = 0; 
-              for (const row of data) { 
-                  const name = row['Name'] || row['name'] || row['Guest']; 
-                  const size = row['Size'] || row['size']; 
-                  if (name) { 
-                      await supabase.from('guests').insert([{ name: String(name).trim(), size: size ? String(size).trim() : null, has_ordered: false }]); 
-                      count++; 
-                  } 
-              } 
-              alert(`Imported ${count} guests!`); 
-              fetchGuests(); 
-          } catch (err) { alert("Error"); } 
-          setLoading(false); 
-      }; 
-      reader.readAsBinaryString(file); 
-  };
-
+  const handleGuestUpload = (e) => { const file = e.target.files[0]; if (!file) return; setLoading(true); const reader = new FileReader(); reader.onload = async (evt) => { try { const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' }); const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws); if (!data.length) return alert("Empty"); let count = 0; for (const row of data) { const name = row['Name'] || row['name'] || row['Guest']; const size = row['Size'] || row['size']; if (name) { await supabase.from('guests').insert([{ name: String(name).trim(), size: size ? String(size).trim() : null, has_ordered: false }]); count++; } } alert(`Imported ${count} guests!`); fetchGuests(); } catch (err) { alert("Error"); } setLoading(false); }; reader.readAsBinaryString(file); };
   const resetGuest = async (id) => { if (confirm("Allow again?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("DELETE ALL?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   const handleBulkUpload = (e) => { const file = e.target.files[0]; if (!file) return; setUploadLog(["Reading..."]); setLoading(true); const reader = new FileReader(); reader.onload = async (evt) => { try { const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' }); const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws); if (!data.length) { setUploadLog(["❌ Empty."]); setLoading(false); return; } const { data: dbProducts } = await supabase.from('products').select('id'); const validIds = {}; if (dbProducts) dbProducts.forEach(p => validIds[p.id.toLowerCase()] = p.id); const logs = []; let updatedCount = 0; let errorCount = 0; for (let i = 0; i < data.length; i++) { const row = data[i]; const normalizedRow = {}; Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().trim()] = row[k]; }); const pid = normalizedRow['product_id']; const size = normalizedRow['size']; const count = normalizedRow['count']; if (!pid || !size || count === undefined) { logs.push(`⚠️ Row ${i+2}: Skipped`); continue; } const rawId = String(pid).trim(); let finalId = rawId; if (!validIds[rawId] && validIds[rawId.toLowerCase()]) finalId = validIds[rawId.toLowerCase()]; const cleanSize = String(size).trim(); const cleanCount = parseInt(count); const { data: existing, error: findError } = await supabase.from('inventory').select('product_id').eq('product_id', finalId).eq('size', cleanSize).maybeSingle(); if (findError) { logs.push(`❌ Row ${i+2}: Error ${findError.message}`); errorCount++; continue; } if (existing) { await supabase.from('inventory').update({ count: cleanCount }).eq('product_id', finalId).eq('size', cleanSize); logs.push(`✅ Updated ${finalId}`); updatedCount++; } else { await supabase.from('inventory').insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]); logs.push(`✨ Created ${finalId}`); updatedCount++; } } if (errorCount > 0) setUploadLog([`⚠️ ERRORS: ${errorCount}`, ...logs]); else setUploadLog([`🎉 SUCCESS: ${updatedCount}`, ...logs]); await fetchInventory(); } catch (err) { setUploadLog(["❌ FATAL:", err.message]); } setLoading(false); e.target.value = null; }; reader.readAsBinaryString(file); };
@@ -288,7 +240,7 @@ const printLabel = async (order) => {
                     <div className="flex items-center gap-3"><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={autoPrintEnabled} onChange={e => setAutoPrintEnabled(e.target.checked)} /><div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-900"></div><span className="ml-3 font-bold text-gray-900">Auto-Print</span></label></div>
                     <div className="flex gap-2"><button onClick={downloadCSV} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">📥 CSV</button><button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button></div>
                  </div>
-                 <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"><table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{orders.map((order) => (<tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}><td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td><td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td><td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td><td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size}){item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td><td className="p-4 align-top text-right"><button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td></tr>))}</tbody></table></div>
+                 <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"><table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{orders.map((order) => (<tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}><td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td><td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td><td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td><td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size})<div className="text-xs text-blue-900 font-bold mt-1">Main: {item.customizations.mainDesign}</div>{item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500">{item.customizations.logos.map(l => l.type).join(', ')}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td><td className="p-4 align-top text-right"><button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td></tr>))}</tbody></table></div>
             </div>
         )}
 
