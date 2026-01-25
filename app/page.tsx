@@ -10,7 +10,7 @@ const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supaba
 
 const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
 
-// --- VISUAL ZONES CONFIG ---
+// --- POSITION LOGIC CONFIG ---
 const ZONES = {
     top: [
         { id: 'full_front', label: 'Full Front', type: 'logo' },
@@ -25,46 +25,6 @@ const ZONES = {
         { id: 'right_thigh', label: 'Right Thigh', type: 'both' },
         { id: 'back_pocket', label: 'Back Pocket', type: 'logo' }
     ]
-};
-
-// --- VISUAL COMPONENT ---
-const GarmentVisual = ({ type, activeZones }) => {
-    if (type === 'bottom') {
-        return (
-            <div className="relative w-48 h-64 bg-gray-100 rounded-lg border border-gray-300 mx-auto flex items-center justify-center mb-4">
-                <svg viewBox="0 0 100 100" className="w-full h-full text-gray-300 fill-current">
-                    <path d="M30 10 L30 90 L45 90 L48 40 L52 40 L55 90 L70 90 L70 10 Z" stroke="gray" strokeWidth="2" fill="white" />
-                </svg>
-                {/* Zones */}
-                <div className="absolute top-20 left-8 text-[10px] font-bold text-blue-600 border border-blue-600 bg-white px-1 rounded">Left Thigh</div>
-                <div className="absolute top-10 right-2 text-[10px] font-bold text-gray-400">Pants View</div>
-            </div>
-        );
-    }
-    // Default to Top (Hoodie/Tee)
-    return (
-        <div className="flex gap-4 justify-center mb-6">
-            {/* FRONT */}
-            <div className="relative w-40 h-48 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold text-gray-400 uppercase">Front</div>
-                {/* Shape */}
-                <div className="absolute inset-4 border-2 border-dashed border-gray-300 rounded-t-3xl rounded-b-lg"></div>
-                {/* Zones */}
-                <div className="absolute top-12 left-12 w-8 h-8 border border-blue-500 bg-blue-50 flex items-center justify-center text-[8px] text-blue-800 font-bold rounded-full">Left Chest</div>
-                <div className="absolute top-20 left-1/2 -translate-x-1/2 w-24 h-16 border border-green-500 bg-green-50 flex items-center justify-center text-[8px] text-green-800 font-bold rounded">Full Front</div>
-            </div>
-            
-            {/* BACK */}
-            <div className="relative w-40 h-48 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold text-gray-400 uppercase">Back</div>
-                <div className="absolute inset-4 border-2 border-dashed border-gray-300 rounded-t-3xl rounded-b-lg bg-gray-50"></div>
-                
-                {/* Name Zones */}
-                <div className="absolute top-12 left-1/2 -translate-x-1/2 w-20 h-6 border border-purple-500 bg-purple-100 flex items-center justify-center text-[8px] text-purple-900 font-bold rounded">Name (Top)</div>
-                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-20 h-10 border border-orange-500 bg-orange-100 flex items-center justify-center text-[8px] text-orange-900 font-bold rounded">Name (Jersey)</div>
-            </div>
-        </div>
-    );
 };
 
 export default function OrderForm() {
@@ -188,11 +148,7 @@ export default function OrderForm() {
   const getPositionOptions = (itemType) => {
       if (!selectedProduct) return [];
       
-      // Determine if product is 'top' (hoodie, tee) or 'bottom' (pants)
-      // This logic assumes you use IDs like 'hat_', 'hoodie_', 'pant_' or have a type column
-      // We will look at the `type` column from DB if available, else guess based on ID
       const pType = selectedProduct.type || (selectedProduct.id.includes('pant') || selectedProduct.id.includes('jogger') ? 'bottom' : 'top');
-      
       const availableZones = ZONES[pType] || ZONES.top;
 
       // Filter: 'logo' can only go on logo spots, 'name' on name spots
@@ -307,8 +263,6 @@ export default function OrderForm() {
   }
 
   const showPrice = paymentMode === 'retail';
-  // Determine diagram type based on product ID or Type (Simple heuristic)
-  const productType = selectedProduct.type || (selectedProduct.id.includes('pant') || selectedProduct.id.includes('jogger') ? 'bottom' : 'top');
 
   return (
     <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900">
@@ -323,10 +277,6 @@ export default function OrderForm() {
               
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
-                
-                {/* --- GARMENT VISUALIZER --- */}
-                <GarmentVisual type={productType} />
-
                 {selectedProduct && selectedProduct.image_url && (<div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center"><img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" /></div>)}
                 {isOutOfStock ? (<div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert"><p className="font-bold">⚠️ Out of Stock at Event</p><p className="text-sm">We can ship this to your home!</p></div>) : <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">✓ In Stock ({currentStock} available)</div>}
                 <div className="grid md:grid-cols-2 gap-4">
@@ -335,7 +285,7 @@ export default function OrderForm() {
                 </div>
               </section>
 
-              {/* --- 2. MAIN DESIGN (MANDATORY, RADIO) --- */}
+              {/* --- 2. MAIN DESIGN --- */}
               {mainOptions.length > 0 && (
                   <section>
                     <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
@@ -359,7 +309,7 @@ export default function OrderForm() {
                   </section>
               )}
 
-              {/* --- 3. ACCENT LOGOS (CONDITIONAL) --- */}
+              {/* --- 3. ACCENT LOGOS --- */}
               {accentOptions.length > 0 && (
                   <section>
                     <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
