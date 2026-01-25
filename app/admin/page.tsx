@@ -88,6 +88,7 @@ export default function AdminPage() {
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
+  // --- ACTIONS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   const fetchOrders = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); setLoading(false); };
   const fetchInventory = async () => { if (!supabase) return; setLoading(true); const { data: prodData } = await supabase.from('products').select('*').order('sort_order'); const { data: invData } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (prodData) setProducts(prodData); if (invData) setInventory(invData); setLoading(false); };
@@ -109,7 +110,43 @@ export default function AdminPage() {
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | '); return [o.id, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing fields"); const { error } = await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: 'top', sort_order: 99 }]); if (error) return alert("Error: " + error.message); const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL']; const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true })); await supabase.from('inventory').insert(invRows); alert("Product Created!"); setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory(); };
-  const handleGuestUpload = (e) => { const file = e.target.files[0]; if (!file) return; setLoading(true); const reader = new FileReader(); reader.onload = async (evt) => { try { const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' }); const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws); if (!data.length) return alert("Empty"); let count = 0; for (const row of data) { const name = row['Name'] || row['name'] || row['Guest']; if (name) { await supabase.from('guests').insert([{ name: String(name).trim(), has_ordered: false }]); count++; } } alert(`Imported ${count}`); fetchGuests(); } catch (err) { alert("Error"); } setLoading(false); }; reader.readAsBinaryString(file); };
+  
+  // --- UPDATED GUEST UPLOAD: NOW INCLUDES SIZE ---
+  const handleGuestUpload = (e) => { 
+      const file = e.target.files[0]; 
+      if (!file) return; 
+      setLoading(true); 
+      const reader = new FileReader(); 
+      reader.onload = async (evt) => { 
+          try { 
+              const bstr = evt.target.result; 
+              const wb = XLSX.read(bstr, { type: 'binary' }); 
+              const ws = wb.Sheets[wb.SheetNames[0]]; 
+              const data = XLSX.utils.sheet_to_json(ws); 
+              if (!data.length) return alert("Empty"); 
+              
+              let count = 0; 
+              for (const row of data) { 
+                  const name = row['Name'] || row['name'] || row['Guest']; 
+                  const size = row['Size'] || row['size']; 
+
+                  if (name) { 
+                      await supabase.from('guests').insert([{ 
+                          name: String(name).trim(), 
+                          size: size ? String(size).trim() : null,
+                          has_ordered: false 
+                      }]); 
+                      count++; 
+                  } 
+              } 
+              alert(`Imported ${count} guests!`); 
+              fetchGuests(); 
+          } catch (err) { alert("Error"); } 
+          setLoading(false); 
+      }; 
+      reader.readAsBinaryString(file); 
+  };
+
   const resetGuest = async (id) => { if (confirm("Allow again?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("DELETE ALL?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   const handleBulkUpload = (e) => { const file = e.target.files[0]; if (!file) return; setUploadLog(["Reading..."]); setLoading(true); const reader = new FileReader(); reader.onload = async (evt) => { try { const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' }); const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws); if (!data.length) { setUploadLog(["❌ Empty."]); setLoading(false); return; } const { data: dbProducts } = await supabase.from('products').select('id'); const validIds = {}; if (dbProducts) dbProducts.forEach(p => validIds[p.id.toLowerCase()] = p.id); const logs = []; let updatedCount = 0; let errorCount = 0; for (let i = 0; i < data.length; i++) { const row = data[i]; const normalizedRow = {}; Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().trim()] = row[k]; }); const pid = normalizedRow['product_id']; const size = normalizedRow['size']; const count = normalizedRow['count']; if (!pid || !size || count === undefined) { logs.push(`⚠️ Row ${i+2}: Skipped`); continue; } const rawId = String(pid).trim(); let finalId = rawId; if (!validIds[rawId] && validIds[rawId.toLowerCase()]) finalId = validIds[rawId.toLowerCase()]; const cleanSize = String(size).trim(); const cleanCount = parseInt(count); const { data: existing, error: findError } = await supabase.from('inventory').select('product_id').eq('product_id', finalId).eq('size', cleanSize).maybeSingle(); if (findError) { logs.push(`❌ Row ${i+2}: Error ${findError.message}`); errorCount++; continue; } if (existing) { await supabase.from('inventory').update({ count: cleanCount }).eq('product_id', finalId).eq('size', cleanSize); logs.push(`✅ Updated ${finalId}`); updatedCount++; } else { await supabase.from('inventory').insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]); logs.push(`✨ Created ${finalId}`); updatedCount++; } } if (errorCount > 0) setUploadLog([`⚠️ ERRORS: ${errorCount}`, ...logs]); else setUploadLog([`🎉 SUCCESS: ${updatedCount}`, ...logs]); await fetchInventory(); } catch (err) { setUploadLog(["❌ FATAL:", err.message]); } setLoading(false); e.target.value = null; }; reader.readAsBinaryString(file); };
@@ -158,11 +195,23 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* GUESTS TAB (Preserved) */}
+        {/* GUESTS TAB - UPDATED TO SHOW SIZE COLUMN */}
         {activeTab === 'guests' && (
             <div className="max-w-4xl mx-auto">
-                <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Guest List Management</h2><div className="flex gap-4"><input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /><button onClick={clearGuestList} className="text-red-600 font-bold text-sm whitespace-nowrap">🗑️ Clear All</button></div></div>
-                <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-4">Guest Name</th><th className="p-4 text-center">Status</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{guests.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-gray-500">No guests.</td></tr> : guests.map((guest) => (<tr key={guest.id} className="border-b hover:bg-gray-50"><td className="p-4 font-bold">{guest.name}</td><td className="p-4 text-center">{guest.has_ordered ? <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">REDEEMED</span> : <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Waiting</span>}</td><td className="p-4 text-right"><button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline">Reset</button></td></tr>))}</tbody></table></div>
+                <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Guest List Management</h2><p className="text-sm text-gray-500 mb-2">Upload Excel with columns: <strong>Name</strong> and <strong>Size</strong> (optional)</p><div className="flex gap-4"><input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /><button onClick={clearGuestList} className="text-red-600 font-bold text-sm whitespace-nowrap">🗑️ Clear All</button></div></div>
+                <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
+                    <table className="w-full text-left">
+                        <thead className="bg-gray-100 border-b"><tr><th className="p-4">Guest Name</th><th className="p-4">Pre-Size</th><th className="p-4 text-center">Status</th><th className="p-4 text-right">Action</th></tr></thead>
+                        <tbody>{guests.length === 0 ? <tr><td colSpan="4" className="p-8 text-center text-gray-500">No guests.</td></tr> : guests.map((guest) => (
+                            <tr key={guest.id} className="border-b hover:bg-gray-50">
+                                <td className="p-4 font-bold">{guest.name}</td>
+                                <td className="p-4 font-mono text-sm text-blue-800">{guest.size || '-'}</td>
+                                <td className="p-4 text-center">{guest.has_ordered ? <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">REDEEMED</span> : <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Waiting</span>}</td>
+                                <td className="p-4 text-right"><button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline">Reset</button></td>
+                            </tr>
+                        ))}</tbody>
+                    </table>
+                </div>
             </div>
         )}
 
