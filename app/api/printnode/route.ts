@@ -6,34 +6,30 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function POST(req: Request) {
-  console.log("🖨️ PrintNode API Route Hit"); // Debug Log
+  console.log("🖨️ PrintNode API Hit");
 
   try {
     const body = await req.json();
     const { content, title } = body;
 
-    // 1. Get Settings
+    // 1. Fetch Settings
     const { data: settings, error: dbError } = await supabase.from('event_settings').select('*').single();
     
     if (dbError || !settings) {
-        console.error("❌ DB Error:", dbError);
-        return NextResponse.json({ success: false, error: "Database settings not found" }, { status: 500 });
+        console.error("❌ DB Settings Error:", dbError);
+        return NextResponse.json({ success: false, error: "Database settings not found." }, { status: 500 });
     }
-
-    console.log("⚙️ Settings Loaded:", { 
-        enabled: settings.printnode_enabled, 
-        hasKey: !!settings.printnode_api_key, 
-        printerId: settings.printnode_printer_id 
-    });
 
     if (!settings.printnode_enabled || !settings.printnode_api_key || !settings.printnode_printer_id) {
-      console.error("❌ Missing Config");
-      return NextResponse.json({ success: false, error: "PrintNode not configured in Admin" }, { status: 400 });
+        console.error("❌ PrintNode not configured in settings.");
+        return NextResponse.json({ success: false, error: "PrintNode not fully configured." }, { status: 400 });
     }
 
+    console.log(`✅ Config Found. Sending to Printer ID: ${settings.printnode_printer_id}`);
+
     // 2. Prepare Job
-    // Note: We use "raw_base64" for text. If using a Zebra printer, this should ideally be ZPL code.
-    // For standard text, some printers might ignore it, but PrintNode should still receive the job.
+    // 'content' is already base64 encoded from the frontend (btoa).
+    // PrintNode expects base64 for "raw_base64" content type.
     const printJob = {
       printerId: parseInt(settings.printnode_printer_id),
       title: title || "Swag Order",
@@ -42,29 +38,31 @@ export async function POST(req: Request) {
       source: "Lev Custom App"
     };
 
-    // 3. Send to PrintNode
-    console.log("🚀 Sending to PrintNode...");
+    // 3. Send to PrintNode API
+    const authHeader = 'Basic ' + btoa(settings.printnode_api_key + ':');
+    
     const response = await fetch('https://api.printnode.com/printing', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Authorization: Basic base64(apiKey:)
-        'Authorization': 'Basic ' + Buffer.from(settings.printnode_api_key + ':').toString('base64')
+        'Authorization': authHeader
       },
       body: JSON.stringify(printJob)
     });
 
-    const respText = await response.text();
-    console.log("📬 PrintNode Response:", response.status, respText);
+    const responseText = await response.text();
+    console.log(`📬 PrintNode Response (${response.status}):`, responseText);
 
     if (!response.ok) {
-        return NextResponse.json({ success: false, error: "PrintNode API Error: " + respText }, { status: 500 });
+        // If response is 401, key is wrong. If 422, content is wrong.
+        return NextResponse.json({ success: false, error: `API Error ${response.status}: ${responseText || 'Unknown PrintNode Error'}` }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, id: respText });
+    // Success returns the Job ID (e.g. 123456)
+    return NextResponse.json({ success: true, id: responseText });
 
   } catch (err: any) {
-    console.error("❌ Fatal Error:", err);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    console.error("❌ Fatal Route Error:", err);
+    return NextResponse.json({ success: false, error: "Server Error: " + err.message }, { status: 500 });
   }
 }
