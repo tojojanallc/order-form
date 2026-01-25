@@ -48,10 +48,11 @@ export default function AdminPage() {
   const [newLogoCategory, setNewLogoCategory] = useState('accent'); 
   const [eventName, setEventName] = useState('');
   const [eventLogo, setEventLogo] = useState('');
+  const [headerColor, setHeaderColor] = useState('#1e3a8a'); // NEW: Header Color State
   const [paymentMode, setPaymentMode] = useState('retail'); 
   const [offerBackNames, setOfferBackNames] = useState(true);
   const [offerMetallic, setOfferMetallic] = useState(true);
-  const [offerPersonalization, setOfferPersonalization] = useState(true); // NEW
+  const [offerPersonalization, setOfferPersonalization] = useState(true);
 
   useEffect(() => {
     if (orders.length > 0) {
@@ -90,7 +91,6 @@ export default function AdminPage() {
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
-  // --- ACTIONS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   const fetchOrders = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); setLoading(false); };
   const fetchInventory = async () => { if (!supabase) return; setLoading(true); const { data: prodData } = await supabase.from('products').select('*').order('sort_order'); const { data: invData } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (prodData) setProducts(prodData); if (invData) setInventory(invData); setLoading(false); };
@@ -104,10 +104,11 @@ export default function AdminPage() {
       if (data) { 
           setEventName(data.event_name); 
           setEventLogo(data.event_logo_url || ''); 
+          setHeaderColor(data.header_color || '#1e3a8a'); // NEW: Fetch color
           setPaymentMode(data.payment_mode || 'retail'); 
           setOfferBackNames(data.offer_back_names ?? true); 
           setOfferMetallic(data.offer_metallic ?? true); 
-          setOfferPersonalization(data.offer_personalization ?? true); // NEW
+          setOfferPersonalization(data.offer_personalization ?? true);
       } 
       setLoading(false); 
   };
@@ -116,10 +117,11 @@ export default function AdminPage() {
       await supabase.from('event_settings').update({ 
           event_name: eventName, 
           event_logo_url: eventLogo, 
+          header_color: headerColor, // NEW: Save Color
           payment_mode: paymentMode, 
           offer_back_names: offerBackNames, 
           offer_metallic: offerMetallic,
-          offer_personalization: offerPersonalization // NEW
+          offer_personalization: offerPersonalization 
       }).eq('id', 1); 
       alert("Event Settings Saved!"); 
   };
@@ -272,7 +274,7 @@ export default function AdminPage() {
             </div>
         )}
         
-        {/* SETTINGS TAB - UPDATED WITH PERSONALIZATION TOGGLE */}
+        {/* SETTINGS TAB - UPDATED WITH HEADER COLOR */}
         {activeTab === 'settings' && (
             <div className="max-w-xl mx-auto">
                 <div className="bg-white p-8 rounded-lg shadow border border-gray-200">
@@ -280,6 +282,9 @@ export default function AdminPage() {
                     <div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div>
                     <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div>
                     
+                    {/* HEADER COLOR PICKER */}
+                    <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Header Color</label><div className="flex gap-4 items-center"><input type="color" className="w-16 h-10 cursor-pointer border rounded" value={headerColor} onChange={e => setHeaderColor(e.target.value)} /><span className="text-sm text-gray-500">{headerColor}</span></div></div>
+
                     <div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200">
                         <label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label>
                         <div className="space-y-2">
@@ -293,7 +298,7 @@ export default function AdminPage() {
                         <div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div>
                         <div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div>
                         
-                        {/* NEW: PERSONALIZATION TOGGLE */}
+                        {/* PERSONALIZATION TOGGLE */}
                         <div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Custom Names?</span><input type="checkbox" checked={offerPersonalization} onChange={(e) => setOfferPersonalization(e.target.checked)} className="w-6 h-6" /></div>
                     </div>
                     

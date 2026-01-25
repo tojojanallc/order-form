@@ -54,10 +54,11 @@ export default function OrderForm() {
 
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
+  const [headerColor, setHeaderColor] = useState('#1e3a8a'); // NEW
   const [paymentMode, setPaymentMode] = useState('retail'); 
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
-  const [showPersonalization, setShowPersonalization] = useState(true); // NEW
+  const [showPersonalization, setShowPersonalization] = useState(true);
 
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [size, setSize] = useState('');
@@ -96,10 +97,11 @@ export default function OrderForm() {
       if (settings) {
         setEventName(settings.event_name);
         setEventLogo(settings.event_logo_url);
+        setHeaderColor(settings.header_color || '#1e3a8a'); // NEW: LOAD COLOR
         setPaymentMode(settings.payment_mode || 'retail');
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
-        setShowPersonalization(settings.offer_personalization ?? true); // NEW
+        setShowPersonalization(settings.offer_personalization ?? true);
       }
 
       const { data: guestData } = await supabase.from('guests').select('*');
@@ -108,6 +110,7 @@ export default function OrderForm() {
     fetchData();
   }, []);
 
+  // --- AUTO-FILL SIZE ON GUEST VERIFY ---
   const verifyGuest = () => {
       if (!guestSearch.trim()) return;
       setGuestError('');
@@ -285,12 +288,13 @@ export default function OrderForm() {
       <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
-            <div className="bg-blue-900 text-white p-6 text-center">
+            {/* DYNAMIC HEADER COLOR */}
+            <div className="text-white p-6 text-center" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-16 mx-auto mb-2" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
-              <p className="text-blue-100 text-sm mt-1">{eventLogo ? eventName : 'Order Form'}</p>
+              <p className="text-white text-opacity-80 text-sm mt-1">{eventLogo ? eventName : 'Order Form'}</p>
             </div>
+            
             <div className="p-6 space-y-8">
-              
               {/* --- HOSTED MODE LOGIN (Step 0) --- */}
               {paymentMode === 'hosted' && !selectedGuest && (
                   <div className="text-center py-10">
@@ -390,7 +394,6 @@ export default function OrderForm() {
                             </div>
                             ))}
                             
-                            {/* LOGIC: IF RETAIL (ALWAYS SHOW) -OR- IF HOSTED (SHOW ONLY IF 0 NAMES) */}
                             {(paymentMode === 'retail' || names.length === 0) && (
                                 <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Your Name to Your Apparel</button>
                             )}
@@ -441,7 +444,6 @@ export default function OrderForm() {
                         </>
                     )}
 
-                    {/* HIDE SHIPPING IN HOSTED MODE */}
                     {cartRequiresShipping && paymentMode !== 'hosted' && (
                     <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once"><h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} /><div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div><input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} /></div>
                     )}
