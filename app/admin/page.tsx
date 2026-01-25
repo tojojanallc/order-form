@@ -88,7 +88,7 @@ export default function AdminPage() {
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
-  // --- PARANOID MODE BULK UPLOAD ---
+  // --- FIX: NO ID DEPENDENCY UPLOAD ---
   const handleBulkUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -118,7 +118,6 @@ export default function AdminPage() {
 
             for (let i = 0; i < data.length; i++) {
                 const row = data[i];
-                // Normalize keys
                 const normalizedRow = {};
                 Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().trim()] = row[k]; });
 
@@ -139,19 +138,29 @@ export default function AdminPage() {
                 const cleanSize = String(size).trim();
                 const cleanCount = parseInt(count);
 
-                // --- THE PARANOID CHECK ---
-                // Find existing
-                const { data: existing, error: findError } = await supabase.from('inventory').select('id').eq('product_id', finalId).eq('size', cleanSize).single();
+                // --- KEY FIX: DO NOT SELECT 'ID' ---
+                // We check if it exists using maybeSingle(), but we don't ask for the 'id' column
+                const { data: existing, error: findError } = await supabase
+                    .from('inventory')
+                    .select('product_id') // Only asking for product_id, which we know exists
+                    .eq('product_id', finalId)
+                    .eq('size', cleanSize)
+                    .maybeSingle(); // Returns null if not found (instead of throwing error)
 
-                if (findError && findError.code !== 'PGRST116') { // PGRST116 is "Row not found", which is fine
-                     logs.push(`❌ Row ${i+2}: DB Find Error: ${findError.message}`);
+                if (findError) {
+                     logs.push(`❌ Row ${i+2}: DB Check Failed: ${findError.message}`);
                      errorCount++;
                      continue;
                 }
 
                 if (existing) {
-                    // UPDATE
-                    const { error: updateError } = await supabase.from('inventory').update({ count: cleanCount }).eq('id', existing.id);
+                    // UPDATE using Product ID + Size (Composite Key)
+                    const { error: updateError } = await supabase
+                        .from('inventory')
+                        .update({ count: cleanCount })
+                        .eq('product_id', finalId) // Filter by Product
+                        .eq('size', cleanSize);    // Filter by Size
+
                     if (updateError) {
                         logs.push(`❌ Row ${i+2}: Update Failed! ${updateError.message}`);
                         errorCount++;
@@ -161,7 +170,10 @@ export default function AdminPage() {
                     }
                 } else {
                     // INSERT
-                    const { error: insertError } = await supabase.from('inventory').insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]);
+                    const { error: insertError } = await supabase
+                        .from('inventory')
+                        .insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]);
+                    
                     if (insertError) {
                         logs.push(`❌ Row ${i+2}: Insert Failed! ${insertError.message}`);
                         errorCount++;
@@ -178,7 +190,7 @@ export default function AdminPage() {
                 setUploadLog([`🎉 SUCCESS! Processed ${updatedCount} items.`, ...logs]);
             }
             
-            await fetchInventory(); // Explicit fetch after done
+            await fetchInventory(); 
 
         } catch (err) { console.error(err); setUploadLog(["❌ FATAL ERROR:", err.message]); }
         setLoading(false);
