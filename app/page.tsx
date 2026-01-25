@@ -54,7 +54,7 @@ export default function OrderForm() {
 
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
-  const [headerColor, setHeaderColor] = useState('#1e3a8a'); // NEW
+  const [headerColor, setHeaderColor] = useState('#1e3a8a'); 
   const [paymentMode, setPaymentMode] = useState('retail'); 
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
@@ -97,7 +97,7 @@ export default function OrderForm() {
       if (settings) {
         setEventName(settings.event_name);
         setEventLogo(settings.event_logo_url);
-        setHeaderColor(settings.header_color || '#1e3a8a'); // NEW: LOAD COLOR
+        setHeaderColor(settings.header_color || '#1e3a8a'); 
         setPaymentMode(settings.payment_mode || 'retail');
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
@@ -275,7 +275,7 @@ export default function OrderForm() {
                   <div className="text-6xl mb-4">🎉</div>
                   <h1 className="text-3xl font-black text-green-800 mb-2">Order Received!</h1>
                   <p className="text-gray-600 mb-6">Your gear is being prepared.</p>
-                  <button onClick={() => { setOrderComplete(false); setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); window.location.reload(); }} className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700">Done</button>
+                  <button onClick={() => { setOrderComplete(false); setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); window.location.reload(); }} className="text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:opacity-90" style={{ backgroundColor: headerColor }}>Done</button>
               </div>
           </div>
       );
@@ -302,7 +302,10 @@ export default function OrderForm() {
                       <p className="mb-6 text-gray-600">Please verify your name to get started.</p>
                       <div className="flex gap-2 max-w-md mx-auto">
                             <input className="flex-1 p-3 border-2 border-gray-400 rounded-lg text-lg text-black" placeholder="Enter full name" value={guestSearch} onChange={(e) => { setGuestSearch(e.target.value); setGuestError(''); }} />
-                            <button onClick={verifyGuest} className="bg-blue-800 text-white font-bold px-6 rounded-lg hover:bg-blue-900">Start</button>
+                            
+                            {/* DYNAMIC BUTTON COLOR */}
+                            <button onClick={verifyGuest} className="text-white font-bold px-6 rounded-lg shadow hover:opacity-90" style={{ backgroundColor: headerColor }}>Start</button>
+                      
                       </div>
                       {guestError && <p className="text-red-600 text-sm font-bold mt-4 bg-red-50 p-2 rounded inline-block">{guestError}</p>}
                   </div>
@@ -408,7 +411,12 @@ export default function OrderForm() {
             
             {/* Footer only shows if not hosted OR (hosted + verified) */}
             {(paymentMode === 'retail' || selectedGuest) && (
-                <div className="bg-gray-900 text-white p-6 sticky bottom-0 flex justify-between items-center"><div><p className="text-gray-300 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p><p className="text-2xl font-bold">{showPrice ? `$${calculateTotal()}` : 'Free'}</p></div><button onClick={handleAddToCart} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform" disabled={!selectedProduct}>Add to Cart</button></div>
+                <div className="text-white p-6 sticky bottom-0 flex justify-between items-center" style={{ backgroundColor: headerColor }}><div><p className="text-white text-opacity-80 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p><p className="text-2xl font-bold">{showPrice ? `$${calculateTotal()}` : 'Free'}</p></div>
+                
+                {/* DYNAMIC FOOTER BUTTON */}
+                <button onClick={handleAddToCart} className="bg-white text-black px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform hover:opacity-90" disabled={!selectedProduct}>Add to Cart</button>
+                
+                </div>
             )}
           </div>
         </div>
@@ -417,7 +425,7 @@ export default function OrderForm() {
         {(paymentMode === 'retail' || selectedGuest) && (
             <div className="md:col-span-1">
             <div className="bg-white shadow-xl rounded-xl border border-gray-300 sticky top-4">
-                <div className="bg-gray-800 text-white p-4 rounded-t-xl"><h2 className="font-bold text-lg">Your Cart</h2><p className="text-gray-300 text-sm">{cart.length} items</p></div>
+                <div className="text-white p-4 rounded-t-xl" style={{ backgroundColor: headerColor }}><h2 className="font-bold text-lg">Your Cart</h2><p className="text-white text-opacity-80 text-sm">{cart.length} items</p></div>
                 <div className="p-4 space-y-4 max-h-[50vh] overflow-y-auto">
                 {cart.length === 0 ? <p className="text-gray-500 text-center italic py-10">Cart is empty.</p> : cart.map((item) => (
                     <div key={item.id} className="border-b border-gray-200 pb-4 last:border-0 relative group">
@@ -450,7 +458,13 @@ export default function OrderForm() {
                     
                     {showPrice && <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>}
                     
-                    <button onClick={handleCheckout} disabled={isSubmitting || (paymentMode === 'hosted' && !selectedGuest)} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting || (paymentMode === 'hosted' && !selectedGuest) ? 'bg-gray-400' : 'bg-blue-800 hover:bg-blue-900'}`}>
+                    {/* DYNAMIC CHECKOUT BUTTON */}
+                    <button 
+                        onClick={handleCheckout} 
+                        disabled={isSubmitting || (paymentMode === 'hosted' && !selectedGuest)} 
+                        className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting ? 'bg-gray-400' : 'hover:opacity-90'}`}
+                        style={{ backgroundColor: isSubmitting ? 'gray' : headerColor }}
+                    >
                         {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay Now with Stripe")}
                     </button>
                 </div>
