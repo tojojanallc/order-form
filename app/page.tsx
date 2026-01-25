@@ -3,13 +3,69 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { POSITIONS } from './config'; 
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
+
+// --- VISUAL ZONES CONFIG ---
+const ZONES = {
+    top: [
+        { id: 'full_front', label: 'Full Front', type: 'logo' },
+        { id: 'left_chest', label: 'Left Chest', type: 'logo' },
+        { id: 'left_sleeve', label: 'Left Sleeve', type: 'both' },
+        { id: 'back_center', label: 'Back Center', type: 'both' },
+        { id: 'back_bottom', label: 'Back Bottom (Jersey)', type: 'name' },
+        { id: 'hood', label: 'Hood', type: 'name' }
+    ],
+    bottom: [
+        { id: 'left_thigh', label: 'Left Thigh', type: 'both' },
+        { id: 'right_thigh', label: 'Right Thigh', type: 'both' },
+        { id: 'back_pocket', label: 'Back Pocket', type: 'logo' }
+    ]
+};
+
+// --- VISUAL COMPONENT ---
+const GarmentVisual = ({ type, activeZones }) => {
+    if (type === 'bottom') {
+        return (
+            <div className="relative w-48 h-64 bg-gray-100 rounded-lg border border-gray-300 mx-auto flex items-center justify-center mb-4">
+                <svg viewBox="0 0 100 100" className="w-full h-full text-gray-300 fill-current">
+                    <path d="M30 10 L30 90 L45 90 L48 40 L52 40 L55 90 L70 90 L70 10 Z" stroke="gray" strokeWidth="2" fill="white" />
+                </svg>
+                {/* Zones */}
+                <div className="absolute top-20 left-8 text-[10px] font-bold text-blue-600 border border-blue-600 bg-white px-1 rounded">Left Thigh</div>
+                <div className="absolute top-10 right-2 text-[10px] font-bold text-gray-400">Pants View</div>
+            </div>
+        );
+    }
+    // Default to Top (Hoodie/Tee)
+    return (
+        <div className="flex gap-4 justify-center mb-6">
+            {/* FRONT */}
+            <div className="relative w-40 h-48 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold text-gray-400 uppercase">Front</div>
+                {/* Shape */}
+                <div className="absolute inset-4 border-2 border-dashed border-gray-300 rounded-t-3xl rounded-b-lg"></div>
+                {/* Zones */}
+                <div className="absolute top-12 left-12 w-8 h-8 border border-blue-500 bg-blue-50 flex items-center justify-center text-[8px] text-blue-800 font-bold rounded-full">Left Chest</div>
+                <div className="absolute top-20 left-1/2 -translate-x-1/2 w-24 h-16 border border-green-500 bg-green-50 flex items-center justify-center text-[8px] text-green-800 font-bold rounded">Full Front</div>
+            </div>
+            
+            {/* BACK */}
+            <div className="relative w-40 h-48 bg-white border-2 border-gray-200 rounded-lg shadow-sm">
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold text-gray-400 uppercase">Back</div>
+                <div className="absolute inset-4 border-2 border-dashed border-gray-300 rounded-t-3xl rounded-b-lg bg-gray-50"></div>
+                
+                {/* Name Zones */}
+                <div className="absolute top-12 left-1/2 -translate-x-1/2 w-20 h-6 border border-purple-500 bg-purple-100 flex items-center justify-center text-[8px] text-purple-900 font-bold rounded">Name (Top)</div>
+                <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-20 h-10 border border-orange-500 bg-orange-100 flex items-center justify-center text-[8px] text-orange-900 font-bold rounded">Name (Jersey)</div>
+            </div>
+        </div>
+    );
+};
 
 export default function OrderForm() {
   const [cart, setCart] = useState([]); 
@@ -32,10 +88,9 @@ export default function OrderForm() {
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
   
-  // LOGO STATES
   const [logoOptions, setLogoOptions] = useState([]); 
-  const [mainOptions, setMainOptions] = useState([]); // Main Designs (Pick 1)
-  const [accentOptions, setAccentOptions] = useState([]); // Accents (Pick Any)
+  const [mainOptions, setMainOptions] = useState([]); 
+  const [accentOptions, setAccentOptions] = useState([]); 
 
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
@@ -43,11 +98,10 @@ export default function OrderForm() {
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
 
-  // SELECTIONS
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [size, setSize] = useState('');
   const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
-  const [logos, setLogos] = useState([]); // Accents list
+  const [logos, setLogos] = useState([]); 
   const [names, setNames] = useState([]);
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
@@ -130,6 +184,23 @@ export default function OrderForm() {
   const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
+  // --- DYNAMIC POSITIONS FILTER ---
+  const getPositionOptions = (itemType) => {
+      if (!selectedProduct) return [];
+      
+      // Determine if product is 'top' (hoodie, tee) or 'bottom' (pants)
+      // This logic assumes you use IDs like 'hat_', 'hoodie_', 'pant_' or have a type column
+      // We will look at the `type` column from DB if available, else guess based on ID
+      const pType = selectedProduct.type || (selectedProduct.id.includes('pant') || selectedProduct.id.includes('jogger') ? 'bottom' : 'top');
+      
+      const availableZones = ZONES[pType] || ZONES.top;
+
+      // Filter: 'logo' can only go on logo spots, 'name' on name spots
+      if (itemType === 'logo') return availableZones.filter(z => z.type === 'logo' || z.type === 'both');
+      if (itemType === 'name') return availableZones.filter(z => z.type === 'name' || z.type === 'both');
+      return availableZones;
+  };
+
   const calculateTotal = () => {
     if (!selectedProduct) return 0;
     let total = selectedProduct.base_price; 
@@ -172,7 +243,6 @@ export default function OrderForm() {
   };
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
-  const getValidPositions = () => selectedProduct ? (POSITIONS[selectedProduct.type] || POSITIONS.top) : [];
   
   const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
@@ -237,6 +307,8 @@ export default function OrderForm() {
   }
 
   const showPrice = paymentMode === 'retail';
+  // Determine diagram type based on product ID or Type (Simple heuristic)
+  const productType = selectedProduct.type || (selectedProduct.id.includes('pant') || selectedProduct.id.includes('jogger') ? 'bottom' : 'top');
 
   return (
     <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900">
@@ -251,6 +323,10 @@ export default function OrderForm() {
               
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
+                
+                {/* --- GARMENT VISUALIZER --- */}
+                <GarmentVisual type={productType} />
+
                 {selectedProduct && selectedProduct.image_url && (<div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center"><img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" /></div>)}
                 {isOutOfStock ? (<div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert"><p className="font-bold">⚠️ Out of Stock at Event</p><p className="text-sm">We can ship this to your home!</p></div>) : <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">✓ In Stock ({currentStock} available)</div>}
                 <div className="grid md:grid-cols-2 gap-4">
@@ -287,22 +363,14 @@ export default function OrderForm() {
               {accentOptions.length > 0 && (
                   <section>
                     <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
-                    
-                    {/* Visual Menu for Accents */}
                     <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
                         {accentOptions.map((opt) => (
-                            <button 
-                                key={opt.label} 
-                                onClick={() => addLogo(opt.label)} 
-                                className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95"
-                            >
+                            <button key={opt.label} onClick={() => addLogo(opt.label)} className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95">
                                 {opt.image_url ? <img src={opt.image_url} className="h-12 w-full object-contain" /> : <div className="h-12 w-full bg-gray-100 text-[10px] flex items-center justify-center">No Img</div>}
                                 <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{opt.label}</span>
                             </button>
                         ))}
                     </div>
-
-                    {/* Selected List */}
                     {logos.length > 0 && (
                         <div className="bg-gray-50 p-4 rounded-lg border border-gray-300 space-y-3">
                             <h3 className="text-xs font-bold uppercase text-gray-500">Selected Accents (Set Position)</h3>
@@ -312,7 +380,7 @@ export default function OrderForm() {
                                     <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
                                         <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
                                         <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
-                                        <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
+                                        <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Position...</option>{getPositionOptions('logo').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
                                         <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
                                     </div>
                                 );
@@ -327,12 +395,11 @@ export default function OrderForm() {
                 {names.map((nameItem, index) => (
                   <div key={index} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                     <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
-                    <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}><option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
+                    <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}><option value="">Select Position...</option>{getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
                     <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                   </div>
                 ))}
                 
-                {/* --- FIX: UPDATED BUTTON TEXT --- */}
                 <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Your Name to Your Apparel</button>
               
               </section>
