@@ -46,7 +46,7 @@ export default function OrderForm() {
   // SELECTIONS
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [size, setSize] = useState('');
-  const [selectedMainDesign, setSelectedMainDesign] = useState(''); // NEW STATE
+  const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
   const [logos, setLogos] = useState([]); // Accents list
   const [names, setNames] = useState([]);
   const [backNameList, setBackNameList] = useState(false);
@@ -109,7 +109,6 @@ export default function OrderForm() {
     if (!selectedProduct && visibleProducts.length > 0) setSelectedProduct(visibleProducts[0]);
   }, [visibleProducts, selectedProduct]);
 
-  // AUTO-SELECT MAIN DESIGN IF ONLY ONE EXISTS
   useEffect(() => {
       if (mainOptions.length === 1) {
           setSelectedMainDesign(mainOptions[0].label);
@@ -158,7 +157,7 @@ export default function OrderForm() {
       size: size,
       needsShipping: isOutOfStock, 
       customizations: { 
-          mainDesign: selectedMainDesign, // Store Main Design Choice
+          mainDesign: selectedMainDesign, 
           logos, 
           names, 
           backList: backNameList, 
@@ -168,7 +167,6 @@ export default function OrderForm() {
     };
     setCart([...cart, newItem]);
     
-    // Reset form but keep main design if there is only one
     setLogos([]); setNames([]); setBackNameList(false); setMetallicHighlight(false);
     if (mainOptions.length > 1) setSelectedMainDesign(''); 
   };
@@ -285,45 +283,47 @@ export default function OrderForm() {
                   </section>
               )}
 
-              {/* --- 3. ACCENT LOGOS (OPTIONAL, MULTI) --- */}
-              <section>
-                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
-                
-                {/* Visual Menu for Accents */}
-                <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
-                    {accentOptions.map((opt) => (
-                        <button 
-                            key={opt.label} 
-                            onClick={() => addLogo(opt.label)} 
-                            className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95"
-                        >
-                            {opt.image_url ? <img src={opt.image_url} className="h-12 w-full object-contain" /> : <div className="h-12 w-full bg-gray-100 text-[10px] flex items-center justify-center">No Img</div>}
-                            <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{opt.label}</span>
-                        </button>
-                    ))}
-                </div>
-
-                {/* Selected List */}
-                {logos.length > 0 && (
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-300 space-y-3">
-                        <h3 className="text-xs font-bold uppercase text-gray-500">Selected Accents (Set Position)</h3>
-                        {logos.map((logo, index) => {
-                            const currentImage = getLogoImage(logo.type);
-                            return (
-                                <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
-                                    <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
-                                    <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
-                                    <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
-                                    <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
-                                </div>
-                            );
-                        })}
+              {/* --- 3. ACCENT LOGOS (CONDITIONAL) --- */}
+              {accentOptions.length > 0 && (
+                  <section>
+                    <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
+                    
+                    {/* Visual Menu for Accents */}
+                    <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
+                        {accentOptions.map((opt) => (
+                            <button 
+                                key={opt.label} 
+                                onClick={() => addLogo(opt.label)} 
+                                className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95"
+                            >
+                                {opt.image_url ? <img src={opt.image_url} className="h-12 w-full object-contain" /> : <div className="h-12 w-full bg-gray-100 text-[10px] flex items-center justify-center">No Img</div>}
+                                <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{opt.label}</span>
+                            </button>
+                        ))}
                     </div>
-                )}
-              </section>
+
+                    {/* Selected List */}
+                    {logos.length > 0 && (
+                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-300 space-y-3">
+                            <h3 className="text-xs font-bold uppercase text-gray-500">Selected Accents (Set Position)</h3>
+                            {logos.map((logo, index) => {
+                                const currentImage = getLogoImage(logo.type);
+                                return (
+                                    <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
+                                        <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
+                                        <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
+                                        <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
+                                        <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                  </section>
+              )}
 
               <section>
-                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Names</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
+                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                 {names.map((nameItem, index) => (
                   <div key={index} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                     <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
@@ -331,7 +331,10 @@ export default function OrderForm() {
                     <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                   </div>
                 ))}
-                <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Name</button>
+                
+                {/* --- FIX: UPDATED BUTTON TEXT --- */}
+                <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Your Name to Your Apparel</button>
+              
               </section>
               
               {showBackNames && (<section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300"><label className="flex items-center gap-3 mb-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} /><span className="font-bold text-black">Back Name List {showPrice && '(+$5)'}</span></label>{showMetallic && (<label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} /><span className="font-bold text-black">Metallic Highlight {showPrice && '(+$5)'}</span></label>)}</section>)}
