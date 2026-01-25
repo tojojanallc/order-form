@@ -48,8 +48,9 @@ export default function AdminPage() {
   const [newLogoCategory, setNewLogoCategory] = useState('accent'); 
   const [eventName, setEventName] = useState('');
   const [eventLogo, setEventLogo] = useState('');
-  const [headerColor, setHeaderColor] = useState('#1e3a8a'); // NEW: Header Color State
+  const [headerColor, setHeaderColor] = useState('#1e3a8a'); 
   const [paymentMode, setPaymentMode] = useState('retail'); 
+  const [printerType, setPrinterType] = useState('label'); // NEW: 'label' or 'standard'
   const [offerBackNames, setOfferBackNames] = useState(true);
   const [offerMetallic, setOfferMetallic] = useState(true);
   const [offerPersonalization, setOfferPersonalization] = useState(true);
@@ -81,16 +82,97 @@ export default function AdminPage() {
     if (unprinted.length > 0) { if (audioRef.current) audioRef.current.play().catch(e => console.log("Audio fail", e)); printLabel(unprinted[0]); }
   };
 
+  // --- UPDATED PRINT FUNCTION (Handles Both Formats) ---
   const printLabel = async (order) => {
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
     await supabase.from('orders').update({ printed: true }).eq('id', order.id);
-    const printWindow = window.open('', '', 'width=400,height=600');
+    
+    const printWindow = window.open('', '', 'width=800,height=600');
     if (!printWindow) { alert("⚠️ POPUP BLOCKED"); return; }
-    printWindow.document.write(`<html><head><title>Order #${order.id}</title><style>@page { size: 4in 6in; margin: 0; } body { font-family: 'Courier New', monospace; margin: 0.1in; padding: 0; width: 3.8in; } .header { text-align: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 15px; } h1 { font-size: 28px; font-weight: 900; margin: 0; text-transform: uppercase; line-height: 1.1; } h2 { font-size: 16px; margin: 5px 0 0 0; color: #333; } .items { text-align: left; } .item { margin-bottom: 15px; font-size: 18px; font-weight: bold; border-bottom: 1px dashed #999; padding-bottom: 5px; } .details { font-size: 14px; font-weight: normal; margin-top: 2px; } .footer { margin-top: 30px; text-align: center; font-size: 12px; border-top: 2px solid black; padding-top: 10px; } .shipping-alert { display: block; margin-top: 5px; background: black; color: white; font-size: 12px; padding: 2px 5px; border-radius: 4px; width: fit-content; }</style></head><body><div class="header"><h1>${order.customer_name}</h1><h2>Order #${order.id}</h2></div><div class="items">${order.cart_data.map(item => `<div class="item"><div style="display:flex; justify-content:space-between;"><span>${item.productName}</span><span>${item.size}</span></div>${item.customizations.mainDesign ? `<div class="details">Main: ${item.customizations.mainDesign}</div>` : ''}${item.customizations.logos.length > 0 ? `<div class="details">Accents: ${item.customizations.logos.map(l => l.type).join(', ')}</div>` : ''}${item.customizations.names.length > 0 ? `<div class="details">Names: ${item.customizations.names.map(n => n.text).join(', ')}</div>` : ''}${item.needsShipping ? `<span class="shipping-alert">📦 SHIP TO HOME</span>` : ''}</div>`).join('')}</div><div class="footer">${new Date(order.created_at).toLocaleString()}<br><strong>Total Items: ${order.cart_data.length}</strong></div></body></html>`);
+
+    let htmlContent = '';
+
+    if (printerType === 'standard') {
+        // --- 8.5 x 11 STANDARD LAYOUT ---
+        htmlContent = `
+            <html><head><title>Order #${order.id}</title>
+            <style>
+                @page { size: letter; margin: 0.5in; }
+                body { font-family: 'Helvetica', sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; color: black; }
+                .header { text-align: center; border-bottom: 4px solid black; padding-bottom: 20px; margin-bottom: 30px; }
+                h1 { font-size: 48px; margin: 0; text-transform: uppercase; font-weight: 900; }
+                h2 { font-size: 24px; color: #333; margin-top: 10px; }
+                .meta { font-size: 18px; margin-bottom: 30px; background: #f3f4f6; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }
+                .item { border-bottom: 2px solid #eee; padding: 20px 0; display: flex; justify-content: space-between; align-items: flex-start; }
+                .item-main { font-size: 28px; font-weight: bold; }
+                .item-size { font-size: 24px; background: black; color: white; padding: 2px 8px; border-radius: 4px; margin-left: 10px; vertical-align: middle; }
+                .details { font-size: 18px; color: #555; margin-top: 8px; margin-left: 20px; line-height: 1.4; }
+                .shipping-badge { background: black; color: white; font-weight: bold; padding: 5px 10px; border-radius: 4px; font-size: 14px; text-transform: uppercase; }
+                .footer { margin-top: 60px; text-align: center; font-size: 14px; color: #888; border-top: 1px solid #eee; padding-top: 20px; }
+            </style>
+            </head><body>
+                <div class="header"><h1>${order.customer_name}</h1><h2>Order #${order.id}</h2></div>
+                <div class="meta">
+                    <strong>Time:</strong> ${new Date(order.created_at).toLocaleString()}<br/>
+                    <strong>Phone:</strong> ${order.phone || 'N/A'}<br/>
+                    ${order.shipping_address ? `<strong>🚚 SHIP TO:</strong> ${order.shipping_address}, ${order.shipping_city}, ${order.shipping_state} ${order.shipping_zip}` : '<strong>📍 PICKUP ORDER</strong>'}
+                </div>
+                <div class="items">
+                    ${order.cart_data.map(item => `
+                        <div class="item">
+                            <div>
+                                <div class="item-main">${item.productName} <span class="item-size">${item.size}</span></div>
+                                ${item.customizations.mainDesign ? `<div class="details"><strong>Design:</strong> ${item.customizations.mainDesign}</div>` : ''}
+                                ${item.customizations.logos.length > 0 ? `<div class="details"><strong>Accents:</strong> ${item.customizations.logos.map(l => `${l.type} (${l.position || 'N/A'})`).join(', ')}</div>` : ''}
+                                ${item.customizations.names.length > 0 ? `<div class="details"><strong>Names:</strong> ${item.customizations.names.map(n => `"${n.text}" (${n.position || 'N/A'})`).join(', ')}</div>` : ''}
+                            </div>
+                            ${item.needsShipping ? '<span class="shipping-badge">📦 SHIP</span>' : ''}
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="footer">Total Items: ${order.cart_data.length} | Printed via Lev Custom</div>
+            </body></html>
+        `;
+    } else {
+        // --- 4x6 THERMAL LABEL LAYOUT ---
+        htmlContent = `
+            <html><head><title>Order #${order.id}</title>
+            <style>
+                @page { size: 4in 6in; margin: 0; } 
+                body { font-family: 'Courier New', monospace; margin: 0.1in; padding: 0; width: 3.8in; } 
+                .header { text-align: center; border-bottom: 3px solid black; padding-bottom: 10px; margin-bottom: 15px; } 
+                h1 { font-size: 28px; font-weight: 900; margin: 0; text-transform: uppercase; line-height: 1.1; } 
+                h2 { font-size: 16px; margin: 5px 0 0 0; color: #333; } 
+                .items { text-align: left; } 
+                .item { margin-bottom: 15px; font-size: 18px; font-weight: bold; border-bottom: 1px dashed #999; padding-bottom: 5px; } 
+                .details { font-size: 14px; font-weight: normal; margin-top: 2px; } 
+                .footer { margin-top: 30px; text-align: center; font-size: 12px; border-top: 2px solid black; padding-top: 10px; } 
+                .shipping-alert { display: block; margin-top: 5px; background: black; color: white; font-size: 12px; padding: 2px 5px; border-radius: 4px; width: fit-content; }
+            </style>
+            </head><body>
+                <div class="header"><h1>${order.customer_name}</h1><h2>Order #${order.id}</h2></div>
+                <div class="items">
+                    ${order.cart_data.map(item => `
+                        <div class="item">
+                            <div style="display:flex; justify-content:space-between;"><span>${item.productName}</span><span>${item.size}</span></div>
+                            ${item.customizations.mainDesign ? `<div class="details">Main: ${item.customizations.mainDesign}</div>` : ''}
+                            ${item.customizations.logos.length > 0 ? `<div class="details">Accents: ${item.customizations.logos.map(l => l.type).join(', ')}</div>` : ''}
+                            ${item.customizations.names.length > 0 ? `<div class="details">Names: ${item.customizations.names.map(n => n.text).join(', ')}</div>` : ''}
+                            ${item.needsShipping ? `<span class="shipping-alert">📦 SHIP TO HOME</span>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="footer">${new Date(order.created_at).toLocaleString()}<br><strong>Total Items: ${order.cart_data.length}</strong></div>
+            </body></html>
+        `;
+    }
+
+    printWindow.document.write(htmlContent);
     printWindow.document.close();
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
+  // --- ACTIONS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); fetchOrders(); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   const fetchOrders = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); setLoading(false); };
   const fetchInventory = async () => { if (!supabase) return; setLoading(true); const { data: prodData } = await supabase.from('products').select('*').order('sort_order'); const { data: invData } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (prodData) setProducts(prodData); if (invData) setInventory(invData); setLoading(false); };
@@ -104,8 +186,9 @@ export default function AdminPage() {
       if (data) { 
           setEventName(data.event_name); 
           setEventLogo(data.event_logo_url || ''); 
-          setHeaderColor(data.header_color || '#1e3a8a'); // NEW: Fetch color
+          setHeaderColor(data.header_color || '#1e3a8a'); 
           setPaymentMode(data.payment_mode || 'retail'); 
+          setPrinterType(data.printer_type || 'label'); // NEW: Fetch printer type
           setOfferBackNames(data.offer_back_names ?? true); 
           setOfferMetallic(data.offer_metallic ?? true); 
           setOfferPersonalization(data.offer_personalization ?? true);
@@ -117,8 +200,9 @@ export default function AdminPage() {
       await supabase.from('event_settings').update({ 
           event_name: eventName, 
           event_logo_url: eventLogo, 
-          header_color: headerColor, // NEW: Save Color
+          header_color: headerColor, 
           payment_mode: paymentMode, 
+          printer_type: printerType, // NEW: Save printer type
           offer_back_names: offerBackNames, 
           offer_metallic: offerMetallic,
           offer_personalization: offerPersonalization 
@@ -140,36 +224,7 @@ export default function AdminPage() {
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | '); return [o.id, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing fields"); const { error } = await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: 'top', sort_order: 99 }]); if (error) return alert("Error: " + error.message); const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL']; const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true })); await supabase.from('inventory').insert(invRows); alert("Product Created!"); setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory(); };
-  
-  const handleGuestUpload = (e) => { 
-      const file = e.target.files[0]; 
-      if (!file) return; 
-      setLoading(true); 
-      const reader = new FileReader(); 
-      reader.onload = async (evt) => { 
-          try { 
-              const bstr = evt.target.result; 
-              const wb = XLSX.read(bstr, { type: 'binary' }); 
-              const ws = wb.Sheets[wb.SheetNames[0]]; 
-              const data = XLSX.utils.sheet_to_json(ws); 
-              if (!data.length) return alert("Empty"); 
-              let count = 0; 
-              for (const row of data) { 
-                  const name = row['Name'] || row['name'] || row['Guest']; 
-                  const size = row['Size'] || row['size']; 
-                  if (name) { 
-                      await supabase.from('guests').insert([{ name: String(name).trim(), size: size ? String(size).trim() : null, has_ordered: false }]); 
-                      count++; 
-                  } 
-              } 
-              alert(`Imported ${count} guests!`); 
-              fetchGuests(); 
-          } catch (err) { alert("Error"); } 
-          setLoading(false); 
-      }; 
-      reader.readAsBinaryString(file); 
-  };
-
+  const handleGuestUpload = (e) => { const file = e.target.files[0]; if (!file) return; setLoading(true); const reader = new FileReader(); reader.onload = async (evt) => { try { const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' }); const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws); if (!data.length) return alert("Empty"); let count = 0; for (const row of data) { const name = row['Name'] || row['name'] || row['Guest']; const size = row['Size'] || row['size']; if (name) { await supabase.from('guests').insert([{ name: String(name).trim(), size: size ? String(size).trim() : null, has_ordered: false }]); count++; } } alert(`Imported ${count} guests!`); fetchGuests(); } catch (err) { alert("Error"); } setLoading(false); }; reader.readAsBinaryString(file); };
   const resetGuest = async (id) => { if (confirm("Allow again?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("DELETE ALL?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   const handleBulkUpload = (e) => { const file = e.target.files[0]; if (!file) return; setUploadLog(["Reading..."]); setLoading(true); const reader = new FileReader(); reader.onload = async (evt) => { try { const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' }); const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws); if (!data.length) { setUploadLog(["❌ Empty."]); setLoading(false); return; } const { data: dbProducts } = await supabase.from('products').select('id'); const validIds = {}; if (dbProducts) dbProducts.forEach(p => validIds[p.id.toLowerCase()] = p.id); const logs = []; let updatedCount = 0; let errorCount = 0; for (let i = 0; i < data.length; i++) { const row = data[i]; const normalizedRow = {}; Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().trim()] = row[k]; }); const pid = normalizedRow['product_id']; const size = normalizedRow['size']; const count = normalizedRow['count']; if (!pid || !size || count === undefined) { logs.push(`⚠️ Row ${i+2}: Skipped`); continue; } const rawId = String(pid).trim(); let finalId = rawId; if (!validIds[rawId] && validIds[rawId.toLowerCase()]) finalId = validIds[rawId.toLowerCase()]; const cleanSize = String(size).trim(); const cleanCount = parseInt(count); const { data: existing, error: findError } = await supabase.from('inventory').select('product_id').eq('product_id', finalId).eq('size', cleanSize).maybeSingle(); if (findError) { logs.push(`❌ Row ${i+2}: Error ${findError.message}`); errorCount++; continue; } if (existing) { await supabase.from('inventory').update({ count: cleanCount }).eq('product_id', finalId).eq('size', cleanSize); logs.push(`✅ Updated ${finalId}`); updatedCount++; } else { await supabase.from('inventory').insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]); logs.push(`✨ Created ${finalId}`); updatedCount++; } } if (errorCount > 0) setUploadLog([`⚠️ ERRORS: ${errorCount}`, ...logs]); else setUploadLog([`🎉 SUCCESS: ${updatedCount}`, ...logs]); await fetchInventory(); } catch (err) { setUploadLog(["❌ FATAL:", err.message]); } setLoading(false); e.target.value = null; }; reader.readAsBinaryString(file); };
@@ -284,6 +339,15 @@ export default function AdminPage() {
                     
                     {/* HEADER COLOR PICKER */}
                     <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Header Color</label><div className="flex gap-4 items-center"><input type="color" className="w-16 h-10 cursor-pointer border rounded" value={headerColor} onChange={e => setHeaderColor(e.target.value)} /><span className="text-sm text-gray-500">{headerColor}</span></div></div>
+
+                    {/* PRINTER TYPE SELECTOR (NEW) */}
+                    <div className="mb-6 bg-gray-100 p-4 rounded border border-gray-200">
+                        <label className="block text-gray-800 font-bold mb-3 border-b border-gray-300 pb-2">Printer Output</label>
+                        <div className="space-y-2">
+                            <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="label" checked={printerType === 'label'} onChange={() => setPrinterType('label')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Thermal Label (4x6)</span><span className="text-xs text-gray-500">Standard for fast packing.</span></div></label>
+                            <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="standard" checked={printerType === 'standard'} onChange={() => setPrinterType('standard')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Standard Sheet (8.5x11)</span><span className="text-xs text-gray-500">Large font packing slip for laser printers.</span></div></label>
+                        </div>
+                    </div>
 
                     <div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200">
                         <label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label>
