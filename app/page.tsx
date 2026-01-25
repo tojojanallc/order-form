@@ -9,7 +9,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-// --- DEFINE CORRECT SIZE ORDER (UPDATED) ---
+// --- DEFINE CORRECT SIZE ORDER ---
 const SIZE_ORDER = [
     'Youth XS', 'Youth S', 'Youth M', 'Youth L', 
     'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'
@@ -25,6 +25,7 @@ export default function OrderForm() {
   const [shippingState, setShippingState] = useState('');
   const [shippingZip, setShippingZip] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [orderComplete, setOrderComplete] = useState(false); // NEW
   
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
@@ -33,6 +34,7 @@ export default function OrderForm() {
 
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
+  const [paymentMode, setPaymentMode] = useState('retail'); // NEW
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
 
@@ -68,6 +70,7 @@ export default function OrderForm() {
       if (settings) {
         setEventName(settings.event_name);
         setEventLogo(settings.event_logo_url);
+        setPaymentMode(settings.payment_mode || 'retail');
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
       }
@@ -88,7 +91,6 @@ export default function OrderForm() {
       .filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true)
       .map(key => key.replace(`${selectedProduct.id}_`, ''));
       
-    // Sort based on the SIZE_ORDER array
     return unsorted.sort((a, b) => {
         return SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b);
     });
@@ -145,26 +147,60 @@ export default function OrderForm() {
   const handleCheckout = async () => {
     if (!customerName || !customerPhone || !customerEmail) { alert("Please enter Name, Email, and Phone"); return; }
     if (cartRequiresShipping) { if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { alert("Shipping Address Required!"); return; } }
+    
     setIsSubmitting(true);
-    const { error } = await supabase.from('orders').insert([{ 
+    
+    // Save order to Supabase
+    const { data: orderData, error } = await supabase.from('orders').insert([{ 
       customer_name: customerName, phone: customerPhone, cart_data: cart, total_price: calculateGrandTotal(),
       shipping_address: cartRequiresShipping ? shippingAddress : null,
       shipping_city: cartRequiresShipping ? shippingCity : null,
       shipping_state: cartRequiresShipping ? shippingState : null,
       shipping_zip: cartRequiresShipping ? shippingZip : null,
       status: cartRequiresShipping ? 'pending_shipping' : 'pending' 
-    }]);
+    }]).select();
+
     if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
+
+    // Send Receipt (Always)
     try { await fetch('/api/send-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customerEmail, customerName, cart, total: calculateGrandTotal() }) }); } catch (e) {}
-    try {
-      const response = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, customerName }) });
-      const data = await response.json();
-      if (data.url) window.location.href = data.url; else alert("Payment Error");
-    } catch (err) { alert("Checkout failed."); setIsSubmitting(false); }
+
+    // MODE CHECK: HOSTED VS RETAIL
+    if (paymentMode === 'hosted') {
+        // Skip Stripe, just show success
+        setOrderComplete(true);
+        setCart([]); // Clear cart
+    } else {
+        // Retail: Redirect to Stripe
+        try {
+            const response = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, customerName }) });
+            const data = await response.json();
+            if (data.url) window.location.href = data.url; else alert("Payment Error");
+        } catch (err) { alert("Checkout failed."); setIsSubmitting(false); }
+    }
   };
 
   if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
   if (!selectedProduct) return <div className="p-10 text-center">No active products available.</div>;
+
+  // --- NEW: SUCCESS SCREEN FOR HOSTED MODE ---
+  if (orderComplete) {
+      return (
+          <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center p-8 text-center">
+              <div className="bg-white p-8 rounded-xl shadow-lg border border-green-200 max-w-md">
+                  <div className="text-6xl mb-4">🎉</div>
+                  <h1 className="text-3xl font-black text-green-800 mb-2">Order Received!</h1>
+                  <p className="text-gray-600 mb-6">Thanks, {customerName}! Your gear is being prepared.</p>
+                  <p className="font-bold text-lg mb-6">Please watch the TV Board for your name.</p>
+                  <button onClick={() => { setOrderComplete(false); setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); }} className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700">Place Another Order</button>
+              </div>
+          </div>
+      );
+  }
+
+  // --- PRICE DISPLAY LOGIC ---
+  // If hosted, hide price. If retail, show price.
+  const showPrice = paymentMode === 'retail';
 
   return (
     <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900">
@@ -197,7 +233,7 @@ export default function OrderForm() {
                   <div>
                     <label className="text-xs font-black text-gray-900 uppercase">Item</label>
                     <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct.id}>
-                      {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} - ${p.base_price}</option>)}
+                      {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} {showPrice ? `- $${p.base_price}` : ''}</option>)}
                     </select>
                   </div>
                   <div>
@@ -210,7 +246,7 @@ export default function OrderForm() {
               </section>
 
               <section>
-                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
+                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                 {logos.map((logo, index) => {
                   const currentImage = getLogoImage(logo.type);
                   return (
@@ -228,7 +264,7 @@ export default function OrderForm() {
               </section>
 
               <section>
-                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Names</h2><span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span></div>
+                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Names</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                 {names.map((nameItem, index) => (
                   <div key={index} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                     <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
@@ -241,13 +277,14 @@ export default function OrderForm() {
               
               {showBackNames && (
                   <section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300">
-                    <label className="flex items-center gap-3 mb-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} /><span className="font-bold text-black">Back Name List (+$5)</span></label>
-                    {showMetallic && (<label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} /><span className="font-bold text-black">Metallic Highlight (+$5)</span></label>)}
+                    <label className="flex items-center gap-3 mb-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} /><span className="font-bold text-black">Back Name List {showPrice && '(+$5)'}</span></label>
+                    {showMetallic && (<label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} /><span className="font-bold text-black">Metallic Highlight {showPrice && '(+$5)'}</span></label>)}
                   </section>
               )}
 
             </div>
-            <div className="bg-gray-900 text-white p-6 sticky bottom-0 flex justify-between items-center"><div><p className="text-gray-300 text-xs uppercase">Current Item</p><p className="text-2xl font-bold">${calculateTotal()}</p></div><button onClick={handleAddToCart} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform">Add to Cart</button></div>
+            {/* If Hosted mode, hide price in footer or show 'Value' */}
+            <div className="bg-gray-900 text-white p-6 sticky bottom-0 flex justify-between items-center"><div><p className="text-gray-300 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p><p className="text-2xl font-bold">{showPrice ? `$${calculateTotal()}` : 'Free'}</p></div><button onClick={handleAddToCart} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform">Add to Cart</button></div>
           </div>
         </div>
         <div className="md:col-span-1">
@@ -261,7 +298,7 @@ export default function OrderForm() {
                   {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
                   <p className="text-sm text-gray-800 font-medium">Size: {item.size}</p>
                   <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">{item.customizations.logos.map((l, i) => <div key={i}>• {l.type} ({l.position})</div>)}{item.customizations.names.map((n, i) => <div key={i}>• "{n.text}" ({n.position})</div>)}</div>
-                  <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice}.00</p>
+                  {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice}.00</p>}
                 </div>
               ))}
             </div>
@@ -279,8 +316,11 @@ export default function OrderForm() {
                     <input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} />
                   </div>
                 )}
-                <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>
-                <button onClick={handleCheckout} disabled={isSubmitting} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting ? 'bg-gray-500' : 'bg-blue-800 hover:bg-blue-900'}`}>{isSubmitting ? "Processing..." : "Pay Now with Stripe"}</button>
+                {showPrice && <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>}
+                
+                <button onClick={handleCheckout} disabled={isSubmitting} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting ? 'bg-gray-500' : 'bg-blue-800 hover:bg-blue-900'}`}>
+                    {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay Now with Stripe")}
+                </button>
               </div>
             )}
           </div>

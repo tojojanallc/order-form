@@ -48,6 +48,7 @@ export default function AdminPage() {
   const [newLogoUrl, setNewLogoUrl] = useState('');
   const [eventName, setEventName] = useState('');
   const [eventLogo, setEventLogo] = useState('');
+  const [paymentMode, setPaymentMode] = useState('retail'); // NEW
   const [offerBackNames, setOfferBackNames] = useState(true);
   const [offerMetallic, setOfferMetallic] = useState(true);
 
@@ -88,14 +89,12 @@ export default function AdminPage() {
     setTimeout(() => { printWindow.focus(); printWindow.print(); printWindow.close(); }, 500);
   };
 
-  // --- FIX: NO ID DEPENDENCY UPLOAD ---
+  // --- PARANOID MODE BULK UPLOAD ---
   const handleBulkUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     setUploadLog(["Reading file..."]);
     setLoading(true);
-
     const reader = new FileReader();
     reader.onload = async (evt) => {
         try {
@@ -104,94 +103,38 @@ export default function AdminPage() {
             const wsname = wb.SheetNames[0];
             const ws = wb.Sheets[wsname];
             const data = XLSX.utils.sheet_to_json(ws);
-
             if (!data || data.length === 0) { setUploadLog(["❌ Error: File empty."]); setLoading(false); return; }
-
-            // 1. Get VALID Product IDs from DB to force matching
             const { data: dbProducts } = await supabase.from('products').select('id');
             const validIds = {}; 
             if (dbProducts) dbProducts.forEach(p => validIds[p.id.toLowerCase()] = p.id);
-
             const logs = [];
             let updatedCount = 0;
             let errorCount = 0;
-
             for (let i = 0; i < data.length; i++) {
                 const row = data[i];
                 const normalizedRow = {};
                 Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().trim()] = row[k]; });
-
                 const pid = normalizedRow['product_id'];
                 const size = normalizedRow['size'];
                 const count = normalizedRow['count'];
-
-                if (!pid || !size || count === undefined) {
-                    logs.push(`⚠️ Row ${i+2}: Skipped (Missing Data)`);
-                    continue;
-                }
-
-                // SMART MATCHING
+                if (!pid || !size || count === undefined) { logs.push(`⚠️ Row ${i+2}: Skipped (Missing Data)`); continue; }
                 const rawId = String(pid).trim();
                 let finalId = rawId;
                 if (!validIds[rawId] && validIds[rawId.toLowerCase()]) { finalId = validIds[rawId.toLowerCase()]; }
-
                 const cleanSize = String(size).trim();
                 const cleanCount = parseInt(count);
-
-                // --- KEY FIX: DO NOT SELECT 'ID' ---
-                // We check if it exists using maybeSingle(), but we don't ask for the 'id' column
-                const { data: existing, error: findError } = await supabase
-                    .from('inventory')
-                    .select('product_id') // Only asking for product_id, which we know exists
-                    .eq('product_id', finalId)
-                    .eq('size', cleanSize)
-                    .maybeSingle(); // Returns null if not found (instead of throwing error)
-
-                if (findError) {
-                     logs.push(`❌ Row ${i+2}: DB Check Failed: ${findError.message}`);
-                     errorCount++;
-                     continue;
-                }
-
+                const { data: existing, error: findError } = await supabase.from('inventory').select('product_id').eq('product_id', finalId).eq('size', cleanSize).maybeSingle();
+                if (findError) { logs.push(`❌ Row ${i+2}: DB Check Failed: ${findError.message}`); errorCount++; continue; }
                 if (existing) {
-                    // UPDATE using Product ID + Size (Composite Key)
-                    const { error: updateError } = await supabase
-                        .from('inventory')
-                        .update({ count: cleanCount })
-                        .eq('product_id', finalId) // Filter by Product
-                        .eq('size', cleanSize);    // Filter by Size
-
-                    if (updateError) {
-                        logs.push(`❌ Row ${i+2}: Update Failed! ${updateError.message}`);
-                        errorCount++;
-                    } else {
-                        logs.push(`✅ Row ${i+2}: Updated ${finalId} (${cleanSize}) -> ${cleanCount}`);
-                        updatedCount++;
-                    }
+                    const { error: updateError } = await supabase.from('inventory').update({ count: cleanCount }).eq('product_id', finalId).eq('size', cleanSize);
+                    if (updateError) { logs.push(`❌ Row ${i+2}: Update Failed! ${updateError.message}`); errorCount++; } else { logs.push(`✅ Row ${i+2}: Updated ${finalId} (${cleanSize}) -> ${cleanCount}`); updatedCount++; }
                 } else {
-                    // INSERT
-                    const { error: insertError } = await supabase
-                        .from('inventory')
-                        .insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]);
-                    
-                    if (insertError) {
-                        logs.push(`❌ Row ${i+2}: Insert Failed! ${insertError.message}`);
-                        errorCount++;
-                    } else {
-                        logs.push(`✨ Row ${i+2}: Created ${finalId} (${cleanSize}) -> ${cleanCount}`);
-                        updatedCount++;
-                    }
+                    const { error: insertError } = await supabase.from('inventory').insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]);
+                    if (insertError) { logs.push(`❌ Row ${i+2}: Insert Failed! ${insertError.message}`); errorCount++; } else { logs.push(`✨ Row ${i+2}: Created ${finalId} (${cleanSize}) -> ${cleanCount}`); updatedCount++; }
                 }
             }
-            
-            if (errorCount > 0) {
-                setUploadLog([`⚠️ COMPLETED WITH ERRORS: ${errorCount} failed.`, ...logs]);
-            } else {
-                setUploadLog([`🎉 SUCCESS! Processed ${updatedCount} items.`, ...logs]);
-            }
-            
+            if (errorCount > 0) { setUploadLog([`⚠️ COMPLETED WITH ERRORS: ${errorCount} failed.`, ...logs]); } else { setUploadLog([`🎉 SUCCESS! Processed ${updatedCount} items.`, ...logs]); }
             await fetchInventory(); 
-
         } catch (err) { console.error(err); setUploadLog(["❌ FATAL ERROR:", err.message]); }
         setLoading(false);
         e.target.value = null; 
@@ -213,8 +156,11 @@ export default function AdminPage() {
   const fetchOrders = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); setLoading(false); };
   const fetchInventory = async () => { if (!supabase) return; setLoading(true); const { data: prodData } = await supabase.from('products').select('*').order('sort_order'); const { data: invData } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (prodData) setProducts(prodData); if (invData) setInventory(invData); setLoading(false); };
   const fetchLogos = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); setLoading(false); };
-  const fetchSettings = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); } setLoading(false); };
-  const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, offer_back_names: offerBackNames, offer_metallic: offerMetallic }).eq('id', 1); alert("Event Settings Saved!"); };
+  const fetchSettings = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setPaymentMode(data.payment_mode || 'retail'); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); } setLoading(false); };
+  
+  // UPDATED SAVE SETTINGS TO INCLUDE PAYMENT MODE
+  const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, payment_mode: paymentMode, offer_back_names: offerBackNames, offer_metallic: offerMetallic }).eq('id', 1); alert("Event Settings Saved!"); };
+  
   const closeEvent = async () => { const input = prompt("⚠️ CLOSE EVENT? Type 'CLOSE' to confirm:"); if (input !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); if (newStatus === 'ready' || newStatus === 'partially_fulfilled') { const order = orders.find(o => o.id === orderId); let msg = newStatus === 'ready' ? "READY for pickup!" : "PARTIALLY READY. Pick up available items!"; if (order) try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is ${msg}` }) }); } catch (e) {} } };
   const deleteOrder = async (orderId, cartData) => { if (!confirm("⚠️ Cancel Order & Restore Inventory?")) return; setLoading(true); if (cartData && Array.isArray(cartData)) { for (const item of cartData) { if (item.productId && item.size) { const { data: currentItem } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (currentItem) { await supabase.from('inventory').update({ count: currentItem.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); alert("Order deleted and inventory restored."); };
@@ -352,8 +298,36 @@ export default function AdminPage() {
         {/* LOGOS TAB */}
         {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><button className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Logo</button></form></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Logo Label</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b hover:bg-gray-50"><td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td><td className="p-4 font-bold text-lg">{logo.label}</td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td></tr>))}</tbody></table></div></div>)}
         
-        {/* SETTINGS TAB */}
-        {activeTab === 'settings' && (<div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div><div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div></div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><p className="text-gray-500 text-sm mb-4">Clicking this will mark ALL active orders as "Completed" (clearing the TV Board). This does not delete sales data.</p><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>)}
+        {/* SETTINGS TAB - UPDATED WITH PAYMENT MODE */}
+        {activeTab === 'settings' && (
+            <div className="max-w-xl mx-auto">
+                <div className="bg-white p-8 rounded-lg shadow border border-gray-200">
+                    <h2 className="font-bold text-2xl mb-6">Event Settings</h2>
+                    <div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div>
+                    <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div>
+                    
+                    {/* NEW: PAYMENT MODE SELECTOR */}
+                    <div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200">
+                        <label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label>
+                        <div className="space-y-2">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="payment_mode" value="retail" checked={paymentMode === 'retail'} onChange={() => setPaymentMode('retail')} className="w-5 h-5 text-blue-900" />
+                                <div><span className="font-bold block text-gray-800">Retail (Stripe)</span><span className="text-xs text-gray-500">Collect credit card payments from guests.</span></div>
+                            </label>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="payment_mode" value="hosted" checked={paymentMode === 'hosted'} onChange={() => setPaymentMode('hosted')} className="w-5 h-5 text-blue-900" />
+                                <div><span className="font-bold block text-gray-800">Hosted (Party Mode)</span><span className="text-xs text-gray-500">Guests pay $0. Value is tracked for host invoice.</span></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div></div>
+                    <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button>
+                    
+                    <div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><p className="text-gray-500 text-sm mb-4">Clicking this will mark ALL active orders as "Completed" (clearing the TV Board). This does not delete sales data.</p><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div>
+                </div>
+            </div>
+        )}
 
       </div>
     </div>
