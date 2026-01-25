@@ -38,6 +38,7 @@ export default function AdminPage() {
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
   const audioRef = useRef(null);
 
+  // Settings Form
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
@@ -50,6 +51,7 @@ export default function AdminPage() {
   const [paymentMode, setPaymentMode] = useState('retail'); 
   const [offerBackNames, setOfferBackNames] = useState(true);
   const [offerMetallic, setOfferMetallic] = useState(true);
+  const [offerPersonalization, setOfferPersonalization] = useState(true); // NEW
 
   useEffect(() => {
     if (orders.length > 0) {
@@ -94,8 +96,34 @@ export default function AdminPage() {
   const fetchInventory = async () => { if (!supabase) return; setLoading(true); const { data: prodData } = await supabase.from('products').select('*').order('sort_order'); const { data: invData } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (prodData) setProducts(prodData); if (invData) setInventory(invData); setLoading(false); };
   const fetchLogos = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); setLoading(false); };
   const fetchGuests = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('guests').select('*').order('name'); if (data) setGuests(data); setLoading(false); };
-  const fetchSettings = async () => { if (!supabase) return; setLoading(true); const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setPaymentMode(data.payment_mode || 'retail'); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); } setLoading(false); };
-  const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, payment_mode: paymentMode, offer_back_names: offerBackNames, offer_metallic: offerMetallic }).eq('id', 1); alert("Event Settings Saved!"); };
+  
+  const fetchSettings = async () => { 
+      if (!supabase) return; 
+      setLoading(true); 
+      const { data } = await supabase.from('event_settings').select('*').single(); 
+      if (data) { 
+          setEventName(data.event_name); 
+          setEventLogo(data.event_logo_url || ''); 
+          setPaymentMode(data.payment_mode || 'retail'); 
+          setOfferBackNames(data.offer_back_names ?? true); 
+          setOfferMetallic(data.offer_metallic ?? true); 
+          setOfferPersonalization(data.offer_personalization ?? true); // NEW
+      } 
+      setLoading(false); 
+  };
+  
+  const saveSettings = async () => { 
+      await supabase.from('event_settings').update({ 
+          event_name: eventName, 
+          event_logo_url: eventLogo, 
+          payment_mode: paymentMode, 
+          offer_back_names: offerBackNames, 
+          offer_metallic: offerMetallic,
+          offer_personalization: offerPersonalization // NEW
+      }).eq('id', 1); 
+      alert("Event Settings Saved!"); 
+  };
+
   const closeEvent = async () => { const input = prompt("⚠️ CLOSE EVENT? Type 'CLOSE' to confirm:"); if (input !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); if (newStatus === 'ready' || newStatus === 'partially_fulfilled') { const order = orders.find(o => o.id === orderId); let msg = newStatus === 'ready' ? "READY for pickup!" : "PARTIALLY READY. Pick up available items!"; if (order) try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is ${msg}` }) }); } catch (e) {} } };
   const deleteOrder = async (orderId, cartData) => { if (!confirm("⚠️ Cancel Order & Restore Inventory?")) return; setLoading(true); if (cartData && Array.isArray(cartData)) { for (const item of cartData) { if (item.productId && item.size) { const { data: currentItem } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (currentItem) { await supabase.from('inventory').update({ count: currentItem.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); alert("Order deleted and inventory restored."); };
@@ -111,7 +139,6 @@ export default function AdminPage() {
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing fields"); const { error } = await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: 'top', sort_order: 99 }]); if (error) return alert("Error: " + error.message); const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL']; const invRows = sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true })); await supabase.from('inventory').insert(invRows); alert("Product Created!"); setNewProdId(''); setNewProdName(''); setNewProdImage(''); fetchInventory(); };
   
-  // --- UPDATED GUEST UPLOAD: NOW INCLUDES SIZE ---
   const handleGuestUpload = (e) => { 
       const file = e.target.files[0]; 
       if (!file) return; 
@@ -124,18 +151,12 @@ export default function AdminPage() {
               const ws = wb.Sheets[wb.SheetNames[0]]; 
               const data = XLSX.utils.sheet_to_json(ws); 
               if (!data.length) return alert("Empty"); 
-              
               let count = 0; 
               for (const row of data) { 
                   const name = row['Name'] || row['name'] || row['Guest']; 
                   const size = row['Size'] || row['size']; 
-
                   if (name) { 
-                      await supabase.from('guests').insert([{ 
-                          name: String(name).trim(), 
-                          size: size ? String(size).trim() : null,
-                          has_ordered: false 
-                      }]); 
+                      await supabase.from('guests').insert([{ name: String(name).trim(), size: size ? String(size).trim() : null, has_ordered: false }]); 
                       count++; 
                   } 
               } 
@@ -195,7 +216,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* GUESTS TAB - UPDATED TO SHOW SIZE COLUMN */}
+        {/* GUESTS TAB - (Preserved) */}
         {activeTab === 'guests' && (
             <div className="max-w-4xl mx-auto">
                 <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Guest List Management</h2><p className="text-sm text-gray-500 mb-2">Upload Excel with columns: <strong>Name</strong> and <strong>Size</strong> (optional)</p><div className="flex gap-4"><input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /><button onClick={clearGuestList} className="text-red-600 font-bold text-sm whitespace-nowrap">🗑️ Clear All</button></div></div>
@@ -215,7 +236,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* LOGOS TAB - UPDATED WITH CATEGORY */}
+        {/* LOGOS TAB - (Preserved) */}
         {activeTab === 'logos' && (
             <div className="max-w-4xl mx-auto">
                 <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
@@ -251,8 +272,36 @@ export default function AdminPage() {
             </div>
         )}
         
-        {/* SETTINGS (Preserved) */}
-        {activeTab === 'settings' && (<div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div><div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200"><label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label><div className="space-y-2"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="retail" checked={paymentMode === 'retail'} onChange={() => setPaymentMode('retail')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Retail (Stripe)</span><span className="text-xs text-gray-500">Collect credit card payments from guests.</span></div></label><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="hosted" checked={paymentMode === 'hosted'} onChange={() => setPaymentMode('hosted')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Hosted (Party Mode)</span><span className="text-xs text-gray-500">Guests pay $0. Value is tracked for host invoice.</span></div></label></div></div><div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div></div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><p className="text-gray-500 text-sm mb-4">Clicking this will mark ALL active orders as "Completed" (clearing the TV Board). This does not delete sales data.</p><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>)}
+        {/* SETTINGS TAB - UPDATED WITH PERSONALIZATION TOGGLE */}
+        {activeTab === 'settings' && (
+            <div className="max-w-xl mx-auto">
+                <div className="bg-white p-8 rounded-lg shadow border border-gray-200">
+                    <h2 className="font-bold text-2xl mb-6">Event Settings</h2>
+                    <div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div>
+                    <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div>
+                    
+                    <div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200">
+                        <label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label>
+                        <div className="space-y-2">
+                            <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="retail" checked={paymentMode === 'retail'} onChange={() => setPaymentMode('retail')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Retail (Stripe)</span><span className="text-xs text-gray-500">Collect credit card payments from guests.</span></div></label>
+                            <label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="hosted" checked={paymentMode === 'hosted'} onChange={() => setPaymentMode('hosted')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Hosted (Party Mode)</span><span className="text-xs text-gray-500">Guests pay $0. Value is tracked for host invoice.</span></div></label>
+                        </div>
+                    </div>
+
+                    <div className="mb-6 bg-gray-50 p-4 rounded border">
+                        <label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label>
+                        <div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div>
+                        <div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div>
+                        
+                        {/* NEW: PERSONALIZATION TOGGLE */}
+                        <div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Custom Names?</span><input type="checkbox" checked={offerPersonalization} onChange={(e) => setOfferPersonalization(e.target.checked)} className="w-6 h-6" /></div>
+                    </div>
+                    
+                    <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button>
+                    <div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><p className="text-gray-500 text-sm mb-4">Clicking this will mark ALL active orders as "Completed" (clearing the TV Board). This does not delete sales data.</p><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div>
+                </div>
+            </div>
+        )}
 
       </div>
     </div>
