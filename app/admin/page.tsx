@@ -103,25 +103,57 @@ export default function AdminPage() {
       setLoading(false);
   };
 
-  const printLabel = async (order) => {
+const printLabel = async (order) => {
+    // 1. Mark as printed locally first
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
     await supabase.from('orders').update({ printed: true }).eq('id', order.id);
 
-    if (pnEnabled && pnApiKey && pnPrinterId) {
-        // --- CLOUD PRINT (Basic Text for Stability) ---
-        // To use nice PDFs here, you would need to generate a PDF Base64 string.
-        // For V1 stability, we will send a Raw Text job or a simple PDF structure.
-        const content = `ORDER #${order.id}\n${order.customer_name}\n\n${order.cart_data.map(i => `[ ] ${i.productName} (${i.size})\n    ${i.customizations.logos.map(l=>l.type).join(', ')}`).join('\n')}`;
-        
+    if (pnEnabled) {
+        // Validation
+        if (!pnApiKey) return alert("❌ Error: PrintNode API Key is missing in settings.");
+        if (!pnPrinterId) return alert("❌ Error: No Printer ID selected in settings.");
+
+        // --- CLOUD PRINT ---
+        // Construct simple text receipt
+        const lines = [
+            `ORDER #${order.id}`,
+            `${order.customer_name}`,
+            `Time: ${new Date(order.created_at).toLocaleTimeString()}`,
+            `------------------------`
+        ];
+        order.cart_data.forEach(item => {
+            lines.push(`[ ] ${item.productName} (${item.size})`);
+            if(item.customizations.mainDesign) lines.push(`    Main: ${item.customizations.mainDesign}`);
+            item.customizations.logos.forEach(l => lines.push(`    + ${l.type} (${l.position})`));
+            item.customizations.names.forEach(n => lines.push(`    + Name: ${n.text}`));
+            if(item.needsShipping) lines.push(`    ** SHIP TO HOME **`);
+            lines.push(` `);
+        });
+
+        const content = lines.join("\n");
+
         try {
-            await fetch('/api/printnode', {
+            // alert("Attempting to send to PrintNode..."); // Uncomment for deep debug
+            const res = await fetch('/api/printnode', {
                 method: 'POST',
-                body: JSON.stringify({ content: btoa(content), title: `Order ${order.id}` }) // Sending simple base64 text
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: btoa(content), title: `Order ${order.id}` }) 
             });
-            alert("Sent to Cloud Printer!");
-        } catch(e) { alert("Cloud Print Failed"); }
+            
+            const data = await res.json();
+            
+            if (!data.success) {
+                alert("❌ PrintNode Failed: " + data.error);
+            } else {
+                console.log("✅ Printed! Job ID:", data.id);
+                // Success - silent (or add alert("Sent!") if you prefer)
+            }
+        } catch(e) { 
+            alert("❌ Network/Server Error: " + e.message); 
+        }
+
     } else {
-        // --- BROWSER PRINT ---
+        // --- FALLBACK: BROWSER POPUP ---
         const printWindow = window.open('', '', 'width=800,height=600');
         if (!printWindow) { alert("⚠️ POPUP BLOCKED"); return; }
 
