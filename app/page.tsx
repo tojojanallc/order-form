@@ -25,9 +25,9 @@ export default function OrderForm() {
   
   // GUEST LIST STATES
   const [guests, setGuests] = useState([]);
-  const [filteredGuests, setFilteredGuests] = useState([]);
-  const [selectedGuest, setSelectedGuest] = useState(null); // The actual guest object
+  const [selectedGuest, setSelectedGuest] = useState(null); 
   const [guestSearch, setGuestSearch] = useState('');
+  const [guestError, setGuestError] = useState(''); // New Error State
 
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
@@ -77,28 +77,34 @@ export default function OrderForm() {
         setShowMetallic(settings.offer_metallic ?? true);
       }
 
-      // Fetch Guests
-      const { data: guestData } = await supabase.from('guests').select('*').order('name');
+      const { data: guestData } = await supabase.from('guests').select('*');
       if (guestData) setGuests(guestData);
     };
     fetchData();
   }, []);
 
-  // --- GUEST SEARCH LOGIC ---
-  useEffect(() => {
-    if (guestSearch.trim() === '') {
-        setFilteredGuests([]);
-    } else {
-        const search = guestSearch.toLowerCase();
-        setFilteredGuests(guests.filter(g => g.name.toLowerCase().includes(search)));
-    }
-  }, [guestSearch, guests]);
+  // --- STRICT GUEST VERIFICATION ---
+  const verifyGuest = () => {
+      if (!guestSearch.trim()) return;
+      setGuestError('');
+      
+      const search = guestSearch.trim().toLowerCase();
+      // Find EXACT match (case insensitive)
+      const match = guests.find(g => g.name.toLowerCase() === search);
 
-  const selectGuest = (guest) => {
-      setGuestSearch(guest.name);
-      setCustomerName(guest.name);
-      setSelectedGuest(guest);
-      setFilteredGuests([]); // Hide dropdown
+      if (match) {
+          if (match.has_ordered) {
+              setGuestError("❌ This name has already redeemed their item.");
+              setSelectedGuest(null);
+          } else {
+              setSelectedGuest(match);
+              setCustomerName(match.name); // Auto-fill for order record
+              setGuestError('');
+          }
+      } else {
+          setGuestError("❌ Name not found. Please type your full name exactly.");
+          setSelectedGuest(null);
+      }
   };
 
   const visibleProducts = products.filter(p => Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true));
@@ -165,8 +171,8 @@ export default function OrderForm() {
   const handleCheckout = async () => {
     // Validation
     if (paymentMode === 'hosted') {
-        if (!selectedGuest) { alert("Please search and select your name from the list."); return; }
-        if (selectedGuest.has_ordered) { alert("This guest has already redeemed their item."); return; }
+        if (!selectedGuest) { alert("Please verify your name first."); return; }
+        if (selectedGuest.has_ordered) { alert("Already redeemed."); return; }
     } else {
         if (!customerName) { alert("Please enter Name"); return; }
     }
@@ -175,10 +181,9 @@ export default function OrderForm() {
     
     setIsSubmitting(true);
     
-    // Save order
     const { error } = await supabase.from('orders').insert([{ 
-      customer_name: paymentMode === 'hosted' ? selectedGuest.name : customerName, // Use guest name
-      phone: customerPhone || 'N/A', // Phone optional for hosted
+      customer_name: paymentMode === 'hosted' ? selectedGuest.name : customerName, 
+      phone: customerPhone || 'N/A', 
       cart_data: cart, total_price: calculateGrandTotal(),
       shipping_address: cartRequiresShipping ? shippingAddress : null,
       shipping_city: cartRequiresShipping ? shippingCity : null,
@@ -296,32 +301,25 @@ export default function OrderForm() {
               <div className="p-4 bg-gray-100 border-t border-gray-300 rounded-b-xl">
                 <h3 className="font-bold text-black mb-2">6. Customer Info</h3>
                 
-                {/* --- SMART GUEST SELECTOR (HOSTED MODE) --- */}
                 {paymentMode === 'hosted' ? (
                     <div className="relative mb-4">
-                        <label className="text-xs font-bold uppercase text-gray-700 mb-1 block">Search Your Name</label>
-                        <input 
-                            className={`w-full p-3 border-2 rounded-lg text-lg ${selectedGuest ? 'border-green-500 bg-green-50 text-green-900 font-bold' : 'border-gray-400'}`} 
-                            placeholder="Start typing..." 
-                            value={guestSearch} 
-                            onChange={(e) => { setGuestSearch(e.target.value); setSelectedGuest(null); }}
-                        />
-                        {/* DROPDOWN */}
-                        {guestSearch && !selectedGuest && filteredGuests.length > 0 && (
-                            <div className="absolute z-10 w-full bg-white border border-gray-300 shadow-xl rounded-b-lg max-h-48 overflow-y-auto">
-                                {filteredGuests.map(g => (
-                                    <button 
-                                        key={g.id} 
-                                        onClick={() => g.has_ordered ? alert("Already Redeemed!") : selectGuest(g)}
-                                        className={`w-full text-left p-3 border-b hover:bg-blue-50 flex justify-between ${g.has_ordered ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''}`}
-                                    >
-                                        <span className="font-bold">{g.name}</span>
-                                        {g.has_ordered && <span className="text-xs text-red-600 font-bold uppercase">Redeemed</span>}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                        {selectedGuest && <div className="text-green-700 text-sm mt-1 font-bold">✅ Verified Guest</div>}
+                        <label className="text-xs font-bold uppercase text-gray-700 mb-1 block">Full Name</label>
+                        <div className="flex gap-2">
+                            <input 
+                                className={`flex-1 p-3 border-2 rounded-lg text-lg ${selectedGuest ? 'border-green-500 bg-green-50 text-green-900 font-bold' : 'border-gray-400'}`} 
+                                placeholder="Enter full name" 
+                                value={guestSearch}
+                                disabled={!!selectedGuest} 
+                                onChange={(e) => { setGuestSearch(e.target.value); setSelectedGuest(null); setGuestError(''); }}
+                            />
+                            {selectedGuest ? (
+                                <button onClick={() => { setSelectedGuest(null); setGuestSearch(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 rounded hover:bg-gray-300">Reset</button>
+                            ) : (
+                                <button onClick={verifyGuest} className="bg-blue-800 text-white font-bold px-4 rounded hover:bg-blue-900">Check</button>
+                            )}
+                        </div>
+                        {guestError && <p className="text-red-600 text-sm font-bold mt-2">{guestError}</p>}
+                        {selectedGuest && <p className="text-green-700 text-sm font-bold mt-2">✅ Verified! Welcome, {selectedGuest.name}.</p>}
                     </div>
                 ) : (
                     <>
