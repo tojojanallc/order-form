@@ -111,15 +111,19 @@ export default function AdminPage() {
       setLoading(false);
   };
 
-  const printLabel = async (order) => {
+const printLabel = async (order) => {
     if (!order) return;
     
+    // 1. Mark as printed locally first
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
     await supabase.from('orders').update({ printed: true }).eq('id', order.id);
 
     if (pnEnabled) {
         // --- CLOUD PRINT (PrintNode) ---
-        // Construct the text content line-by-line
+        // MARGIN SETTINGS (Adjust these to move text)
+        const topMargin = "\n";        // 1 empty line at top
+        const leftMargin = "   ";      // 3 spaces indent
+
         const lines = [
             `ORDER #${order.id}`,
             `${order.customer_name}`,
@@ -127,7 +131,6 @@ export default function AdminPage() {
             `------------------------`
         ];
 
-        // Loop items and add ALL details (Main, Accents, Names)
         order.cart_data.forEach(item => {
             lines.push(`[ ] ${item.productName} (${item.size})`);
             
@@ -141,15 +144,19 @@ export default function AdminPage() {
             }
 
             if(item.customizations.names && item.customizations.names.length > 0) {
+                // Formatting name to stand out
                 const names = item.customizations.names.map(n => `"${n.text}" (${n.position || 'Any'})`).join(', ');
                 lines.push(`    Names: ${names}`);
             }
 
             if(item.needsShipping) lines.push(`    ** SHIP TO HOME **`);
-            lines.push(` `); // Spacer
+            lines.push(` `); 
         });
 
-        const content = lines.join('\n');
+        // Apply margins to the final text block
+        // 1. Add top margin
+        // 2. Add left margin to EVERY line
+        const content = topMargin + lines.map(line => leftMargin + line).join('\n');
         
         try {
             const res = await fetch('/api/printnode', {
@@ -164,8 +171,9 @@ export default function AdminPage() {
                 console.log("Sent to cloud", data);
             }
         } catch(e) { alert("Cloud Print Network Failed: " + e.message); }
+
     } else {
-        // --- BROWSER PRINT ---
+        // --- BROWSER PRINT (Fallback) ---
         const printWindow = window.open('', '', 'width=800,height=600');
         if (!printWindow) { alert("⚠️ POPUP BLOCKED"); return; }
 
@@ -174,15 +182,17 @@ export default function AdminPage() {
             let details = `<strong>${i.productName}</strong> <span class="size">${i.size}</span>`;
             if (i.customizations.mainDesign) details += `<br/>Main: ${i.customizations.mainDesign}`;
             if (i.customizations.logos.length > 0) details += `<br/>Accents: ${i.customizations.logos.map(l => l.type).join(', ')}`;
-            // FIXED: Added Names to Browser Print
             if (i.customizations.names.length > 0) details += `<br/>Names: ${i.customizations.names.map(n => `"${n.text}"`).join(', ')}`;
             return `<div class="item">${details}</div>`;
         }).join('');
 
         if (printerType === 'standard') {
+            // Standard Sheet Margins
             htmlContent = `<html><head><title>Order #${order.id}</title><style>@page { size: letter; margin: 0.5in; } body { font-family: sans-serif; padding: 20px; } .item { border-bottom: 2px solid #eee; padding: 20px 0; font-size: 18px; } .size { background: black; color: white; padding: 2px 8px; border-radius: 4px; } </style></head><body><h1>${order.customer_name}</h1><h2>Order #${order.id}</h2>${itemHtml}</body></html>`;
         } else {
-            htmlContent = `<html><head><title>Order #${order.id}</title><style>@page { size: 4in 6in; margin: 0; } body { font-family: monospace; margin: 0.1in; } .header { border-bottom: 3px solid black; text-align: center; } .item { border-bottom: 1px dashed #999; padding: 5px 0; font-weight: bold; font-size: 14px; } </style></head><body><div class="header"><h1>${order.customer_name}</h1><h2>#${order.id}</h2></div>${itemHtml}</body></html>`;
+            // Thermal Label Margins (INCREASED HERE)
+            // margin: 0.2in top/left to push content away from edge
+            htmlContent = `<html><head><title>Order #${order.id}</title><style>@page { size: 4in 6in; margin: 0; } body { font-family: monospace; margin-top: 0.25in; margin-left: 0.25in; margin-right: 0.1in; } .header { border-bottom: 3px solid black; text-align: center; } .item { border-bottom: 1px dashed #999; padding: 5px 0; font-weight: bold; font-size: 14px; } </style></head><body><div class="header"><h1>${order.customer_name}</h1><h2>#${order.id}</h2></div>${itemHtml}</body></html>`;
         }
         printWindow.document.write(htmlContent);
         printWindow.document.close();
