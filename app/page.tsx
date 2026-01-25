@@ -57,6 +57,7 @@ export default function OrderForm() {
   const [paymentMode, setPaymentMode] = useState('retail'); 
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
+  const [showPersonalization, setShowPersonalization] = useState(true); // NEW
 
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [size, setSize] = useState('');
@@ -98,6 +99,7 @@ export default function OrderForm() {
         setPaymentMode(settings.payment_mode || 'retail');
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
+        setShowPersonalization(settings.offer_personalization ?? true); // NEW
       }
 
       const { data: guestData } = await supabase.from('guests').select('*');
@@ -106,7 +108,6 @@ export default function OrderForm() {
     fetchData();
   }, []);
 
-  // --- AUTO-FILL SIZE ON GUEST VERIFY ---
   const verifyGuest = () => {
       if (!guestSearch.trim()) return;
       setGuestError('');
@@ -118,33 +119,27 @@ export default function OrderForm() {
               setSelectedGuest(match); 
               setCustomerName(match.name); 
               setGuestError('');
-              // If they have a size, lock it in.
-              if (match.size) setSize(match.size);
+              if (match.size && visibleSizes.includes(match.size)) { setSize(match.size); }
           }
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
   // --- LOGIC: FILTER VISIBLE PRODUCTS ---
-  // Retail Mode: Show if ANY size is active.
-  // Hosted Mode: Show ONLY if the Guest's assigned size is > 0 stock.
   const visibleProducts = products.filter(p => {
       if (paymentMode === 'hosted' && selectedGuest?.size) {
-          // Strict check: Does stock exist for Product + Guest Size?
           const key = `${p.id}_${selectedGuest.size}`;
           return (inventory[key] || 0) > 0;
       }
-      // Standard check
       return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
   });
 
   useEffect(() => {
-    // If the currently selected product disappears (due to filter), select the first available one
     if (visibleProducts.length > 0) {
         if (!selectedProduct || !visibleProducts.find(p => p.id === selectedProduct.id)) {
             setSelectedProduct(visibleProducts[0]);
         }
     } else {
-        setSelectedProduct(null); // No products available for this user
+        setSelectedProduct(null); 
     }
   }, [visibleProducts, selectedProduct]);
 
@@ -156,25 +151,16 @@ export default function OrderForm() {
 
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    
-    // If Guest has size, return ONLY that size
-    if (paymentMode === 'hosted' && selectedGuest?.size) {
-        return [selectedGuest.size];
-    }
-
+    if (paymentMode === 'hosted' && selectedGuest?.size) return [selectedGuest.size];
     const unsorted = Object.keys(activeItems).filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true).map(key => key.replace(`${selectedProduct.id}_`, ''));
     return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
   const visibleSizes = getVisibleSizes();
 
-  // If we are in hosted mode, size is locked to guest size (or first available)
   useEffect(() => {
     if (visibleSizes.length > 0) {
-        if (paymentMode === 'hosted' && selectedGuest?.size) {
-             setSize(selectedGuest.size);
-        } else if (!visibleSizes.includes(size)) {
-             setSize(visibleSizes[0]);
-        }
+        if (paymentMode === 'hosted' && selectedGuest?.size) { setSize(selectedGuest.size); } 
+        else if (!visibleSizes.includes(size)) { setSize(visibleSizes[0]); }
     }
   }, [selectedProduct, visibleSizes, size, paymentMode, selectedGuest]);
 
@@ -182,13 +168,10 @@ export default function OrderForm() {
   const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
-  // --- DYNAMIC POSITIONS FILTER ---
   const getPositionOptions = (itemType) => {
       if (!selectedProduct) return [];
-      
       const pType = selectedProduct.type || (selectedProduct.id.includes('pant') || selectedProduct.id.includes('jogger') ? 'bottom' : 'top');
       const availableZones = ZONES[pType] || ZONES.top;
-
       if (itemType === 'logo') return availableZones.filter(z => z.type === 'logo' || z.type === 'both');
       if (itemType === 'name') return availableZones.filter(z => z.type === 'name' || z.type === 'both');
       return availableZones;
@@ -220,13 +203,7 @@ export default function OrderForm() {
       productName: selectedProduct.name,
       size: size,
       needsShipping: isOutOfStock, 
-      customizations: { 
-          mainDesign: selectedMainDesign, 
-          logos, 
-          names, 
-          backList: backNameList, 
-          metallic: metallicHighlight 
-      },
+      customizations: { mainDesign: selectedMainDesign, logos, names, backList: backNameList, metallic: metallicHighlight },
       finalPrice: calculateTotal()
     };
     setCart([...cart, newItem]);
@@ -327,14 +304,13 @@ export default function OrderForm() {
                   </div>
               )}
 
-              {/* --- ORDER FORM (Hidden until verified in Hosted Mode) --- */}
+              {/* --- ORDER FORM --- */}
               {(paymentMode === 'retail' || selectedGuest) && (
                   <>
                     <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                         <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
                         {selectedGuest && <div className="mb-4 bg-green-100 text-green-800 p-2 rounded text-sm text-center font-bold">Hi {selectedGuest.name}! We've reserved size {selectedGuest.size || 'Standard'} for you.</div>}
                         
-                        {/* If no products available for their size */}
                         {!selectedProduct ? (
                             <div className="text-center py-8 text-red-600 font-bold">Sorry, all items in your size ({selectedGuest?.size}) are currently claimed.</div>
                         ) : (
@@ -344,7 +320,6 @@ export default function OrderForm() {
                                 <div className="grid md:grid-cols-2 gap-4">
                                 <div><label className="text-xs font-black text-gray-900 uppercase">Item</label><select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct.id}>{visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} {showPrice ? `- $${p.base_price}` : ''}</option>)}</select></div>
                                 <div><label className="text-xs font-black text-gray-900 uppercase">Size</label>
-                                    {/* Disable size selector if guest has assigned size */}
                                     <select disabled={paymentMode === 'hosted' && !!selectedGuest?.size} className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium disabled:bg-gray-200 disabled:text-gray-600" value={size} onChange={(e) => setSize(e.target.value)}>{visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}</select>
                                 </div>
                                 </div>
@@ -403,8 +378,8 @@ export default function OrderForm() {
                         </section>
                     )}
 
-                    {/* --- 4. PERSONALIZATION --- */}
-                    {selectedProduct && (
+                    {/* --- 4. PERSONALIZATION (CONDITIONAL) --- */}
+                    {selectedProduct && showPersonalization && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                             {names.map((nameItem, index) => (
@@ -414,7 +389,11 @@ export default function OrderForm() {
                                 <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                             </div>
                             ))}
-                            <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Your Name to Your Apparel</button>
+                            
+                            {/* LOGIC: IF RETAIL (ALWAYS SHOW) -OR- IF HOSTED (SHOW ONLY IF 0 NAMES) */}
+                            {(paymentMode === 'retail' || names.length === 0) && (
+                                <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Your Name to Your Apparel</button>
+                            )}
                         </section>
                     )}
                     
