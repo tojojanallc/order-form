@@ -9,11 +9,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-// --- DEFINE CORRECT SIZE ORDER ---
-const SIZE_ORDER = [
-    'Youth XS', 'Youth S', 'Youth M', 'Youth L', 
-    'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'
-];
+const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
 
 export default function OrderForm() {
   const [cart, setCart] = useState([]); 
@@ -25,8 +21,14 @@ export default function OrderForm() {
   const [shippingState, setShippingState] = useState('');
   const [shippingZip, setShippingZip] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [orderComplete, setOrderComplete] = useState(false); // NEW
+  const [orderComplete, setOrderComplete] = useState(false);
   
+  // GUEST LIST STATES
+  const [guests, setGuests] = useState([]);
+  const [filteredGuests, setFilteredGuests] = useState([]);
+  const [selectedGuest, setSelectedGuest] = useState(null); // The actual guest object
+  const [guestSearch, setGuestSearch] = useState('');
+
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
@@ -34,7 +36,7 @@ export default function OrderForm() {
 
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
-  const [paymentMode, setPaymentMode] = useState('retail'); // NEW
+  const [paymentMode, setPaymentMode] = useState('retail'); 
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
 
@@ -74,9 +76,30 @@ export default function OrderForm() {
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
       }
+
+      // Fetch Guests
+      const { data: guestData } = await supabase.from('guests').select('*').order('name');
+      if (guestData) setGuests(guestData);
     };
     fetchData();
   }, []);
+
+  // --- GUEST SEARCH LOGIC ---
+  useEffect(() => {
+    if (guestSearch.trim() === '') {
+        setFilteredGuests([]);
+    } else {
+        const search = guestSearch.toLowerCase();
+        setFilteredGuests(guests.filter(g => g.name.toLowerCase().includes(search)));
+    }
+  }, [guestSearch, guests]);
+
+  const selectGuest = (guest) => {
+      setGuestSearch(guest.name);
+      setCustomerName(guest.name);
+      setSelectedGuest(guest);
+      setFilteredGuests([]); // Hide dropdown
+  };
 
   const visibleProducts = products.filter(p => Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true));
 
@@ -84,16 +107,12 @@ export default function OrderForm() {
     if (!selectedProduct && visibleProducts.length > 0) setSelectedProduct(visibleProducts[0]);
   }, [visibleProducts, selectedProduct]);
 
-  // --- SORTED SIZES ---
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
     const unsorted = Object.keys(activeItems)
       .filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true)
       .map(key => key.replace(`${selectedProduct.id}_`, ''));
-      
-    return unsorted.sort((a, b) => {
-        return SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b);
-    });
+    return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
   const visibleSizes = getVisibleSizes();
 
@@ -140,38 +159,45 @@ export default function OrderForm() {
   const getValidPositions = () => selectedProduct ? (POSITIONS[selectedProduct.type] || POSITIONS.top) : [];
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
-
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
   const handleCheckout = async () => {
-    if (!customerName || !customerPhone || !customerEmail) { alert("Please enter Name, Email, and Phone"); return; }
+    // Validation
+    if (paymentMode === 'hosted') {
+        if (!selectedGuest) { alert("Please search and select your name from the list."); return; }
+        if (selectedGuest.has_ordered) { alert("This guest has already redeemed their item."); return; }
+    } else {
+        if (!customerName) { alert("Please enter Name"); return; }
+    }
+    
     if (cartRequiresShipping) { if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { alert("Shipping Address Required!"); return; } }
     
     setIsSubmitting(true);
     
-    // Save order to Supabase
-    const { data: orderData, error } = await supabase.from('orders').insert([{ 
-      customer_name: customerName, phone: customerPhone, cart_data: cart, total_price: calculateGrandTotal(),
+    // Save order
+    const { error } = await supabase.from('orders').insert([{ 
+      customer_name: paymentMode === 'hosted' ? selectedGuest.name : customerName, // Use guest name
+      phone: customerPhone || 'N/A', // Phone optional for hosted
+      cart_data: cart, total_price: calculateGrandTotal(),
       shipping_address: cartRequiresShipping ? shippingAddress : null,
       shipping_city: cartRequiresShipping ? shippingCity : null,
       shipping_state: cartRequiresShipping ? shippingState : null,
       shipping_zip: cartRequiresShipping ? shippingZip : null,
       status: cartRequiresShipping ? 'pending_shipping' : 'pending' 
-    }]).select();
+    }]);
 
     if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
 
-    // Send Receipt (Always)
-    try { await fetch('/api/send-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: customerEmail, customerName, cart, total: calculateGrandTotal() }) }); } catch (e) {}
-
-    // MODE CHECK: HOSTED VS RETAIL
-    if (paymentMode === 'hosted') {
-        // Skip Stripe, just show success
+    // IF HOSTED: Mark guest as ordered
+    if (paymentMode === 'hosted' && selectedGuest) {
+        await supabase.from('guests').update({ has_ordered: true }).eq('id', selectedGuest.id);
         setOrderComplete(true);
-        setCart([]); // Clear cart
+        setCart([]);
+        setSelectedGuest(null);
+        setGuestSearch('');
     } else {
-        // Retail: Redirect to Stripe
+        // Retail
         try {
             const response = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, customerName }) });
             const data = await response.json();
@@ -183,23 +209,19 @@ export default function OrderForm() {
   if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
   if (!selectedProduct) return <div className="p-10 text-center">No active products available.</div>;
 
-  // --- NEW: SUCCESS SCREEN FOR HOSTED MODE ---
   if (orderComplete) {
       return (
           <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center p-8 text-center">
               <div className="bg-white p-8 rounded-xl shadow-lg border border-green-200 max-w-md">
                   <div className="text-6xl mb-4">🎉</div>
                   <h1 className="text-3xl font-black text-green-800 mb-2">Order Received!</h1>
-                  <p className="text-gray-600 mb-6">Thanks, {customerName}! Your gear is being prepared.</p>
-                  <p className="font-bold text-lg mb-6">Please watch the TV Board for your name.</p>
-                  <button onClick={() => { setOrderComplete(false); setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); }} className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700">Place Another Order</button>
+                  <p className="text-gray-600 mb-6">Your gear is being prepared.</p>
+                  <button onClick={() => { setOrderComplete(false); setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); window.location.reload(); }} className="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700">Done</button>
               </div>
           </div>
       );
   }
 
-  // --- PRICE DISPLAY LOGIC ---
-  // If hosted, hide price. If retail, show price.
   const showPrice = paymentMode === 'retail';
 
   return (
@@ -215,33 +237,11 @@ export default function OrderForm() {
               
               <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                 <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
-                
-                {selectedProduct && selectedProduct.image_url && (
-                    <div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center">
-                        <img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
-                    </div>
-                )}
-
-                {isOutOfStock ? (
-                  <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert">
-                    <p className="font-bold">⚠️ Out of Stock at Event</p>
-                    <p className="text-sm">We can ship this to your home!</p>
-                  </div>
-                ) : <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">✓ In Stock ({currentStock} available)</div>}
-
+                {selectedProduct && selectedProduct.image_url && (<div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center"><img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" /></div>)}
+                {isOutOfStock ? (<div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert"><p className="font-bold">⚠️ Out of Stock at Event</p><p className="text-sm">We can ship this to your home!</p></div>) : <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">✓ In Stock ({currentStock} available)</div>}
                 <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-black text-gray-900 uppercase">Item</label>
-                    <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct.id}>
-                      {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} {showPrice ? `- $${p.base_price}` : ''}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-gray-900 uppercase">Size</label>
-                    <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size} onChange={(e) => setSize(e.target.value)}>
-                      {visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
+                  <div><label className="text-xs font-black text-gray-900 uppercase">Item</label><select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct.id}>{visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} {showPrice ? `- $${p.base_price}` : ''}</option>)}</select></div>
+                  <div><label className="text-xs font-black text-gray-900 uppercase">Size</label><select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size} onChange={(e) => setSize(e.target.value)}>{visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                 </div>
               </section>
 
@@ -251,11 +251,7 @@ export default function OrderForm() {
                   const currentImage = getLogoImage(logo.type);
                   return (
                     <div key={index} className="flex flex-col gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                      <div className="flex flex-col md:flex-row gap-2">
-                        <select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>{logoOptions.map(opt => <option key={opt.label} value={opt.label}>{opt.label}</option>)}</select>
-                        <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
-                        <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
-                      </div>
+                      <div className="flex flex-col md:flex-row gap-2"><select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>{logoOptions.map(opt => <option key={opt.label} value={opt.label}>{opt.label}</option>)}</select><select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select><button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button></div>
                       {currentImage && (<div className="bg-white border rounded p-2 self-start"><img src={currentImage} alt="Logo Preview" className="h-16 w-auto object-contain" /></div>)}
                     </div>
                   );
@@ -275,15 +271,9 @@ export default function OrderForm() {
                 <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Name</button>
               </section>
               
-              {showBackNames && (
-                  <section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300">
-                    <label className="flex items-center gap-3 mb-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} /><span className="font-bold text-black">Back Name List {showPrice && '(+$5)'}</span></label>
-                    {showMetallic && (<label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} /><span className="font-bold text-black">Metallic Highlight {showPrice && '(+$5)'}</span></label>)}
-                  </section>
-              )}
+              {showBackNames && (<section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300"><label className="flex items-center gap-3 mb-2 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={backNameList} onChange={(e) => setBackNameList(e.target.checked)} /><span className="font-bold text-black">Back Name List {showPrice && '(+$5)'}</span></label>{showMetallic && (<label className="flex items-center gap-3 cursor-pointer"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} /><span className="font-bold text-black">Metallic Highlight {showPrice && '(+$5)'}</span></label>)}</section>)}
 
             </div>
-            {/* If Hosted mode, hide price in footer or show 'Value' */}
             <div className="bg-gray-900 text-white p-6 sticky bottom-0 flex justify-between items-center"><div><p className="text-gray-300 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p><p className="text-2xl font-bold">{showPrice ? `$${calculateTotal()}` : 'Free'}</p></div><button onClick={handleAddToCart} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform">Add to Cart</button></div>
           </div>
         </div>
@@ -305,9 +295,42 @@ export default function OrderForm() {
             {cart.length > 0 && (
               <div className="p-4 bg-gray-100 border-t border-gray-300 rounded-b-xl">
                 <h3 className="font-bold text-black mb-2">6. Customer Info</h3>
-                <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-                <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
-                <input className="w-full p-2 border border-gray-400 rounded mb-4 text-sm text-black" placeholder="Phone Number" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                
+                {/* --- SMART GUEST SELECTOR (HOSTED MODE) --- */}
+                {paymentMode === 'hosted' ? (
+                    <div className="relative mb-4">
+                        <label className="text-xs font-bold uppercase text-gray-700 mb-1 block">Search Your Name</label>
+                        <input 
+                            className={`w-full p-3 border-2 rounded-lg text-lg ${selectedGuest ? 'border-green-500 bg-green-50 text-green-900 font-bold' : 'border-gray-400'}`} 
+                            placeholder="Start typing..." 
+                            value={guestSearch} 
+                            onChange={(e) => { setGuestSearch(e.target.value); setSelectedGuest(null); }}
+                        />
+                        {/* DROPDOWN */}
+                        {guestSearch && !selectedGuest && filteredGuests.length > 0 && (
+                            <div className="absolute z-10 w-full bg-white border border-gray-300 shadow-xl rounded-b-lg max-h-48 overflow-y-auto">
+                                {filteredGuests.map(g => (
+                                    <button 
+                                        key={g.id} 
+                                        onClick={() => g.has_ordered ? alert("Already Redeemed!") : selectGuest(g)}
+                                        className={`w-full text-left p-3 border-b hover:bg-blue-50 flex justify-between ${g.has_ordered ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''}`}
+                                    >
+                                        <span className="font-bold">{g.name}</span>
+                                        {g.has_ordered && <span className="text-xs text-red-600 font-bold uppercase">Redeemed</span>}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        {selectedGuest && <div className="text-green-700 text-sm mt-1 font-bold">✅ Verified Guest</div>}
+                    </div>
+                ) : (
+                    <>
+                        <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                        <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
+                        <input className="w-full p-2 border border-gray-400 rounded mb-4 text-sm text-black" placeholder="Phone Number" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                    </>
+                )}
+
                 {cartRequiresShipping && (
                   <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once">
                     <h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4>
@@ -318,7 +341,7 @@ export default function OrderForm() {
                 )}
                 {showPrice && <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>}
                 
-                <button onClick={handleCheckout} disabled={isSubmitting} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting ? 'bg-gray-500' : 'bg-blue-800 hover:bg-blue-900'}`}>
+                <button onClick={handleCheckout} disabled={isSubmitting || (paymentMode === 'hosted' && !selectedGuest)} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting || (paymentMode === 'hosted' && !selectedGuest) ? 'bg-gray-400' : 'bg-blue-800 hover:bg-blue-900'}`}>
                     {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay Now with Stripe")}
                 </button>
               </div>
