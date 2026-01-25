@@ -23,16 +23,19 @@ export default function OrderForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   
-  // GUEST LIST STATES
   const [guests, setGuests] = useState([]);
   const [selectedGuest, setSelectedGuest] = useState(null); 
   const [guestSearch, setGuestSearch] = useState('');
-  const [guestError, setGuestError] = useState(''); // New Error State
+  const [guestError, setGuestError] = useState(''); 
 
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
+  
+  // LOGO STATES
   const [logoOptions, setLogoOptions] = useState([]); 
+  const [mainOptions, setMainOptions] = useState([]); // Main Designs (Pick 1)
+  const [accentOptions, setAccentOptions] = useState([]); // Accents (Pick Any)
 
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
@@ -40,9 +43,11 @@ export default function OrderForm() {
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
 
+  // SELECTIONS
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [size, setSize] = useState('');
-  const [logos, setLogos] = useState([]); 
+  const [selectedMainDesign, setSelectedMainDesign] = useState(''); // NEW STATE
+  const [logos, setLogos] = useState([]); // Accents list
   const [names, setNames] = useState([]);
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
@@ -53,8 +58,12 @@ export default function OrderForm() {
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
 
-      const { data: logoData } = await supabase.from('logos').select('label, image_url').eq('active', true).order('sort_order');
-      if (logoData) setLogoOptions(logoData);
+      const { data: logoData } = await supabase.from('logos').select('label, image_url, category').eq('active', true).order('sort_order');
+      if (logoData) {
+          setLogoOptions(logoData);
+          setMainOptions(logoData.filter(l => l.category === 'main'));
+          setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
+      }
 
       const { data: invData } = await supabase.from('inventory').select('*');
       if (invData) {
@@ -83,28 +92,15 @@ export default function OrderForm() {
     fetchData();
   }, []);
 
-  // --- STRICT GUEST VERIFICATION ---
   const verifyGuest = () => {
       if (!guestSearch.trim()) return;
       setGuestError('');
-      
       const search = guestSearch.trim().toLowerCase();
-      // Find EXACT match (case insensitive)
       const match = guests.find(g => g.name.toLowerCase() === search);
-
       if (match) {
-          if (match.has_ordered) {
-              setGuestError("❌ This name has already redeemed their item.");
-              setSelectedGuest(null);
-          } else {
-              setSelectedGuest(match);
-              setCustomerName(match.name); // Auto-fill for order record
-              setGuestError('');
-          }
-      } else {
-          setGuestError("❌ Name not found. Please type your full name exactly.");
-          setSelectedGuest(null);
-      }
+          if (match.has_ordered) { setGuestError("❌ This name has already redeemed their item."); setSelectedGuest(null); } 
+          else { setSelectedGuest(match); setCustomerName(match.name); setGuestError(''); }
+      } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
   const visibleProducts = products.filter(p => Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true));
@@ -113,11 +109,16 @@ export default function OrderForm() {
     if (!selectedProduct && visibleProducts.length > 0) setSelectedProduct(visibleProducts[0]);
   }, [visibleProducts, selectedProduct]);
 
+  // AUTO-SELECT MAIN DESIGN IF ONLY ONE EXISTS
+  useEffect(() => {
+      if (mainOptions.length === 1) {
+          setSelectedMainDesign(mainOptions[0].label);
+      }
+  }, [mainOptions]);
+
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    const unsorted = Object.keys(activeItems)
-      .filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true)
-      .map(key => key.replace(`${selectedProduct.id}_`, ''));
+    const unsorted = Object.keys(activeItems).filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true).map(key => key.replace(`${selectedProduct.id}_`, ''));
     return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
   const visibleSizes = getVisibleSizes();
@@ -144,9 +145,11 @@ export default function OrderForm() {
 
   const handleAddToCart = () => {
     if (!selectedProduct) return;
+    if (mainOptions.length > 0 && !selectedMainDesign) { alert("Please select a Design (Step 2)."); return; }
+    
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
-    if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Logo and Name."); return; }
+    if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Accent Logo and Name."); return; }
 
     const newItem = {
       id: Date.now(),
@@ -154,22 +157,32 @@ export default function OrderForm() {
       productName: selectedProduct.name,
       size: size,
       needsShipping: isOutOfStock, 
-      customizations: { logos, names, backList: backNameList, metallic: metallicHighlight },
+      customizations: { 
+          mainDesign: selectedMainDesign, // Store Main Design Choice
+          logos, 
+          names, 
+          backList: backNameList, 
+          metallic: metallicHighlight 
+      },
       finalPrice: calculateTotal()
     };
     setCart([...cart, newItem]);
+    
+    // Reset form but keep main design if there is only one
     setLogos([]); setNames([]); setBackNameList(false); setMetallicHighlight(false);
+    if (mainOptions.length > 1) setSelectedMainDesign(''); 
   };
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
   const getValidPositions = () => selectedProduct ? (POSITIONS[selectedProduct.type] || POSITIONS.top) : [];
+  
+  const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
   const handleCheckout = async () => {
-    // Validation
     if (paymentMode === 'hosted') {
         if (!selectedGuest) { alert("Please verify your name first."); return; }
         if (selectedGuest.has_ordered) { alert("Already redeemed."); return; }
@@ -194,7 +207,6 @@ export default function OrderForm() {
 
     if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
 
-    // IF HOSTED: Mark guest as ordered
     if (paymentMode === 'hosted' && selectedGuest) {
         await supabase.from('guests').update({ has_ordered: true }).eq('id', selectedGuest.id);
         setOrderComplete(true);
@@ -202,7 +214,6 @@ export default function OrderForm() {
         setSelectedGuest(null);
         setGuestSearch('');
     } else {
-        // Retail
         try {
             const response = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, customerName }) });
             const data = await response.json();
@@ -250,22 +261,69 @@ export default function OrderForm() {
                 </div>
               </section>
 
-              <section>
-                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Accent Logos</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
-                {logos.map((logo, index) => {
-                  const currentImage = getLogoImage(logo.type);
-                  return (
-                    <div key={index} className="flex flex-col gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                      <div className="flex flex-col md:flex-row gap-2"><select className="border border-gray-400 p-2 rounded flex-1 bg-white text-black" value={logo.type} onChange={(e) => updateLogo(index, 'type', e.target.value)}>{logoOptions.map(opt => <option key={opt.label} value={opt.label}>{opt.label}</option>)}</select><select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Select Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select><button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button></div>
-                      {currentImage && (<div className="bg-white border rounded p-2 self-start"><img src={currentImage} alt="Logo Preview" className="h-16 w-auto object-contain" /></div>)}
+              {/* --- 2. MAIN DESIGN (MANDATORY, RADIO) --- */}
+              {mainOptions.length > 0 && (
+                  <section>
+                    <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                        {mainOptions.map((opt) => (
+                            <button 
+                                key={opt.label} 
+                                onClick={() => setSelectedMainDesign(opt.label)} 
+                                className={`border-2 rounded-lg p-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${selectedMainDesign === opt.label ? 'border-green-600 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 bg-white hover:border-gray-400'}`}
+                            >
+                                {opt.image_url ? (
+                                    <img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />
+                                ) : (
+                                    <div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>
+                                )}
+                                <span className={`text-xs font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
+                                {selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
+                            </button>
+                        ))}
                     </div>
-                  );
-                })}
-                <button onClick={() => setLogos([...logos, { type: logoOptions[0]?.label || 'Logo', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Logo</button>
+                  </section>
+              )}
+
+              {/* --- 3. ACCENT LOGOS (OPTIONAL, MULTI) --- */}
+              <section>
+                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
+                
+                {/* Visual Menu for Accents */}
+                <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
+                    {accentOptions.map((opt) => (
+                        <button 
+                            key={opt.label} 
+                            onClick={() => addLogo(opt.label)} 
+                            className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95"
+                        >
+                            {opt.image_url ? <img src={opt.image_url} className="h-12 w-full object-contain" /> : <div className="h-12 w-full bg-gray-100 text-[10px] flex items-center justify-center">No Img</div>}
+                            <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{opt.label}</span>
+                        </button>
+                    ))}
+                </div>
+
+                {/* Selected List */}
+                {logos.length > 0 && (
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-300 space-y-3">
+                        <h3 className="text-xs font-bold uppercase text-gray-500">Selected Accents (Set Position)</h3>
+                        {logos.map((logo, index) => {
+                            const currentImage = getLogoImage(logo.type);
+                            return (
+                                <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
+                                    <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
+                                    <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
+                                    <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Position...</option>{getValidPositions().map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
+                                    <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
               </section>
 
               <section>
-                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Names</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
+                <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Names</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                 {names.map((nameItem, index) => (
                   <div key={index} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                     <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
@@ -292,6 +350,7 @@ export default function OrderForm() {
                   <p className="font-black text-black text-lg">{item.productName}</p>
                   {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
                   <p className="text-sm text-gray-800 font-medium">Size: {item.size}</p>
+                  <div className="text-xs text-blue-900 font-bold mt-1">Main Design: {item.customizations.mainDesign}</div>
                   <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">{item.customizations.logos.map((l, i) => <div key={i}>• {l.type} ({l.position})</div>)}{item.customizations.names.map((n, i) => <div key={i}>• "{n.text}" ({n.position})</div>)}</div>
                   {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice}.00</p>}
                 </div>
@@ -305,18 +364,8 @@ export default function OrderForm() {
                     <div className="relative mb-4">
                         <label className="text-xs font-bold uppercase text-gray-700 mb-1 block">Full Name</label>
                         <div className="flex gap-2">
-                            <input 
-                                className={`flex-1 p-3 border-2 rounded-lg text-lg ${selectedGuest ? 'border-green-500 bg-green-50 text-green-900 font-bold' : 'border-gray-400'}`} 
-                                placeholder="Enter full name" 
-                                value={guestSearch}
-                                disabled={!!selectedGuest} 
-                                onChange={(e) => { setGuestSearch(e.target.value); setSelectedGuest(null); setGuestError(''); }}
-                            />
-                            {selectedGuest ? (
-                                <button onClick={() => { setSelectedGuest(null); setGuestSearch(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 rounded hover:bg-gray-300">Reset</button>
-                            ) : (
-                                <button onClick={verifyGuest} className="bg-blue-800 text-white font-bold px-4 rounded hover:bg-blue-900">Check</button>
-                            )}
+                            <input className={`flex-1 p-3 border-2 rounded-lg text-lg ${selectedGuest ? 'border-green-500 bg-green-50 text-green-900 font-bold' : 'border-gray-400'}`} placeholder="Enter full name" value={guestSearch} disabled={!!selectedGuest} onChange={(e) => { setGuestSearch(e.target.value); setSelectedGuest(null); setGuestError(''); }} />
+                            {selectedGuest ? (<button onClick={() => { setSelectedGuest(null); setGuestSearch(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 rounded hover:bg-gray-300">Reset</button>) : (<button onClick={verifyGuest} className="bg-blue-800 text-white font-bold px-4 rounded hover:bg-blue-900">Check</button>)}
                         </div>
                         {guestError && <p className="text-red-600 text-sm font-bold mt-2">{guestError}</p>}
                         {selectedGuest && <p className="text-green-700 text-sm font-bold mt-2">✅ Verified! Welcome, {selectedGuest.name}.</p>}
@@ -329,14 +378,7 @@ export default function OrderForm() {
                     </>
                 )}
 
-                {cartRequiresShipping && (
-                  <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once">
-                    <h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4>
-                    <input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} />
-                    <div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div>
-                    <input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} />
-                  </div>
-                )}
+                {cartRequiresShipping && (<div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once"><h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} /><div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div><input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} /></div>)}
                 {showPrice && <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>}
                 
                 <button onClick={handleCheckout} disabled={isSubmitting || (paymentMode === 'hosted' && !selectedGuest)} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting || (paymentMode === 'hosted' && !selectedGuest) ? 'bg-gray-400' : 'bg-blue-800 hover:bg-blue-900'}`}>
