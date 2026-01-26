@@ -2,4 +2,7 @@ node_modules
 .next
 out
 build
+.env
+.vercel
+.env*.local
 .env.local
