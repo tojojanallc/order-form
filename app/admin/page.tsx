@@ -9,6 +9,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
+const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
+
 const STATUSES = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
   pending_shipping: { label: 'To Be Shipped', color: 'bg-purple-100 text-purple-800 border-purple-300' },
@@ -41,7 +43,7 @@ export default function AdminPage() {
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
   const [newProdImage, setNewProdImage] = useState(''); 
-  const [newProdType, setNewProdType] = useState('top'); // NEW: Type state
+  const [newProdType, setNewProdType] = useState('top'); // Default to Top
   const [newLogoName, setNewLogoName] = useState('');
   const [newLogoUrl, setNewLogoUrl] = useState('');
   const [newLogoCategory, setNewLogoCategory] = useState('accent'); 
@@ -248,10 +250,25 @@ export default function AdminPage() {
   const updateStock = async (productId, size, field, value) => { setInventory(inventory.map(i => (i.product_id === productId && i.size === size) ? { ...i, [field]: value } : i)); await supabase.from('inventory').update({ [field]: value }).eq('product_id', productId).eq('size', size); };
   const updatePrice = async (productId, newPrice) => { setProducts(products.map(p => p.id === productId ? { ...p, base_price: newPrice } : p)); await supabase.from('products').update({ base_price: newPrice }).eq('id', productId); };
   const toggleLogo = async (id, currentStatus) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !currentStatus } : l)); await supabase.from('logos').update({ active: !currentStatus }).eq('id', id); };
-  const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
-  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   
-  // --- UPDATED ADD PRODUCT (USES TYPE STATE) ---
+  // --- ROBUST DOWNLOAD FUNCTION (Fixes "Do Nothing" bug) ---
+  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
+  const downloadTemplate = () => { 
+      try {
+        if (!inventory || inventory.length === 0) return alert("❌ No inventory data to download."); 
+        const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, _Reference_Name: getProductName(item.product_id) || item.product_id })); 
+        data.sort((a, b) => { 
+            const nameA = (a._Reference_Name || '').toLowerCase(); const nameB = (b._Reference_Name || '').toLowerCase();
+            if (nameA !== nameB) return nameA.localeCompare(nameB); 
+            const indexA = SIZE_ORDER.indexOf(a.size); const indexB = SIZE_ORDER.indexOf(b.size);
+            return (indexA > -1 ? indexA : 99) - (indexB > -1 ? indexB : 99); 
+        }); 
+        const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory"); XLSX.writeFile(wb, "Lev_Inventory_Update.xlsx"); 
+      } catch (err) { console.error(err); alert("❌ Download Failed: " + err.message); }
+  };
+
+  const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const address = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = o.cart_data.map(i => `${i.productName} (${i.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, address, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
+  
   const handleAddProductWithSizeUpdates = async (e) => { 
       e.preventDefault(); 
       if (!newProdId || !newProdName) return alert("Missing fields"); 
@@ -279,7 +296,6 @@ export default function AdminPage() {
   const resetGuest = async (id) => { if (confirm("Allow again?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("DELETE ALL?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   const handleBulkUpload = (e) => { const file = e.target.files[0]; if (!file) return; setUploadLog(["Reading..."]); setLoading(true); const reader = new FileReader(); reader.onload = async (evt) => { try { const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' }); const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws); if (!data.length) { setUploadLog(["❌ Empty."]); setLoading(false); return; } const { data: dbProducts } = await supabase.from('products').select('id'); const validIds = {}; if (dbProducts) dbProducts.forEach(p => validIds[p.id.toLowerCase()] = p.id); const logs = []; let updatedCount = 0; let errorCount = 0; for (let i = 0; i < data.length; i++) { const row = data[i]; const normalizedRow = {}; Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().trim()] = row[k]; }); const pid = normalizedRow['product_id']; const size = normalizedRow['size']; const count = normalizedRow['count']; if (!pid || !size || count === undefined) { logs.push(`⚠️ Row ${i+2}: Skipped`); continue; } const rawId = String(pid).trim(); let finalId = rawId; if (!validIds[rawId] && validIds[rawId.toLowerCase()]) finalId = validIds[rawId.toLowerCase()]; const cleanSize = String(size).trim(); const cleanCount = parseInt(count); const { data: existing, error: findError } = await supabase.from('inventory').select('product_id').eq('product_id', finalId).eq('size', cleanSize).maybeSingle(); if (findError) { logs.push(`❌ Row ${i+2}: Error ${findError.message}`); errorCount++; continue; } if (existing) { await supabase.from('inventory').update({ count: cleanCount }).eq('product_id', finalId).eq('size', cleanSize); logs.push(`✅ Updated ${finalId}`); updatedCount++; } else { await supabase.from('inventory').insert([{ product_id: finalId, size: cleanSize, count: cleanCount, active: true }]); logs.push(`✨ Created ${finalId}`); updatedCount++; } } if (errorCount > 0) setUploadLog([`⚠️ ERRORS: ${errorCount}`, ...logs]); else setUploadLog([`🎉 SUCCESS: ${updatedCount}`, ...logs]); await fetchInventory(); } catch (err) { setUploadLog(["❌ FATAL:", err.message]); } setLoading(false); e.target.value = null; }; reader.readAsBinaryString(file); };
-  const downloadTemplate = () => { if (inventory.length === 0) return alert("No data"); const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, _Reference_Name: getProductName(item.product_id) })); data.sort((a, b) => { if (a._Reference_Name !== b._Reference_Name) return a._Reference_Name.localeCompare(b._Reference_Name); return SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size); }); const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory"); XLSX.writeFile(wb, "Lev_Inventory_Update.xlsx"); };
 
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
