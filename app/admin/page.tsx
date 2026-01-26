@@ -76,42 +76,55 @@ export default function AdminPage() {
         fetchInventory();
         fetchLogos();
         fetchGuests();
-        const channel = supabase.channel('admin_sync').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders()).subscribe();
-        return () => { supabase.removeChannel(channel); };
+        // Safe Real-time connection
+        if (supabase) {
+            const channel = supabase.channel('admin_sync').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders()).subscribe();
+            return () => { supabase.removeChannel(channel); };
+        }
     }
   }, [isAuthorized]);
 
+  // --- SAFE STATS CALCULATION ---
   useEffect(() => {
-    const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'refunded');
-    if (activeOrders.length > 0) {
-        const revenue = activeOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
-        const count = activeOrders.length;
-        let totalCOGS = 0;
-        activeOrders.forEach(order => {
-            if(Array.isArray(order.cart_data)) {
-                order.cart_data.forEach(item => {
-                    const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                    const unitCost = Number(invItem?.cost_price || 8.00);
-                    const overhead = 1.50; 
-                    totalCOGS += (unitCost + overhead);
-                });
-            }
-        });
-        const stripeFees = (revenue * 0.029) + (count * 0.30);
-        const net = revenue - stripeFees - totalCOGS;
-        const itemCounts = {};
-        activeOrders.forEach(o => {
-            if(Array.isArray(o.cart_data)) {
-                o.cart_data.forEach(item => {
-                    const key = `${item.productName} (${item.size})`;
-                    itemCounts[key] = (itemCounts[key] || 0) + 1;
-                });
-            }
-        });
-        const topItem = Object.entries(itemCounts).sort((a, b) => b[1] - a[1])[0];
-        setStats({ revenue, count, net, topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' });
-    } else {
-        setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
+    try {
+        const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'refunded');
+        if (activeOrders.length > 0) {
+            const revenue = activeOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
+            const count = activeOrders.length;
+            
+            let totalCOGS = 0;
+            const itemCounts = {};
+
+            activeOrders.forEach(order => {
+                if(Array.isArray(order.cart_data)) {
+                    order.cart_data.forEach(item => {
+                        if (!item) return; // SKIP GHOST ITEMS
+                        
+                        // COGS
+                        const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                        const unitCost = Number(invItem?.cost_price || 8.00);
+                        const overhead = 1.50; 
+                        totalCOGS += (unitCost + overhead);
+
+                        // Top Item
+                        const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
+                        itemCounts[key] = (itemCounts[key] || 0) + 1;
+                    });
+                }
+            });
+
+            const stripeFees = (revenue * 0.029) + (count * 0.30);
+            const net = revenue - stripeFees - totalCOGS;
+            
+            const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
+            const topItem = sortedItems.length > 0 ? sortedItems[0] : null;
+            
+            setStats({ revenue, count, net, topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' });
+        } else {
+            setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
+        }
+    } catch (error) {
+        console.error("Stats Error:", error);
     }
   }, [orders, inventory]);
 
@@ -152,14 +165,15 @@ export default function AdminPage() {
         const leftMargin = "   ";      
         const lines = [ `ORDER #${order.id}`, `${order.customer_name}`, `Time: ${new Date(order.created_at).toLocaleTimeString()}`, `------------------------` ];
         safeCart.forEach(item => {
+            if(!item) return;
             const customs = item.customizations || {};
             lines.push(`[ ] ${item.productName} (${item.size})`);
             if(customs.mainDesign) lines.push(`    Main: ${customs.mainDesign}`);
-            if(Array.isArray(customs.logos)) {
+            if(customs.logos && customs.logos.length > 0) {
                 const accents = customs.logos.map(l => `${l.type} (${l.position || 'Any'})`).join(', ');
                 lines.push(`    Accents: ${accents}`);
             }
-            if(Array.isArray(customs.names)) {
+            if(customs.names && customs.names.length > 0) {
                 const names = customs.names.map(n => `"${n.text}" (${n.position || 'Any'})`).join(', ');
                 lines.push(`    Names: ${names}`);
             }
@@ -177,11 +191,12 @@ export default function AdminPage() {
         if (!printWindow) { alert("⚠️ POPUP BLOCKED"); return; }
         let htmlContent = '';
         const itemHtml = safeCart.map(i => {
+            if(!i) return '';
             const customs = i.customizations || {};
             let details = `<strong>${i.productName}</strong> <span class="size">${i.size}</span>`;
             if (customs.mainDesign) details += `<br/>Main: ${customs.mainDesign}`;
-            if (Array.isArray(customs.logos)) details += `<br/>Accents: ${customs.logos.map(l => l.type).join(', ')}`;
-            if (Array.isArray(customs.names)) details += `<br/>Names: ${customs.names.map(n => `"${n.text}"`).join(', ')}`;
+            if (customs.logos?.length > 0) details += `<br/>Accents: ${customs.logos.map(l => l.type).join(', ')}`;
+            if (customs.names?.length > 0) details += `<br/>Names: ${customs.names.map(n => `"${n.text}"`).join(', ')}`;
             return `<div class="item">${details}</div>`;
         }).join('');
         if (printerType === 'standard') {
@@ -354,21 +369,18 @@ export default function AdminPage() {
                     </td>
                     <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
                     <td className="p-4 align-top text-sm">{safeItems.map((item, i) => {
+                        if (!item) return null; // SKIP GHOST ITEMS
                         // FIXED: SAFE ACCESS TO CUSTOMIZATIONS
                         const customs = item.customizations || {};
                         return (
                             <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0">
-                                {item && (
-                                    <>
-                                        <span className="font-bold">{item.productName}</span> ({item.size})
-                                        <div className="text-xs text-blue-900 font-bold mt-1">Main: {customs.mainDesign || 'None'}</div>
-                                        {item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            {Array.isArray(customs.logos) && customs.logos.length > 0 && <div>Accents: {customs.logos.map(l => l.type).join(', ')}</div>}
-                                            {Array.isArray(customs.names) && customs.names.length > 0 && <div className="text-blue-700 font-bold">Names: {customs.names.map(n => n.text).join(', ')}</div>}
-                                        </div>
-                                    </>
-                                )}
+                                <span className="font-bold">{item.productName}</span> ({item.size})
+                                <div className="text-xs text-blue-900 font-bold mt-1">Main: {customs.mainDesign || 'None'}</div>
+                                {item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}
+                                <div className="text-xs text-gray-500 mt-1">
+                                    {customs.logos?.length > 0 && <div>Accents: {customs.logos.map(l => l.type).join(', ')}</div>}
+                                    {customs.names?.length > 0 && <div className="text-blue-700 font-bold">Names: {customs.names.map(n => n.text).join(', ')}</div>}
+                                </div>
                             </div>
                         );
                     })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
