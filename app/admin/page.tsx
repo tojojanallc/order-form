@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx'; 
+import { refundOrder } from '@/app/actions/refund-order'; // Ensure this file exists
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -19,6 +20,7 @@ const STATUSES = {
   ready: { label: 'Ready for Pickup', color: 'bg-green-100 text-green-800 border-green-300' },
   shipped: { label: 'Shipped', color: 'bg-green-200 text-green-900 border-green-400' },
   completed: { label: 'Completed', color: 'bg-gray-200 text-gray-600 border-gray-400' },
+  refunded: { label: 'Refunded', color: 'bg-red-100 text-red-800 border-red-300' }, // Added Refunded styling
 };
 
 export default function AdminPage() {
@@ -79,7 +81,7 @@ export default function AdminPage() {
 
   // P&L CALCULATION ADDED HERE
   useEffect(() => {
-    const activeOrders = orders.filter(o => o.status !== 'completed');
+    const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'refunded'); // Exclude refunded from P&L
     if (activeOrders.length > 0) {
         const revenue = activeOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
         const count = activeOrders.length;
@@ -122,7 +124,7 @@ export default function AdminPage() {
   }, [isAuthorized, autoPrintEnabled, orders]);
 
   const checkForNewLabels = () => {
-    const unprinted = orders.filter(o => !o.printed && o.status !== 'completed' && o.status !== 'shipped').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const unprinted = orders.filter(o => !o.printed && o.status !== 'completed' && o.status !== 'shipped' && o.status !== 'refunded').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     if (unprinted.length > 0) { if (audioRef.current) audioRef.current.play().catch(e => console.log("Audio fail", e)); printLabel(unprinted[0]); }
   };
 
@@ -266,12 +268,31 @@ export default function AdminPage() {
   };
 
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); if (newStatus === 'ready' || newStatus === 'partially_fulfilled') { const order = orders.find(o => o.id === orderId); let msg = newStatus === 'ready' ? "READY for pickup!" : "PARTIALLY READY. Pick up available items!"; if (order) try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is ${msg}` }) }); } catch (e) {} } };
+  
   const deleteOrder = async (orderId, cartData) => { if (!confirm("⚠️ Cancel Order & Restore Inventory?")) return; setLoading(true); if (cartData && Array.isArray(cartData)) { for (const item of cartData) { if (item.productId && item.size) { const { data: currentItem } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (currentItem) { await supabase.from('inventory').update({ count: currentItem.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); alert("Order deleted and inventory restored."); };
+  
+  // NEW REFUND HANDLER
+  const handleRefund = async (orderId, paymentIntentId) => {
+    if (!confirm("Are you sure you want to refund this order? This action cannot be undone and returns funds to the customer.")) return;
+    setLoading(true);
+    
+    // Call Server Action
+    const result = await refundOrder(orderId, paymentIntentId);
+    
+    if (result.success) {
+        alert("Success: Refund processed.");
+        // Optimistically update UI
+        setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o));
+    } else {
+        alert("Refund Failed: " + result.message);
+    }
+    setLoading(false);
+  };
+
   const addLogo = async (e) => { e.preventDefault(); if (!newLogoName) return; await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, category: newLogoCategory, sort_order: logos.length + 1 }]); setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); };
   const deleteLogo = async (id) => { if (!confirm("Delete this logo?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   const deleteProduct = async (id) => { if (!confirm("Are you sure? This deletes the product AND inventory.")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
   
-  // UPDATED: Added cost_price to updateStock
   const updateStock = async (productId, size, field, value) => { setInventory(inventory.map(i => (i.product_id === productId && i.size === size) ? { ...i, [field]: value } : i)); await supabase.from('inventory').update({ [field]: value }).eq('product_id', productId).eq('size', size); };
   
   const updatePrice = async (productId, newPrice) => { setProducts(products.map(p => p.id === productId ? { ...p, base_price: newPrice } : p)); await supabase.from('products').update({ base_price: newPrice }).eq('id', productId); };
@@ -347,7 +368,20 @@ export default function AdminPage() {
             <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
             <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Top Seller</p><p className="text-lg font-bold text-gray-800 truncate" title={stats.topItem}>{stats.topItem}</p></div> 
           </div> 
-          <div className="flex justify-between items-center bg-gray-100 p-4 rounded border border-gray-200"> <div className="flex items-center gap-3"><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={autoPrintEnabled} onChange={e => setAutoPrintEnabled(e.target.checked)} /><div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-900"></div><span className="ml-3 font-bold text-gray-900">Auto-Print</span></label></div> <div className="flex gap-2"><button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button></div> </div> <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> {orders.filter(o => o.status !== 'completed').length === 0 ? <div className="p-8 text-center text-gray-500 font-bold">No active orders. Ready for next event!</div> : ( <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{orders.filter(o => o.status !== 'completed').map((order) => (<tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}><td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td><td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td><td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td><td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size})<div className="text-xs text-blue-900 font-bold mt-1">Main: {item.customizations.mainDesign}</div>{item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500 mt-1">{item.customizations.logos.length > 0 && <div>Accents: {item.customizations.logos.map(l => l.type).join(', ')}</div>}{item.customizations.names.length > 0 && <div className="text-blue-700 font-bold">Names: {item.customizations.names.map(n => n.text).join(', ')}</div>}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td><td className="p-4 align-top text-right"><button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td></tr>))}</tbody></table> )} </div> </div> )}
+          <div className="flex justify-between items-center bg-gray-100 p-4 rounded border border-gray-200"> <div className="flex items-center gap-3"><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={autoPrintEnabled} onChange={e => setAutoPrintEnabled(e.target.checked)} /><div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-900"></div><span className="ml-3 font-bold text-gray-900">Auto-Print</span></label></div> <div className="flex gap-2"><button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button></div> </div> <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> {orders.filter(o => o.status !== 'completed').length === 0 ? <div className="p-8 text-center text-gray-500 font-bold">No active orders. Ready for next event!</div> : ( <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{orders.filter(o => o.status !== 'completed').map((order) => (<tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}><td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td><td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td><td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td><td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size})<div className="text-xs text-blue-900 font-bold mt-1">Main: {item.customizations.mainDesign}</div>{item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500 mt-1">{item.customizations.logos.length > 0 && <div>Accents: {item.customizations.logos.map(l => l.type).join(', ')}</div>}{item.customizations.names.length > 0 && <div className="text-blue-700 font-bold">Names: {item.customizations.names.map(n => n.text).join(', ')}</div>}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td><td className="p-4 align-top text-right">
+            
+            {/* --- REFUND BUTTON ADDED HERE --- */}
+            {order.status !== 'refunded' && (
+                <button 
+                    onClick={() => handleRefund(order.id, order.payment_intent_id)} 
+                    className="p-2 rounded mr-2 bg-red-50 text-red-500 hover:bg-red-100 font-bold" 
+                    title="Refund to Card"
+                >
+                    💸
+                </button>
+            )}
+
+            <button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td></tr>))}</tbody></table> )} </div> </div> )}
         {activeTab === 'history' && ( <div> <div className="bg-gray-800 text-white p-4 rounded-t-lg flex justify-between items-center"><h2 className="font-bold text-xl">Order Archive (Completed)</h2><button onClick={downloadCSV} className="bg-white text-black px-4 py-2 rounded font-bold hover:bg-gray-200 text-sm">📥 Download CSV</button></div> <div className="bg-white shadow rounded-b-lg overflow-hidden border border-gray-300 overflow-x-auto"> {orders.filter(o => o.status === 'completed').length === 0 ? <div className="p-8 text-center text-gray-500">History is empty.</div> : ( <table className="w-full text-left min-w-[800px]"> <thead className="bg-gray-100 text-gray-500"> <tr> <th className="p-4">Event Name</th> <th className="p-4">Date</th> <th className="p-4">Customer</th> <th className="p-4">Items</th> <th className="p-4 text-right">Total</th> </tr> </thead> <tbody> {orders.filter(o => o.status === 'completed').map((order) => ( <tr key={order.id} className="border-b hover:bg-gray-50 opacity-75"> <td className="p-4 font-bold text-blue-900">{order.event_name || '-'}</td> <td className="p-4 text-sm">{new Date(order.created_at).toLocaleString()}</td> <td className="p-4 font-bold">{order.customer_name}</td> <td className="p-4 text-sm">{order.cart_data.map(i => i.productName).join(', ')}</td> <td className="p-4 text-right font-bold">${order.total_price}</td> </tr> ))} </tbody> </table>)} </div> </div> )}
 
         {activeTab === 'inventory' && (
