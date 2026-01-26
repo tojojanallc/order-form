@@ -15,15 +15,20 @@ const ZONES = {
     top: [
         { id: 'full_front', label: 'Full Front', type: 'logo' },
         { id: 'left_chest', label: 'Left Chest', type: 'logo' },
+        { id: 'center_chest', label: 'Center Chest', type: 'logo' },
         { id: 'left_sleeve', label: 'Left Sleeve', type: 'both' },
+        { id: 'right_sleeve', label: 'Right Sleeve', type: 'both' },
         { id: 'back_center', label: 'Back Center', type: 'both' },
         { id: 'back_bottom', label: 'Back Bottom (Jersey)', type: 'name' },
         { id: 'hood', label: 'Hood', type: 'name' }
     ],
     bottom: [
-        { id: 'left_thigh', label: 'Left Thigh', type: 'both' },
-        { id: 'right_thigh', label: 'Right Thigh', type: 'both' },
-        { id: 'back_pocket', label: 'Back Pocket', type: 'logo' }
+        { id: 'left_thigh', label: 'Left Thigh (Upper)', type: 'both' },
+        { id: 'right_thigh', label: 'Right Thigh (Upper)', type: 'both' },
+        { id: 'lower_left', label: 'Lower Left Leg', type: 'both' },   // NEW
+        { id: 'lower_right', label: 'Lower Right Leg', type: 'both' }, // NEW
+        { id: 'back_pocket', label: 'Back Pocket', type: 'logo' },
+        { id: 'rear', label: 'Rear (Center)', type: 'both' }           // NEW
     ]
 };
 
@@ -175,11 +180,10 @@ export default function OrderForm() {
   const getPositionOptions = (itemType) => {
       if (!selectedProduct) return [];
       
-      // SMART DETECTION: Check name/ID for keywords, otherwise fallback to DB Type
       const name = (selectedProduct.name || '').toLowerCase();
       const id = (selectedProduct.id || '').toLowerCase();
       
-      let pType = 'top'; // Default
+      let pType = 'top'; 
       
       if (selectedProduct.type === 'bottom' || 
           name.includes('jogger') || name.includes('pant') || name.includes('short') ||
@@ -259,7 +263,7 @@ export default function OrderForm() {
       shipping_state: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingState : null,
       shipping_zip: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingZip : null,
       status: cartRequiresShipping ? 'pending_shipping' : 'pending',
-      event_name: eventName // Save Event Name
+      event_name: eventName 
     }]);
 
     if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
@@ -316,10 +320,7 @@ export default function OrderForm() {
                       <p className="mb-6 text-gray-600">Please verify your name to get started.</p>
                       <div className="flex gap-2 max-w-md mx-auto">
                             <input className="flex-1 p-3 border-2 border-gray-400 rounded-lg text-lg text-black" placeholder="Enter full name" value={guestSearch} onChange={(e) => { setGuestSearch(e.target.value); setGuestError(''); }} />
-                            
-                            {/* DYNAMIC BUTTON COLOR */}
                             <button onClick={verifyGuest} className="text-white font-bold px-6 rounded-lg shadow hover:opacity-90" style={{ backgroundColor: headerColor }}>Start</button>
-                      
                       </div>
                       {guestError && <p className="text-red-600 text-sm font-bold mt-4 bg-red-50 p-2 rounded inline-block">{guestError}</p>}
                   </div>
@@ -426,10 +427,7 @@ export default function OrderForm() {
             {/* Footer only shows if not hosted OR (hosted + verified) */}
             {(paymentMode === 'retail' || selectedGuest) && (
                 <div className="text-white p-6 sticky bottom-0 flex justify-between items-center" style={{ backgroundColor: headerColor }}><div><p className="text-white text-opacity-80 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p><p className="text-2xl font-bold">{showPrice ? `$${calculateTotal()}` : 'Free'}</p></div>
-                
-                {/* DYNAMIC FOOTER BUTTON */}
                 <button onClick={handleAddToCart} className="bg-white text-black px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform hover:opacity-90" disabled={!selectedProduct}>Add to Cart</button>
-                
                 </div>
             )}
           </div>
@@ -472,7 +470,6 @@ export default function OrderForm() {
                     
                     {showPrice && <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>}
                     
-                    {/* DYNAMIC CHECKOUT BUTTON */}
                     <button 
                         onClick={handleCheckout} 
                         disabled={isSubmitting || (paymentMode === 'hosted' && !selectedGuest)} 
