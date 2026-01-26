@@ -152,12 +152,12 @@ export default function AdminPage() {
         const lines = [ `ORDER #${order.id}`, `${order.customer_name}`, `Time: ${new Date(order.created_at).toLocaleTimeString()}`, `------------------------` ];
         safeCart.forEach(item => {
             lines.push(`[ ] ${item.productName} (${item.size})`);
-            if(item.customizations.mainDesign) lines.push(`    Main: ${item.customizations.mainDesign}`);
-            if(item.customizations.logos && item.customizations.logos.length > 0) {
+            if(item.customizations?.mainDesign) lines.push(`    Main: ${item.customizations.mainDesign}`);
+            if(item.customizations?.logos?.length > 0) {
                 const accents = item.customizations.logos.map(l => `${l.type} (${l.position || 'Any'})`).join(', ');
                 lines.push(`    Accents: ${accents}`);
             }
-            if(item.customizations.names && item.customizations.names.length > 0) {
+            if(item.customizations?.names?.length > 0) {
                 const names = item.customizations.names.map(n => `"${n.text}" (${n.position || 'Any'})`).join(', ');
                 lines.push(`    Names: ${names}`);
             }
@@ -176,9 +176,9 @@ export default function AdminPage() {
         let htmlContent = '';
         const itemHtml = safeCart.map(i => {
             let details = `<strong>${i.productName}</strong> <span class="size">${i.size}</span>`;
-            if (i.customizations.mainDesign) details += `<br/>Main: ${i.customizations.mainDesign}`;
-            if (i.customizations.logos.length > 0) details += `<br/>Accents: ${i.customizations.logos.map(l => l.type).join(', ')}`;
-            if (i.customizations.names.length > 0) details += `<br/>Names: ${i.customizations.names.map(n => `"${n.text}"`).join(', ')}`;
+            if (i.customizations?.mainDesign) details += `<br/>Main: ${i.customizations.mainDesign}`;
+            if (i.customizations?.logos?.length > 0) details += `<br/>Accents: ${i.customizations.logos.map(l => l.type).join(', ')}`;
+            if (i.customizations?.names?.length > 0) details += `<br/>Names: ${i.customizations.names.map(n => `"${n.text}"`).join(', ')}`;
             return `<div class="item">${details}</div>`;
         }).join('');
         if (printerType === 'standard') {
@@ -267,21 +267,19 @@ export default function AdminPage() {
   };
   
   const handleEditName = (itemIndex, nameIndex, value) => {
-      // DEEP COPY to prevent mutation errors
       const newCart = [...editingOrder.cart_data];
       const newItem = { ...newCart[itemIndex] };
+      // Safely access deep properties
       const newCustomizations = { ...newItem.customizations };
       const newNames = [...(newCustomizations.names || [])];
       
-      // Update specific name field safely
-      newNames[nameIndex] = { ...newNames[nameIndex], text: value };
-      
-      // Re-assemble
-      newCustomizations.names = newNames;
-      newItem.customizations = newCustomizations;
-      newCart[itemIndex] = newItem;
-
-      setEditingOrder(prev => ({ ...prev, cart_data: newCart }));
+      if (newNames[nameIndex]) {
+          newNames[nameIndex] = { ...newNames[nameIndex], text: value };
+          newCustomizations.names = newNames;
+          newItem.customizations = newCustomizations;
+          newCart[itemIndex] = newItem;
+          setEditingOrder(prev => ({ ...prev, cart_data: newCart }));
+      }
   };
 
   const saveOrderEdits = async () => {
@@ -349,7 +347,7 @@ export default function AdminPage() {
                     <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                     <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
-                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size})<div className="text-xs text-blue-900 font-bold mt-1">Main: {item.customizations.mainDesign}</div>{item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500 mt-1">{item.customizations.logos.length > 0 && <div>Accents: {item.customizations.logos.map(l => l.type).join(', ')}</div>}{item.customizations.names.length > 0 && <div className="text-blue-700 font-bold">Names: {item.customizations.names.map(n => n.text).join(', ')}</div>}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
+                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size})<div className="text-xs text-blue-900 font-bold mt-1">Main: {item.customizations?.mainDesign || 'None'}</div>{item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500 mt-1">{item.customizations?.logos?.length > 0 && <div>Accents: {item.customizations.logos.map(l => l.type).join(', ')}</div>}{item.customizations?.names?.length > 0 && <div className="text-blue-700 font-bold">Names: {item.customizations.names.map(n => n.text).join(', ')}</div>}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
                     <td className="p-4 align-top text-right">
                         
                         {/* EDIT BUTTON (NEW) */}
