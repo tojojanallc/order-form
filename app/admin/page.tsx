@@ -71,11 +71,13 @@ export default function AdminPage() {
   }, [isAuthorized]);
 
   useEffect(() => {
-    if (orders.length > 0) {
-        const revenue = orders.reduce((sum, o) => sum + (o.total_price || 0), 0);
-        const count = orders.length;
+    // Only calculate stats for ACTIVE (non-completed) orders to keep dashboard fresh
+    const activeOrders = orders.filter(o => o.status !== 'completed');
+    if (activeOrders.length > 0) {
+        const revenue = activeOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
+        const count = activeOrders.length;
         const itemCounts = {};
-        orders.forEach(o => {
+        activeOrders.forEach(o => {
             o.cart_data.forEach(item => {
                 const key = `${item.productName} (${item.size})`;
                 itemCounts[key] = (itemCounts[key] || 0) + 1;
@@ -83,6 +85,8 @@ export default function AdminPage() {
         });
         const topItem = Object.entries(itemCounts).sort((a, b) => b[1] - a[1])[0];
         setStats({ revenue, count, topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' });
+    } else {
+        setStats({ revenue: 0, count: 0, topItem: '-' });
     }
   }, [orders]);
 
@@ -111,18 +115,16 @@ export default function AdminPage() {
       setLoading(false);
   };
 
-const printLabel = async (order) => {
+  const printLabel = async (order) => {
     if (!order) return;
     
-    // 1. Mark as printed locally first
     setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
     await supabase.from('orders').update({ printed: true }).eq('id', order.id);
 
     if (pnEnabled) {
         // --- CLOUD PRINT (PrintNode) ---
-        // MARGIN SETTINGS (Adjust these to move text)
-        const topMargin = "\n";        // 1 empty line at top
-        const leftMargin = "   ";      // 3 spaces indent
+        const topMargin = "\n";        
+        const leftMargin = "   ";      
 
         const lines = [
             `ORDER #${order.id}`,
@@ -144,7 +146,6 @@ const printLabel = async (order) => {
             }
 
             if(item.customizations.names && item.customizations.names.length > 0) {
-                // Formatting name to stand out
                 const names = item.customizations.names.map(n => `"${n.text}" (${n.position || 'Any'})`).join(', ');
                 lines.push(`    Names: ${names}`);
             }
@@ -153,9 +154,6 @@ const printLabel = async (order) => {
             lines.push(` `); 
         });
 
-        // Apply margins to the final text block
-        // 1. Add top margin
-        // 2. Add left margin to EVERY line
         const content = topMargin + lines.map(line => leftMargin + line).join('\n');
         
         try {
@@ -171,9 +169,8 @@ const printLabel = async (order) => {
                 console.log("Sent to cloud", data);
             }
         } catch(e) { alert("Cloud Print Network Failed: " + e.message); }
-
     } else {
-        // --- BROWSER PRINT (Fallback) ---
+        // --- BROWSER PRINT ---
         const printWindow = window.open('', '', 'width=800,height=600');
         if (!printWindow) { alert("⚠️ POPUP BLOCKED"); return; }
 
@@ -187,11 +184,8 @@ const printLabel = async (order) => {
         }).join('');
 
         if (printerType === 'standard') {
-            // Standard Sheet Margins
             htmlContent = `<html><head><title>Order #${order.id}</title><style>@page { size: letter; margin: 0.5in; } body { font-family: sans-serif; padding: 20px; } .item { border-bottom: 2px solid #eee; padding: 20px 0; font-size: 18px; } .size { background: black; color: white; padding: 2px 8px; border-radius: 4px; } </style></head><body><h1>${order.customer_name}</h1><h2>Order #${order.id}</h2>${itemHtml}</body></html>`;
         } else {
-            // Thermal Label Margins (INCREASED HERE)
-            // margin: 0.2in top/left to push content away from edge
             htmlContent = `<html><head><title>Order #${order.id}</title><style>@page { size: 4in 6in; margin: 0; } body { font-family: monospace; margin-top: 0.25in; margin-left: 0.25in; margin-right: 0.1in; } .header { border-bottom: 3px solid black; text-align: center; } .item { border-bottom: 1px dashed #999; padding: 5px 0; font-weight: bold; font-size: 14px; } </style></head><body><div class="header"><h1>${order.customer_name}</h1><h2>#${order.id}</h2></div>${itemHtml}</body></html>`;
         }
         printWindow.document.write(htmlContent);
@@ -244,7 +238,7 @@ const printLabel = async (order) => {
       alert("Event Settings Saved!"); 
   };
 
-  const closeEvent = async () => { const input = prompt("⚠️ CLOSE EVENT? Type 'CLOSE' to confirm:"); if (input !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
+  const closeEvent = async () => { const input = prompt("⚠️ CLOSE EVENT? Type 'CLOSE' to confirm:"); if (input !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed! Active orders moved to History."); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); if (newStatus === 'ready' || newStatus === 'partially_fulfilled') { const order = orders.find(o => o.id === orderId); let msg = newStatus === 'ready' ? "READY for pickup!" : "PARTIALLY READY. Pick up available items!"; if (order) try { await fetch('/api/send-text', { method: 'POST', body: JSON.stringify({ phone: order.phone, message: `Hi ${order.customer_name}! Your Swag Order is ${msg}` }) }); } catch (e) {} } };
   const deleteOrder = async (orderId, cartData) => { if (!confirm("⚠️ Cancel Order & Restore Inventory?")) return; setLoading(true); if (cartData && Array.isArray(cartData)) { for (const item of cartData) { if (item.productId && item.size) { const { data: currentItem } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (currentItem) { await supabase.from('inventory').update({ count: currentItem.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); alert("Order deleted and inventory restored."); };
   const addLogo = async (e) => { e.preventDefault(); if (!newLogoName) return; await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, category: newLogoCategory, sort_order: logos.length + 1 }]); setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); };
@@ -272,6 +266,7 @@ const printLabel = async (order) => {
           <h1 className="text-3xl font-black text-gray-900">Admin Dashboard</h1>
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
             <button onClick={() => { setActiveTab('orders'); fetchOrders(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'orders' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Orders</button>
+            <button onClick={() => { setActiveTab('history'); fetchOrders(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'history' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>History</button>
             <button onClick={() => { setActiveTab('inventory'); fetchInventory(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'inventory' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Products</button>
             <button onClick={() => { setActiveTab('guests'); fetchGuests(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'guests' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Guests</button>
             <button onClick={() => { setActiveTab('logos'); fetchLogos(); }} className={`px-4 py-2 rounded font-bold ${activeTab === 'logos' ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>Logos</button>
@@ -282,56 +277,29 @@ const printLabel = async (order) => {
         {activeTab === 'orders' && (
             <div>
                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Total Revenue</p><p className="text-3xl font-black text-green-700">${stats.revenue}</p></div>
-                    <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Total Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div>
+                    <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Revenue (Active)</p><p className="text-3xl font-black text-green-700">${stats.revenue}</p></div>
+                    <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Orders (Active)</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div>
                     <div className="bg-white p-4 rounded shadow border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Top Seller</p><p className="text-lg font-bold text-gray-800 truncate" title={stats.topItem}>{stats.topItem}</p></div>
                  </div>
                  <div className="flex justify-between items-center mb-4 bg-gray-100 p-4 rounded border border-gray-200">
                     <div className="flex items-center gap-3"><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={autoPrintEnabled} onChange={e => setAutoPrintEnabled(e.target.checked)} /><div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-900"></div><span className="ml-3 font-bold text-gray-900">Auto-Print</span></label></div>
-                    <div className="flex gap-2"><button onClick={downloadCSV} className="bg-green-600 text-white px-4 py-2 rounded font-bold hover:bg-green-700">📥 CSV</button><button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button></div>
+                    <div className="flex gap-2"><button onClick={fetchOrders} className="bg-gray-200 px-4 py-2 rounded font-bold hover:bg-gray-300 text-black">Refresh</button></div>
                  </div>
+                 {/* Only showing ACTIVE orders */}
                  <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto">
-                    <table className="w-full text-left min-w-[800px]">
-                        <thead className="bg-gray-200">
-                            <tr>
-                                <th className="p-4 w-40">Status</th>
-                                <th className="p-4">Date</th>
-                                <th className="p-4">Customer</th>
-                                <th className="p-4">Items</th>
-                                <th className="p-4 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {orders.map((order) => (
-                                <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
-                                    <td className="p-4 align-top">
-                                        <select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>
-                                            {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                                        </select>
-                                    </td>
-                                    <td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                                    <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td>
-                                    <td className="p-4 align-top text-sm">
-                                        {order.cart_data.map((item, i) => (
-                                            <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0">
-                                                <span className="font-bold">{item.productName}</span> ({item.size})
-                                                <div className="text-xs text-blue-900 font-bold mt-1">Main: {item.customizations.mainDesign}</div>
-                                                {item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}
-                                                {/* FIXED: Added Name & Logo Display */}
-                                                <div className="text-xs text-gray-500 mt-1">
-                                                    {item.customizations.logos.length > 0 && <div>Accents: {item.customizations.logos.map(l => l.type).join(', ')}</div>}
-                                                    {item.customizations.names.length > 0 && <div className="text-blue-700 font-bold">Names: {item.customizations.names.map(n => n.text).join(', ')}</div>}
-                                                </div>
-                                            </div>
-                                        ))}
-                                        <div className="mt-2 text-right font-black text-green-800">${order.total_price}</div>
-                                    </td>
-                                    <td className="p-4 align-top text-right"><button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    {orders.filter(o => o.status !== 'completed').length === 0 ? <div className="p-8 text-center text-gray-500 font-bold">No active orders. Ready for next event!</div> : (
+                    <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{orders.filter(o => o.status !== 'completed').map((order) => (<tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}><td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td><td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td><td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div>{order.shipping_address && <div className="mt-2 text-sm bg-purple-50 p-2 rounded border border-purple-200 text-purple-900">🚚 <strong>Ship to:</strong><br/>{order.shipping_address}<br/>{order.shipping_city}, {order.shipping_state} {order.shipping_zip}</div>}</td><td className="p-4 align-top text-sm">{order.cart_data.map((item, i) => <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item.productName}</span> ({item.size})<div className="text-xs text-blue-900 font-bold mt-1">Main: {item.customizations.mainDesign}</div>{item.needsShipping && <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-1 rounded">SHIP</span>}<div className="text-xs text-gray-500 mt-1">{item.customizations.logos.length > 0 && <div>Accents: {item.customizations.logos.map(l => l.type).join(', ')}</div>}{item.customizations.names.length > 0 && <div className="text-blue-700 font-bold">Names: {item.customizations.names.map(n => n.text).join(', ')}</div>}</div></div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td><td className="p-4 align-top text-right"><button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 ${order.printed ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-black hover:bg-blue-100'}`} title="Print Label">{order.printed ? '✅' : '🖨️'}</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg" title="Cancel & Restore">🗑️</button></td></tr>))}</tbody></table>)}
                  </div>
+            </div>
+        )}
+
+        {activeTab === 'history' && (
+            <div>
+                <div className="bg-gray-800 text-white p-4 rounded-t-lg flex justify-between items-center"><h2 className="font-bold text-xl">Order Archive (Completed)</h2><button onClick={downloadCSV} className="bg-white text-black px-4 py-2 rounded font-bold hover:bg-gray-200 text-sm">📥 Download Full History CSV</button></div>
+                <div className="bg-white shadow rounded-b-lg overflow-hidden border border-gray-300 overflow-x-auto">
+                    {orders.filter(o => o.status === 'completed').length === 0 ? <div className="p-8 text-center text-gray-500">History is empty.</div> : (
+                    <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-100 text-gray-500"><tr><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Total</th></tr></thead><tbody>{orders.filter(o => o.status === 'completed').map((order) => (<tr key={order.id} className="border-b hover:bg-gray-50 opacity-75"><td className="p-4 text-sm">{new Date(order.created_at).toLocaleString()}</td><td className="p-4 font-bold">{order.customer_name}</td><td className="p-4 text-sm">{order.cart_data.map(i => i.productName).join(', ')}</td><td className="p-4 text-right font-bold">${order.total_price}</td></tr>))}</tbody></table>)}
+                </div>
             </div>
         )}
 
