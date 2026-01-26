@@ -1,9 +1,42 @@
 'use server'
 
 import Stripe from 'stripe'
-import { createClient } from '@/utils/supabase/server'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
+// --- 1. INTERNAL HELPER: Connect to Supabase ---
+function createClient() {
+  const cookieStore = cookies()
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          try {
+            cookieStore.set({ name, value, ...options })
+          } catch (error) {
+            // Ignored in server actions
+          }
+        },
+        remove(name: string, options: CookieOptions) {
+          try {
+            cookieStore.set({ name, value: '', ...options })
+          } catch (error) {
+            // Ignored in server actions
+          }
+        },
+      },
+    }
+  )
+}
+
+// --- 2. THE REFUND ACTION ---
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
 
 export async function refundOrder(orderId: string, paymentIntentId: string) {
@@ -12,12 +45,14 @@ export async function refundOrder(orderId: string, paymentIntentId: string) {
       return { success: false, message: 'No payment ID found for this order.' }
     }
 
-    // 1. Process Refund in Stripe
+    console.log(`Attempting refund for Order ${orderId} (Payment: ${paymentIntentId})`)
+
+    // A. Process Refund in Stripe
     await stripe.refunds.create({
       payment_intent: paymentIntentId,
     })
 
-    // 2. Update Order Status in Supabase
+    // B. Update Order Status in Supabase
     const supabase = createClient()
     const { error } = await supabase
       .from('orders')
@@ -26,7 +61,7 @@ export async function refundOrder(orderId: string, paymentIntentId: string) {
 
     if (error) throw error
 
-    // 3. Refresh the Admin Page data automatically
+    // C. Refresh the Admin Page
     revalidatePath('/admin')
     
     return { success: true, message: 'Refund successful' }
