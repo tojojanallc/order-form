@@ -25,6 +25,9 @@ const STATUSES = {
 };
 
 export default function AdminPage() {
+  // --- CLIENT-ONLY GUARD ---
+  const [mounted, setMounted] = useState(false);
+
   const [passcode, setPasscode] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
@@ -69,14 +72,15 @@ export default function AdminPage() {
   const [pnPrinterId, setPnPrinterId] = useState('');
   const [availablePrinters, setAvailablePrinters] = useState([]);
 
+  // --- SAFE MOUNT & AUTH ---
   useEffect(() => {
+    setMounted(true); // Allow rendering only after mount
     if (isAuthorized) {
         fetchOrders();
         fetchSettings(); 
         fetchInventory();
         fetchLogos();
         fetchGuests();
-        // Safe Real-time connection
         if (supabase) {
             const channel = supabase.channel('admin_sync').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders()).subscribe();
             return () => { supabase.removeChannel(channel); };
@@ -84,8 +88,9 @@ export default function AdminPage() {
     }
   }, [isAuthorized]);
 
-  // --- SAFE STATS CALCULATION ---
+  // --- STATS CALCULATION ---
   useEffect(() => {
+    if (!mounted) return;
     try {
         const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'refunded');
         if (activeOrders.length > 0) {
@@ -98,15 +103,11 @@ export default function AdminPage() {
             activeOrders.forEach(order => {
                 if(Array.isArray(order.cart_data)) {
                     order.cart_data.forEach(item => {
-                        if (!item) return; // SKIP GHOST ITEMS
-                        
-                        // COGS
+                        if (!item) return;
                         const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
                         const unitCost = Number(invItem?.cost_price || 8.00);
                         const overhead = 1.50; 
                         totalCOGS += (unitCost + overhead);
-
-                        // Top Item
                         const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
                         itemCounts[key] = (itemCounts[key] || 0) + 1;
                     });
@@ -123,16 +124,15 @@ export default function AdminPage() {
         } else {
             setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
         }
-    } catch (error) {
-        console.error("Stats Error:", error);
-    }
-  }, [orders, inventory]);
+    } catch (e) { console.log("Stats Error", e); }
+  }, [orders, inventory, mounted]);
 
   useEffect(() => {
+    if (!mounted) return;
     let interval;
     if (isAuthorized && autoPrintEnabled) { interval = setInterval(() => { checkForNewLabels(); }, 5000); }
     return () => clearInterval(interval);
-  }, [isAuthorized, autoPrintEnabled, orders]);
+  }, [isAuthorized, autoPrintEnabled, orders, mounted]);
 
   const checkForNewLabels = () => {
     const unprinted = orders.filter(o => !o.printed && o.status !== 'completed' && o.status !== 'shipped' && o.status !== 'refunded').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -279,7 +279,6 @@ export default function AdminPage() {
 
   const handleEditItem = (index, field, value) => {
       const newCart = [...editingOrder.cart_data];
-      // Create a shallow copy of the item being edited
       newCart[index] = { ...newCart[index], [field]: value };
       setEditingOrder(prev => ({ ...prev, cart_data: newCart }));
   };
@@ -287,7 +286,6 @@ export default function AdminPage() {
   const handleEditName = (itemIndex, nameIndex, value) => {
       const newCart = [...editingOrder.cart_data];
       const newItem = { ...newCart[itemIndex] };
-      // Safely access deep properties
       const newCustomizations = { ...newItem.customizations };
       const newNames = [...(newCustomizations.names || [])];
       
@@ -314,7 +312,7 @@ export default function AdminPage() {
       setLoading(false);
   };
 
-  // ... (Other standard functions) ...
+  // ... (Standard functions) ...
   const addLogo = async (e) => { e.preventDefault(); if (!newLogoName) return; await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, category: newLogoCategory, sort_order: logos.length + 1 }]); setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); };
   const deleteLogo = async (id) => { if (!confirm("Delete this logo?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   const deleteProduct = async (id) => { if (!confirm("Are you sure? This deletes the product AND inventory.")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
@@ -329,6 +327,8 @@ export default function AdminPage() {
   const resetGuest = async (id) => { if (confirm("Allow again?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("DELETE ALL?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   const handleBulkUpload = (e) => { const file = e.target.files[0]; if (!file) return; setUploadLog(["Reading..."]); setLoading(true); const reader = new FileReader(); reader.onload = async (evt) => { try { const bstr = evt.target.result; const wb = XLSX.read(bstr, { type: 'binary' }); const ws = wb.Sheets[wb.SheetNames[0]]; const data = XLSX.utils.sheet_to_json(ws); if (!data.length) { setUploadLog(["❌ Empty."]); setLoading(false); return; } const { data: dbProducts } = await supabase.from('products').select('id'); const validIds = {}; if (dbProducts) dbProducts.forEach(p => validIds[p.id.toLowerCase()] = p.id); const logs = []; let updatedCount = 0; let errorCount = 0; for (let i = 0; i < data.length; i++) { const row = data[i]; const normalizedRow = {}; Object.keys(row).forEach(k => { normalizedRow[k.toLowerCase().trim()] = row[k]; }); const pid = normalizedRow['product_id']; const size = normalizedRow['size']; const count = normalizedRow['count']; const cost = normalizedRow['cost_price']; if (!pid || !size || count === undefined) { logs.push(`⚠️ Row ${i+2}: Skipped`); continue; } const rawId = String(pid).trim(); let finalId = rawId; if (!validIds[rawId] && validIds[rawId.toLowerCase()]) finalId = validIds[rawId.toLowerCase()]; const cleanSize = String(size).trim(); const cleanCount = parseInt(count); const cleanCost = cost ? parseFloat(cost) : 8.50; const { data: existing, error: findError } = await supabase.from('inventory').select('product_id').eq('product_id', finalId).eq('size', cleanSize).maybeSingle(); if (findError) { logs.push(`❌ Row ${i+2}: Error ${findError.message}`); errorCount++; continue; } if (existing) { await supabase.from('inventory').update({ count: cleanCount, cost_price: cleanCost }).eq('product_id', finalId).eq('size', cleanSize); logs.push(`✅ Updated ${finalId}`); updatedCount++; } else { await supabase.from('inventory').insert([{ product_id: finalId, size: cleanSize, count: cleanCount, cost_price: cleanCost, active: true }]); logs.push(`✨ Created ${finalId}`); updatedCount++; } } if (errorCount > 0) setUploadLog([`⚠️ ERRORS: ${errorCount}`, ...logs]); else setUploadLog([`🎉 SUCCESS: ${updatedCount}`, ...logs]); await fetchInventory(); } catch (err) { setUploadLog(["❌ FATAL:", err.message]); } setLoading(false); e.target.value = null; }; reader.readAsBinaryString(file); };
+
+  if (!mounted) return <div className="p-10 text-center text-gray-500">Loading Dashboard...</div>;
 
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
