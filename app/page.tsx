@@ -171,9 +171,22 @@ export default function OrderForm() {
   const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
+  // --- REPAIRED ZONE LOGIC ---
   const getPositionOptions = (itemType) => {
       if (!selectedProduct) return [];
-      const pType = selectedProduct.type || (selectedProduct.id.includes('pant') || selectedProduct.id.includes('jogger') ? 'bottom' : 'top');
+      
+      // SMART DETECTION: Check name/ID for keywords, otherwise fallback to DB Type
+      const name = (selectedProduct.name || '').toLowerCase();
+      const id = (selectedProduct.id || '').toLowerCase();
+      
+      let pType = 'top'; // Default
+      
+      if (selectedProduct.type === 'bottom' || 
+          name.includes('jogger') || name.includes('pant') || name.includes('short') ||
+          id.includes('jogger') || id.includes('pant') || id.includes('short')) {
+          pType = 'bottom';
+      }
+
       const availableZones = ZONES[pType] || ZONES.top;
       if (itemType === 'logo') return availableZones.filter(z => z.type === 'logo' || z.type === 'both');
       if (itemType === 'name') return availableZones.filter(z => z.type === 'name' || z.type === 'both');
@@ -245,7 +258,8 @@ export default function OrderForm() {
       shipping_city: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingCity : null,
       shipping_state: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingState : null,
       shipping_zip: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingZip : null,
-      status: cartRequiresShipping ? 'pending_shipping' : 'pending' 
+      status: cartRequiresShipping ? 'pending_shipping' : 'pending',
+      event_name: eventName // Save Event Name
     }]);
 
     if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
