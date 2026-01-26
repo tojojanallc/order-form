@@ -127,6 +127,7 @@ export default function OrderForm() {
               setSelectedGuest(match); 
               setCustomerName(match.name); 
               setGuestError('');
+              // Try to set size immediately if valid for current product
               if (match.size && visibleSizes.includes(match.size)) { setSize(match.size); }
           }
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
@@ -134,10 +135,7 @@ export default function OrderForm() {
 
   // --- LOGIC: FILTER VISIBLE PRODUCTS ---
   const visibleProducts = products.filter(p => {
-      if (paymentMode === 'hosted' && selectedGuest?.size) {
-          const key = `${p.id}_${selectedGuest.size}`;
-          return (inventory[key] || 0) > 0;
-      }
+      // Show products if ANY size is active (Removed strict hosted restriction)
       return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
   });
 
@@ -159,16 +157,26 @@ export default function OrderForm() {
 
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    if (paymentMode === 'hosted' && selectedGuest?.size) return [selectedGuest.size];
+    // Removed strict single-size return for hosted mode
     const unsorted = Object.keys(activeItems).filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true).map(key => key.replace(`${selectedProduct.id}_`, ''));
     return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
   const visibleSizes = getVisibleSizes();
 
+  // --- SMART SIZE SELECTION ---
   useEffect(() => {
     if (visibleSizes.length > 0) {
-        if (paymentMode === 'hosted' && selectedGuest?.size) { setSize(selectedGuest.size); } 
-        else if (!visibleSizes.includes(size)) { setSize(visibleSizes[0]); }
+        // Only change size if the current one isn't valid for this product
+        if (!visibleSizes.includes(size)) { 
+            // 1. Try to use Guest Size if it exists and is valid for this product
+            if (paymentMode === 'hosted' && selectedGuest?.size && visibleSizes.includes(selectedGuest.size)) { 
+                setSize(selectedGuest.size); 
+            } 
+            // 2. Otherwise default to the first available size
+            else { 
+                setSize(visibleSizes[0]); 
+            }
+        }
     }
   }, [selectedProduct, visibleSizes, size, paymentMode, selectedGuest]);
 
@@ -334,10 +342,10 @@ export default function OrderForm() {
                   <>
                     <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                         <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
-                        {selectedGuest && <div className="mb-4 bg-green-100 text-green-800 p-2 rounded text-sm text-center font-bold">Hi {selectedGuest.name}! We've reserved size {selectedGuest.size || 'Standard'} for you.</div>}
+                        {selectedGuest && <div className="mb-4 bg-green-100 text-green-800 p-2 rounded text-sm text-center font-bold">Hi {selectedGuest.name}! We've pre-selected size {selectedGuest.size || 'Standard'} for you.</div>}
                         
                         {!selectedProduct ? (
-                            <div className="text-center py-8 text-red-600 font-bold">Sorry, all items in your size ({selectedGuest?.size}) are currently claimed.</div>
+                            <div className="text-center py-8 text-red-600 font-bold">Sorry, no products available.</div>
                         ) : (
                             <>
                                 {selectedProduct.image_url && (<div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center"><img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" /></div>)}
@@ -345,7 +353,7 @@ export default function OrderForm() {
                                 <div className="grid md:grid-cols-2 gap-4">
                                 <div><label className="text-xs font-black text-gray-900 uppercase">Item</label><select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct.id}>{visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} {showPrice ? `- $${p.base_price}` : ''}</option>)}</select></div>
                                 <div><label className="text-xs font-black text-gray-900 uppercase">Size</label>
-                                    <select disabled={paymentMode === 'hosted' && !!selectedGuest?.size} className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium disabled:bg-gray-200 disabled:text-gray-600" value={size} onChange={(e) => setSize(e.target.value)}>{visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                                    <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size} onChange={(e) => setSize(e.target.value)}>{visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}</select>
                                 </div>
                                 </div>
                             </>
