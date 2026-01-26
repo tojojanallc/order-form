@@ -25,10 +25,10 @@ const ZONES = {
     bottom: [
         { id: 'left_thigh', label: 'Left Thigh (Upper)', type: 'both' },
         { id: 'right_thigh', label: 'Right Thigh (Upper)', type: 'both' },
-        { id: 'lower_left', label: 'Lower Left Leg', type: 'both' },   // NEW
-        { id: 'lower_right', label: 'Lower Right Leg', type: 'both' }, // NEW
+        { id: 'lower_left', label: 'Lower Left Leg', type: 'both' },   
+        { id: 'lower_right', label: 'Lower Right Leg', type: 'both' }, 
         { id: 'back_pocket', label: 'Back Pocket', type: 'logo' },
-        { id: 'rear', label: 'Rear (Center)', type: 'both' }           // NEW
+        { id: 'rear', label: 'Rear (Center)', type: 'both' }           
     ]
 };
 
@@ -302,8 +302,11 @@ export default function OrderForm() {
   const showPrice = paymentMode === 'retail';
 
   return (
-    <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900">
-      <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-8">
+    // UPDATED LAYOUT CONTAINER: Centered flex + Max width 7xl
+    <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900 flex justify-center items-start">
+      <div className="w-full max-w-7xl grid md:grid-cols-3 gap-8">
+        
+        {/* LEFT COLUMN: PRODUCT BUILDER */}
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
             {/* DYNAMIC HEADER COLOR */}
@@ -433,7 +436,7 @@ export default function OrderForm() {
           </div>
         </div>
         
-        {/* CART (Step 5) */}
+        {/* RIGHT COLUMN: CART (Step 5) */}
         {(paymentMode === 'retail' || selectedGuest) && (
             <div className="md:col-span-1">
             <div className="bg-white shadow-xl rounded-xl border border-gray-300 sticky top-4">
