@@ -13,7 +13,6 @@ const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supaba
 
 const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
 
-// Position options for dropdowns
 const POSITIONS = [
     { id: 'full_front', label: 'Full Front' }, { id: 'left_chest', label: 'Left Chest' },
     { id: 'center_chest', label: 'Center Chest' }, { id: 'left_sleeve', label: 'Left Sleeve' },
@@ -35,9 +34,7 @@ const STATUSES = {
 };
 
 export default function AdminPage() {
-  // --- CLIENT-ONLY GUARD ---
   const [mounted, setMounted] = useState(false);
-
   const [passcode, setPasscode] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
@@ -51,7 +48,6 @@ export default function AdminPage() {
   const [stats, setStats] = useState({ revenue: 0, count: 0, net: 0, topItem: '-' });
   const [uploadLog, setUploadLog] = useState([]); 
 
-  // --- EDIT MODAL STATE ---
   const [editingOrder, setEditingOrder] = useState(null);
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
@@ -59,7 +55,7 @@ export default function AdminPage() {
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
   const audioRef = useRef(null);
 
-  // Forms & Settings
+  // Forms
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
@@ -78,50 +74,47 @@ export default function AdminPage() {
   const [offerMetallic, setOfferMetallic] = useState(true);
   const [offerPersonalization, setOfferPersonalization] = useState(true);
 
-  // PrintNode Settings
   const [pnEnabled, setPnEnabled] = useState(false);
   const [pnApiKey, setPnApiKey] = useState('');
   const [pnPrinterId, setPnPrinterId] = useState('');
   const [availablePrinters, setAvailablePrinters] = useState([]);
 
-  // --- SAFE MOUNT & AUTH ---
+  useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
-    setMounted(true);
-    if (isAuthorized) {
-        fetchOrders();
-        fetchSettings(); 
-        fetchInventory();
-        fetchLogos();
-        fetchGuests();
+    if (isAuthorized && mounted) {
+        fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
         if (supabase) {
             const channel = supabase.channel('admin_sync').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchOrders()).subscribe();
             return () => { supabase.removeChannel(channel); };
         }
     }
-  }, [isAuthorized]);
+  }, [isAuthorized, mounted]);
 
-  // Recalculate New Total
+  // Recalculate New Total Safe
   useEffect(() => {
       if (editingOrder && mounted) {
           let total = 0;
-          editingOrder.cart_data.forEach(item => {
-              if(!item) return;
-              const productRef = products.find(p => p.name === item.productName);
-              const basePrice = productRef ? (productRef.base_price || 30) : 30;
-              let itemTotal = basePrice;
-              if (item.customizations) {
-                  itemTotal += (item.customizations.logos?.length || 0) * 5;
-                  itemTotal += (item.customizations.names?.length || 0) * 5;
-                  if (item.customizations.backList) itemTotal += 5;
-                  if (item.customizations.metallic) itemTotal += 5;
-              }
-              total += itemTotal;
-          });
+          if (Array.isArray(editingOrder.cart_data)) {
+              editingOrder.cart_data.forEach(item => {
+                  if(!item) return;
+                  const productRef = products.find(p => p.name === item.productName);
+                  const basePrice = productRef ? (productRef.base_price || 30) : 30;
+                  let itemTotal = basePrice;
+                  if (item.customizations) {
+                      itemTotal += (item.customizations.logos?.length || 0) * 5;
+                      itemTotal += (item.customizations.names?.length || 0) * 5;
+                      if (item.customizations.backList) itemTotal += 5;
+                      if (item.customizations.metallic) itemTotal += 5;
+                  }
+                  total += itemTotal;
+              });
+          }
           setNewOrderTotal(total);
       }
   }, [editingOrder, products, mounted]);
 
-  // Safe Stats Calculation
+  // Stats
   useEffect(() => {
     if(!mounted || !orders) return;
     try {
@@ -149,10 +142,10 @@ export default function AdminPage() {
             const topItem = sortedItems.length > 0 ? sortedItems[0] : null;
             setStats({ revenue, count, net, topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' });
         } else { setStats({ revenue: 0, count: 0, net: 0, topItem: '-' }); }
-    } catch (e) { console.log("Stats Error", e); }
+    } catch (e) {}
   }, [orders, inventory, mounted]);
 
-  // --- ACTIONS ---
+  // Actions
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   const fetchOrders = async () => { if (!supabase) return; const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); };
   const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
@@ -165,34 +158,32 @@ export default function AdminPage() {
   const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
   
   const handleRefund = async (orderId, paymentIntentId) => {
-    if (!confirm("Refund this order? Cannot be undone.")) return;
+    if (!confirm("Refund?")) return;
     setLoading(true);
     try {
         const result = await refundOrder(orderId, paymentIntentId);
-        if (result.success) { alert("Success: Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Refund Failed: " + result.message); }
-    } catch(e) { alert("Server Error: " + e.message); }
+        if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); }
+    } catch(e) { alert("Error: " + e.message); }
     setLoading(false);
   };
 
-  const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key first"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers! Select one.`); } else { alert("Could not fetch printers. Check Key."); } } catch (e) { alert("Connection Error"); } setLoading(false); };
+  const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   const printLabel = async (order) => { if (!order) return; setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o)); await supabase.from('orders').update({ printed: true }).eq('id', order.id); alert(`Printing...`); };
 
-  // --- EDIT FUNCTIONS (FIXED) ---
+  // --- SAFE EDIT FUNCTIONS ---
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      
-      // DEEP CLEANING to prevent crashes
+      // Deep clean to prevent crash on old/bad data
       const cleanCart = rawCart
-        .filter(item => item !== null && item !== undefined) // Step 1: Remove null items
+        .filter(item => item !== null && item !== undefined)
         .map(item => ({
             ...item,
-            productName: item.productName || 'Unknown Item',
+            productName: item.productName || 'Unknown',
             size: item.size || 'N/A',
             customizations: {
                 mainDesign: item.customizations?.mainDesign || '',
-                // Step 2: Ensure sub-arrays are arrays and filter out nulls
-                logos: Array.isArray(item.customizations?.logos) ? item.customizations.logos.filter(l => l) : [],
-                names: Array.isArray(item.customizations?.names) ? item.customizations.names.filter(n => n) : [],
+                logos: Array.isArray(item.customizations?.logos) ? item.customizations.logos : [],
+                names: Array.isArray(item.customizations?.names) ? item.customizations.names : [],
                 backList: !!item.customizations?.backList,
                 metallic: !!item.customizations?.metallic
             }
@@ -202,39 +193,92 @@ export default function AdminPage() {
   };
 
   const closeEditModal = () => { setEditingOrder(null); };
+  
+  // Safe Immutable Updates
   const handleEditChange = (f, v) => setEditingOrder(p => ({ ...p, [f]: v }));
-  const handleEditItem = (i, f, v) => { const c = [...editingOrder.cart_data]; c[i] = { ...c[i], [f]: v }; setEditingOrder(p => ({ ...p, cart_data: c })); };
-  const handleEditName = (idx, nIdx, v) => { const c = [...editingOrder.cart_data]; const itm = { ...c[idx] }; const cust = { ...itm.customizations }; const nms = [...(cust.names || [])]; if (nms[nIdx]) { nms[nIdx] = { ...nms[nIdx], text: v }; cust.names = nms; itm.customizations = cust; c[idx] = itm; setEditingOrder(p => ({ ...p, cart_data: c })); } };
-
-  const handleAddAccent = (itemIndex) => {
-      const c = [...editingOrder.cart_data];
-      const item = { ...c[itemIndex] };
-      const cust = { ...item.customizations };
-      cust.logos = [...(cust.logos || []), { type: logos[0]?.label || 'Logo', position: 'Left Sleeve' }];
-      item.customizations = cust;
-      c[itemIndex] = item;
-      setEditingOrder(p => ({ ...p, cart_data: c }));
+  
+  const handleEditItem = (index, field, value) => {
+      setEditingOrder(prev => {
+          const newCart = [...prev.cart_data];
+          newCart[index] = { ...newCart[index], [field]: value };
+          return { ...prev, cart_data: newCart };
+      });
+  };
+  
+  const handleEditName = (idx, nIdx, val) => {
+      setEditingOrder(prev => {
+          const newCart = [...prev.cart_data];
+          const newItem = { ...newCart[idx] };
+          const newCust = { ...newItem.customizations };
+          const newNames = [...newCust.names];
+          if(newNames[nIdx]) {
+              newNames[nIdx] = { ...newNames[nIdx], text: val };
+              newCust.names = newNames;
+              newItem.customizations = newCust;
+              newCart[idx] = newItem;
+          }
+          return { ...prev, cart_data: newCart };
+      });
   };
 
-  const handleAddName = (itemIndex) => {
-      const c = [...editingOrder.cart_data];
-      const item = { ...c[itemIndex] };
-      const cust = { ...item.customizations };
-      cust.names = [...(cust.names || []), { text: '', position: 'Hood' }];
-      item.customizations = cust;
-      c[itemIndex] = item;
-      setEditingOrder(p => ({ ...p, cart_data: c }));
+  const handleAddAccent = (idx) => {
+      setEditingOrder(prev => {
+          const newCart = [...prev.cart_data];
+          const newItem = { ...newCart[idx] };
+          const newCust = { ...newItem.customizations };
+          const newLogos = [...(newCust.logos || [])];
+          newLogos.push({ type: logos[0]?.label || 'Logo', position: 'Left Sleeve' });
+          newCust.logos = newLogos;
+          newItem.customizations = newCust;
+          newCart[idx] = newItem;
+          return { ...prev, cart_data: newCart };
+      });
   };
 
-  const handleUpdateAccent = (itemIndex, logoIndex, field, value) => {
-      const c = [...editingOrder.cart_data];
-      c[itemIndex].customizations.logos[logoIndex][field] = value;
-      setEditingOrder(p => ({ ...p, cart_data: c }));
+  const handleAddName = (idx) => {
+      setEditingOrder(prev => {
+          const newCart = [...prev.cart_data];
+          const newItem = { ...newCart[idx] };
+          const newCust = { ...newItem.customizations };
+          const newNames = [...(newCust.names || [])];
+          newNames.push({ text: '', position: 'Hood' });
+          newCust.names = newNames;
+          newItem.customizations = newCust;
+          newCart[idx] = newItem;
+          return { ...prev, cart_data: newCart };
+      });
   };
-  const handleUpdateNamePos = (itemIndex, nameIndex, value) => {
-      const c = [...editingOrder.cart_data];
-      c[itemIndex].customizations.names[nameIndex].position = value;
-      setEditingOrder(p => ({ ...p, cart_data: c }));
+
+  const handleUpdateAccent = (idx, lIdx, field, val) => {
+      setEditingOrder(prev => {
+          const newCart = [...prev.cart_data];
+          const newItem = { ...newCart[idx] };
+          const newCust = { ...newItem.customizations };
+          const newLogos = [...newCust.logos];
+          if(newLogos[lIdx]) {
+              newLogos[lIdx] = { ...newLogos[lIdx], [field]: val };
+              newCust.logos = newLogos;
+              newItem.customizations = newCust;
+              newCart[idx] = newItem;
+          }
+          return { ...prev, cart_data: newCart };
+      });
+  };
+
+  const handleUpdateNamePos = (idx, nIdx, val) => {
+      setEditingOrder(prev => {
+          const newCart = [...prev.cart_data];
+          const newItem = { ...newCart[idx] };
+          const newCust = { ...newItem.customizations };
+          const newNames = [...newCust.names];
+          if(newNames[nIdx]) {
+              newNames[nIdx] = { ...newNames[nIdx], position: val };
+              newCust.names = newNames;
+              newItem.customizations = newCust;
+              newCart[idx] = newItem;
+          }
+          return { ...prev, cart_data: newCart };
+      });
   };
 
   const saveOrderEdits = async () => { 
@@ -255,10 +299,10 @@ export default function AdminPage() {
 
       if (isUpcharge) {
           const upgradeCart = [{
-              productName: `Add-on for Order #${editingOrder.id.slice(0,4)}`,
+              productName: `Add-on Order #${editingOrder.id.slice(0,4)}`,
               finalPrice: priceDifference,
               size: 'N/A',
-              customizations: { mainDesign: 'Upgrade / Add-on' }
+              customizations: { mainDesign: 'Upgrade' }
           }];
           try {
               const res = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart: upgradeCart, customerName: editingOrder.customer_name }) });
@@ -272,7 +316,7 @@ export default function AdminPage() {
       setLoading(false); 
   };
 
-  // --- AUX FUNCTIONS (FULL) ---
+  // --- AUX ---
   const addLogo = async (e) => { e.preventDefault(); if (!newLogoName) return; await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, category: newLogoCategory, sort_order: logos.length + 1 }]); setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); };
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   const deleteProduct = async (id) => { if (!confirm("Delete product?")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
@@ -304,7 +348,6 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* --- ORDERS TAB --- */}
         {activeTab === 'orders' && ( <div className="space-y-6"> 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-green-500"><p className="text-xs text-gray-500 font-bold uppercase">Gross Revenue</p><p className="text-3xl font-black text-green-700">${stats.revenue.toFixed(2)}</p></div> 
