@@ -1,126 +1,102 @@
 import { NextResponse } from 'next/server';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-
-export const dynamic = 'force-dynamic';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 export async function POST(req: Request) {
   try {
-    const { order, printerId, apiKey } = await req.json();
+    const body = await req.json();
+    const { order, mode, apiKey, printerId } = body;
 
-    if (!apiKey || !printerId || !order) {
-      return NextResponse.json({ error: "Missing Config" }, { status: 400 });
-    }
-
-    // 1. Create PDF
+    // --- 1. GENERATE PDF LABEL (4x6 inches) ---
     const pdfDoc = await PDFDocument.create();
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const page = pdfDoc.addPage([288, 432]); // 4x6 inches (72 DPI)
+    const { width, height } = page.getSize();
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-    // 2. Add Page (Standard 4x6)
-    const page = pdfDoc.addPage([288, 432]);
-    
-    // --- LAYOUT ADJUSTMENT ---
-    // xStart = 0 (Safe Left Edge)
-    const xStart = 0; 
-    
-    // MOVED DOWN A "SMIDGE"
-    // Previous was 220. We drop to 200 (~1/4 inch lower).
-    let cursorY = 200; 
+    // Header (Order ID)
+    page.drawText(`ORDER #${String(order.id).slice(0, 8).toUpperCase()}`, { 
+        x: 20, y: height - 40, size: 20, font: fontBold 
+    });
 
-    // --- CONTENT ---
+    // Customer Name
+    page.drawText(`${order.customer_name || 'Guest'}`, { 
+        x: 20, y: height - 70, size: 16, font: fontReg 
+    });
 
-    // Header (Customer)
-    let custName = order.customer_name || 'Guest';
-    if (custName.length > 15) custName = custName.substring(0, 15) + '.';
-    
-    // Font Size 10 (Safe)
-    page.drawText(custName, { x: xStart, y: cursorY, size: 10, font: fontBold });
-    cursorY -= 15;
+    // Timestamp
+    const dateStr = new Date(order.created_at).toLocaleString();
+    page.drawText(dateStr, { x: 20, y: height - 90, size: 10, font: fontReg, color: rgb(0.5, 0.5, 0.5) });
 
-    // Order ID - Font Size 8
-    page.drawText(`Order #${String(order.id).slice(0, 8)}`, { x: xStart, y: cursorY, size: 8, font: font });
-    cursorY -= 12;
+    // Divider Line
+    page.drawLine({ start: { x: 20, y: height - 100 }, end: { x: width - 20, y: height - 100 }, thickness: 1, color: rgb(0,0,0) });
 
-    // Date - Font Size 8
-    page.drawText(new Date().toLocaleDateString(), { x: xStart, y: cursorY, size: 8, font: font });
-    cursorY -= 12;
-
-    // Divider
-    page.drawLine({ start: { x: xStart, y: cursorY }, end: { x: 100, y: cursorY }, thickness: 1 });
-    cursorY -= 15;
-
-    // Items
+    // Items List
+    let yPos = height - 130;
     const items = Array.isArray(order.cart_data) ? order.cart_data : [];
-    
-    if (items.length === 0) {
-        page.drawText("No items.", { x: xStart, y: cursorY, size: 8, font });
-    }
 
-    items.forEach((item: any) => {
-        // Safety Stop
-        if (cursorY < 30) return;
+    items.forEach(item => {
+        if (!item) return;
+        const itemName = `- ${item.productName} (${item.size})`;
+        page.drawText(itemName, { x: 20, y: yPos, size: 12, font: fontReg });
+        yPos -= 18;
 
-        // Product Name - Font Size 8
-        let pName = item.productName || 'Item';
-        if (pName.length > 18) pName = pName.substring(0, 18) + '.';
+        // Customizations (Logos/Names)
+        const cust = item.customizations || {};
         
-        page.drawText(pName, { x: xStart, y: cursorY, size: 8, font: fontBold }); 
-        cursorY -= 12;
+        // Main Design
+        if (cust.mainDesign) {
+             page.drawText(`  • Design: ${cust.mainDesign}`, { x: 30, y: yPos, size: 10, font: fontReg, color: rgb(0.3, 0.3, 0.3) });
+             yPos -= 14;
+        }
 
-        // Size
-        page.drawText(`Size: ${item.size || 'N/A'}`, { x: xStart, y: cursorY, size: 8, font: font });
-        cursorY -= 12;
-
-        // Customizations
-        if (item.customizations) {
-            const c = item.customizations;
-            const indent = xStart + 5;
-            
-            if (c.mainDesign) {
-                let main = c.mainDesign;
-                if(main.length > 15) main = main.substring(0, 15);
-                page.drawText(`+ ${main}`, { x: indent, y: cursorY, size: 7, font });
-                cursorY -= 10;
-            }
-            if (c.names && c.names[0] && c.names[0].text) {
-                page.drawText(`+ Name: ${c.names[0].text}`, { x: indent, y: cursorY, size: 7, font });
-                cursorY -= 10;
-            }
+        // Names
+        if (Array.isArray(cust.names)) {
+            cust.names.forEach(n => {
+                page.drawText(`  • Name: ${n.text} (${n.position})`, { x: 30, y: yPos, size: 10, font: fontReg, color: rgb(0.3, 0.3, 0.3) });
+                yPos -= 14;
+            });
         }
         
-        cursorY -= 3;
-        // Separator
-        page.drawLine({ start: { x: xStart, y: cursorY }, end: { x: 80, y: cursorY }, thickness: 0.5 });
-        cursorY -= 12;
+        yPos -= 10; // Extra spacing between items
     });
 
-    // Footer
-    page.drawText("Lev Custom", { x: xStart, y: 15, size: 6, font, color: rgb(0.5, 0.5, 0.5) });
+    const pdfBytes = await pdfDoc.save();
 
-    // 3. Output
-    const pdfBytes = await pdfDoc.saveAsBase64();
+    // --- 2. HANDLE OUTPUT MODE ---
+    
+    // MODE A: Cloud Print (PrintNode)
+    if (mode === 'cloud' && apiKey && printerId) {
+        const base64Pdf = Buffer.from(pdfBytes).toString('base64');
+        
+        console.log(`Sending Job to PrintNode (Printer: ${printerId})...`);
+        const pnRes = await fetch('https://api.printnode.com/printjobs', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Basic ' + Buffer.from(apiKey + ':').toString('base64'),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                printerId: parseInt(printerId),
+                title: `Order #${order.id}`,
+                contentType: 'pdf_base64',
+                content: base64Pdf,
+                source: 'Kiosk Admin'
+            })
+        });
 
-    const response = await fetch('https://api.printnode.com/printjobs', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(apiKey + ':').toString('base64'),
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        printerId: parseInt(printerId),
-        title: `Order #${order.id}`,
-        contentType: 'pdf_base64', 
-        content: pdfBytes, 
-        source: 'Lev Custom Admin'
-      })
-    });
-
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText);
+        if (!pnRes.ok) {
+            const errText = await pnRes.text();
+            throw new Error(`PrintNode Error: ${errText}`);
+        }
+        
+        return NextResponse.json({ success: true, message: "Sent to Printer" });
+    } 
+    
+    // MODE B: Download / Preview (Local)
+    else {
+        const base64 = Buffer.from(pdfBytes).toString('base64');
+        return NextResponse.json({ success: true, pdfBase64: base64 });
     }
-
-    return NextResponse.json({ success: true });
 
   } catch (error: any) {
     console.error("Print Error:", error);

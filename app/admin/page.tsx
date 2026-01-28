@@ -168,7 +168,53 @@ export default function AdminPage() {
   };
 
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
-  const printLabel = async (order) => { if (!order) return; setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o)); await supabase.from('orders').update({ printed: true }).eq('id', order.id); alert(`Printing...`); };
+  
+  // *** FIXED PRINT FUNCTION ***
+  const printLabel = async (order) => {
+      if (!order) return;
+      
+      // 1. Mark Printed
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
+      await supabase.from('orders').update({ printed: true }).eq('id', order.id);
+
+      // 2. Determine Mode
+      const isCloud = pnEnabled && pnApiKey && pnPrinterId;
+      const mode = isCloud ? 'cloud' : 'download';
+      
+      try {
+          // 3. Call The PDF Generator
+          const res = await fetch('/api/printnode', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                  order, 
+                  mode, 
+                  apiKey: pnApiKey, 
+                  printerId: pnPrinterId 
+              })
+          });
+          
+          const result = await res.json();
+          
+          if (!result.success) {
+              alert("Print Error: " + (result.error || "Unknown"));
+              return;
+          }
+
+          if (isCloud) {
+              alert("Sent to Printer!");
+          } else {
+              // Open Local PDF
+              const pdfBytes = Uint8Array.from(atob(result.pdfBase64), c => c.charCodeAt(0));
+              const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+              const url = window.URL.createObjectURL(blob);
+              window.open(url, '_blank');
+          }
+
+      } catch (e) {
+          alert("Network Error: " + e.message);
+      }
+  };
 
   // --- SAFE EDIT FUNCTIONS ---
   const openEditModal = (order) => { 
