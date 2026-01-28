@@ -299,7 +299,8 @@ export default function AdminPage() {
 
       if (isUpcharge) {
           const upgradeCart = [{
-              productName: `Add-on Order #${editingOrder.id.slice(0,4)}`,
+              // *** FIX #1: Force String conversion before slicing ***
+              productName: `Add-on Order #${String(editingOrder.id).slice(0,4)}`,
               finalPrice: priceDifference,
               size: 'N/A',
               customizations: { mainDesign: 'Upgrade' }
@@ -416,7 +417,8 @@ export default function AdminPage() {
         {editingOrder && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                    <div className="p-6 border-b flex justify-between bg-gray-50 rounded-t-xl"><h2 className="font-bold text-lg">Edit Order #{editingOrder.id.slice(0,8)}</h2><button onClick={closeEditModal} className="text-2xl text-gray-500 hover:text-black">×</button></div>
+                    {/* *** FIX #2: Force String conversion in Header *** */}
+                    <div className="p-6 border-b flex justify-between bg-gray-50 rounded-t-xl"><h2 className="font-bold text-lg">Edit Order #{String(editingOrder.id).slice(0,8)}</h2><button onClick={closeEditModal} className="text-2xl text-gray-500 hover:text-black">×</button></div>
                     <div className="p-6 space-y-6">
                         <div className="bg-blue-50 p-4 rounded border border-blue-100"><label className="block text-xs font-bold uppercase text-blue-900 mb-1">Customer Name</label><input className="w-full p-2 border rounded font-bold" value={editingOrder.customer_name} onChange={(e) => handleEditChange('customer_name', e.target.value)} /></div>
                         
