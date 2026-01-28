@@ -8,8 +8,8 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { order, mode, apiKey, printerId } = body;
 
-    // --- 1. SETUP PAGE (Back to Letter Size) ---
-    // This size successfully printed text (sideways) for you earlier.
+    // --- 1. SETUP PAGE (Letter Size) ---
+    // We use a full Letter page because your printer driver expects it.
     const PAGE_WIDTH = 612;  // 8.5 inches
     const PAGE_HEIGHT = 432; // 6 inches
     
@@ -20,35 +20,40 @@ export async function POST(req: Request) {
     const fontReg = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const black = rgb(0, 0, 0);
 
-    // --- 2. CALCULATE POSITION ---
-    // We stick to the Left edge (X=20) because that's where your printer looks.
-    const START_X = 20; 
-    let yPos = 380; // Start from top
+    // --- 2. CALCULATE OFFSET (The Magic Fix) ---
+    // Your printer skips the first ~2.2 inches. We manually push text past that.
+    // 2.25 inches * 72 points/inch = 162 points.
+    const OFFSET_X = 165; 
+    
+    // We set the "Virtual Margin" relative to that offset.
+    const MARGIN_LEFT = OFFSET_X + 10;
+    
+    let yPos = 400; // Start from top
 
     // --- 3. DRAW CONTENT ---
     
     // Header
     page.drawText(`ORDER #${String(order.id).slice(0, 8).toUpperCase()}`, { 
-        x: START_X + 10, y: yPos, size: 24, font: fontBold, color: black 
+        x: MARGIN_LEFT, y: yPos, size: 24, font: fontBold, color: black 
     });
     yPos -= 30;
 
     // Customer
     page.drawText(`${order.customer_name || 'Guest'}`, { 
-        x: START_X + 10, y: yPos, size: 18, font: fontReg, color: black 
+        x: MARGIN_LEFT, y: yPos, size: 18, font: fontReg, color: black 
     });
     yPos -= 25;
 
     // Date
     page.drawText(new Date(order.created_at).toLocaleString(), { 
-        x: START_X + 10, y: yPos, size: 10, font: fontReg, color: black 
+        x: MARGIN_LEFT, y: yPos, size: 10, font: fontReg, color: black 
     });
     yPos -= 15;
 
-    // Line
+    // Divider Line (280 points wide = approx 4 inches)
     page.drawLine({ 
-        start: { x: START_X + 10, y: yPos }, 
-        end: { x: START_X + 270, y: yPos }, 
+        start: { x: MARGIN_LEFT, y: yPos }, 
+        end: { x: MARGIN_LEFT + 260, y: yPos }, 
         thickness: 2, color: black 
     });
     yPos -= 25;
@@ -59,22 +64,23 @@ export async function POST(req: Request) {
     items.forEach(item => {
         if (!item) return;
         const itemName = `• ${item.productName} (${item.size})`;
-        const safeName = itemName.length > 30 ? itemName.substring(0, 30) + '...' : itemName;
+        // Truncate slightly to ensure it fits the 4 inch width
+        const safeName = itemName.length > 28 ? itemName.substring(0, 28) + '...' : itemName;
 
         page.drawText(safeName, { 
-            x: START_X + 10, y: yPos, size: 14, font: fontBold, color: black 
+            x: MARGIN_LEFT, y: yPos, size: 14, font: fontBold, color: black 
         });
         yPos -= 20;
 
         // Customizations
         const cust = item.customizations || {};
         if (cust.mainDesign) {
-             page.drawText(`   Design: ${cust.mainDesign}`, { x: START_X + 20, y: yPos, size: 12, font: fontReg, color: black });
+             page.drawText(`   Design: ${cust.mainDesign}`, { x: MARGIN_LEFT + 15, y: yPos, size: 12, font: fontReg, color: black });
              yPos -= 16;
         }
         if (Array.isArray(cust.names)) {
             cust.names.forEach(n => {
-                page.drawText(`   Name: ${n.text}`, { x: START_X + 20, y: yPos, size: 12, font: fontReg, color: black });
+                page.drawText(`   Name: ${n.text}`, { x: MARGIN_LEFT + 15, y: yPos, size: 12, font: fontReg, color: black });
                 yPos -= 16;
             });
         }
@@ -84,7 +90,7 @@ export async function POST(req: Request) {
     const pdfBytes = await pdfDoc.save();
     const base64Pdf = Buffer.from(pdfBytes).toString('base64');
 
-    // --- 4. SEND WITH ROTATION ---
+    // --- 4. SEND (Standard Mode - No Rotation) ---
     if (mode === 'cloud' && apiKey && printerId) {
         const pnRes = await fetch('https://api.printnode.com/printjobs', {
             method: 'POST',
@@ -98,11 +104,7 @@ export async function POST(req: Request) {
                 contentType: 'pdf_base64',
                 content: base64Pdf,
                 source: 'Kiosk Admin',
-                // *** THE FIX: FORCE 90 DEGREE ROTATION ***
-                options: { 
-                    fit_to_page: false,
-                    rotate: 90 
-                } 
+                options: { fit_to_page: false } // Do not scale, just print
             })
         });
 
