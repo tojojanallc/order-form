@@ -103,7 +103,8 @@ export async function POST(req: Request) {
                 contentType: 'pdf_base64',
                 content: base64Pdf,
                 source: 'Kiosk Admin',
-                options: { fit_to_page: false } // Helps prevent scaling
+                // *** THE FIX: FORCE FIT TO PAGE ***
+                options: { fit_to_page: true } 
             })
         });
 
