@@ -204,6 +204,19 @@ export default function AdminPage() {
           return { ...prev, cart_data: newCart };
       });
   };
+
+  // --- NEW: HANDLE MAIN DESIGN CHANGE ---
+  const handleUpdateMainDesign = (index, value) => {
+      setEditingOrder(prev => {
+          const newCart = [...prev.cart_data];
+          const newItem = { ...newCart[index] };
+          // Update the mainDesign inside customizations
+          const newCust = { ...newItem.customizations, mainDesign: value };
+          newItem.customizations = newCust;
+          newCart[index] = newItem;
+          return { ...prev, cart_data: newCart };
+      });
+  };
   
   const handleEditName = (idx, nIdx, val) => {
       setEditingOrder(prev => {
@@ -429,6 +442,21 @@ export default function AdminPage() {
                                     <select className="border-2 p-1 rounded font-bold bg-gray-50" value={item.size} onChange={(e) => handleEditItem(idx, 'size', e.target.value)}>{SIZE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}</select>
                                 </div>
                                 
+                                {/* --- NEW: MAIN DESIGN SECTION --- */}
+                                <div className="mb-4">
+                                    <div className="text-xs font-bold text-gray-500 uppercase mb-1">Main Design</div>
+                                    <select 
+                                        className="w-full border p-2 rounded font-bold"
+                                        value={item.customizations?.mainDesign || ''}
+                                        onChange={(e) => handleUpdateMainDesign(idx, e.target.value)}
+                                    >
+                                        <option value="">(None)</option>
+                                        {logos.filter(l => l.category === 'main').map(l => (
+                                            <option key={l.id} value={l.label}>{l.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
                                 {/* LOGOS SECTION */}
                                 <div className="space-y-2 mb-4">
                                     <div className="text-xs font-bold text-gray-500 uppercase">Accents ($5)</div>
