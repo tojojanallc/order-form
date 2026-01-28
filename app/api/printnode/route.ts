@@ -6,68 +6,101 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { order, mode, apiKey, printerId } = body;
 
-    // --- 1. GENERATE PDF LABEL (4x6 inches) ---
+    // --- CONFIGURATION ---
+    const PAGE_WIDTH = 288;  // 4 inches
+    const PAGE_HEIGHT = 432; // 6 inches
+    const MARGIN = 15;       // Safe margin (approx 5mm)
+    
+    // --- 1. GENERATE PDF ---
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([288, 432]); // 4x6 inches (72 DPI)
-    const { width, height } = page.getSize();
+    const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    
+    // Fonts
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const black = rgb(0, 0, 0);
 
-    // Header (Order ID)
+    // --- DRAW CONTENT ---
+    
+    // 1. Order Header
+    let yPos = PAGE_HEIGHT - MARGIN - 20; // Start from top
+    
     page.drawText(`ORDER #${String(order.id).slice(0, 8).toUpperCase()}`, { 
-        x: 20, y: height - 40, size: 20, font: fontBold 
+        x: MARGIN, y: yPos, size: 24, font: fontBold, color: black 
     });
 
-    // Customer Name
+    yPos -= 30; // Move down
+
+    // 2. Customer Name
     page.drawText(`${order.customer_name || 'Guest'}`, { 
-        x: 20, y: height - 70, size: 16, font: fontReg 
+        x: MARGIN, y: yPos, size: 18, font: fontReg, color: black 
     });
 
-    // Timestamp
+    yPos -= 20;
+
+    // 3. Date
     const dateStr = new Date(order.created_at).toLocaleString();
-    page.drawText(dateStr, { x: 20, y: height - 90, size: 10, font: fontReg, color: rgb(0.5, 0.5, 0.5) });
+    page.drawText(dateStr, { 
+        x: MARGIN, y: yPos, size: 10, font: fontReg, color: black 
+    });
+
+    yPos -= 10;
 
     // Divider Line
-    page.drawLine({ start: { x: 20, y: height - 100 }, end: { x: width - 20, y: height - 100 }, thickness: 1, color: rgb(0,0,0) });
+    page.drawLine({ 
+        start: { x: MARGIN, y: yPos }, 
+        end: { x: PAGE_WIDTH - MARGIN, y: yPos }, 
+        thickness: 1.5, 
+        color: black 
+    });
 
-    // Items List
-    let yPos = height - 130;
+    yPos -= 25;
+
+    // 4. Items List
     const items = Array.isArray(order.cart_data) ? order.cart_data : [];
 
     items.forEach(item => {
         if (!item) return;
-        const itemName = `- ${item.productName} (${item.size})`;
-        page.drawText(itemName, { x: 20, y: yPos, size: 12, font: fontReg });
+
+        // Product Name + Size
+        const itemName = `• ${item.productName} (${item.size})`;
+        
+        // Wrap text if too long (Simple truncation for safety)
+        const safeName = itemName.length > 35 ? itemName.substring(0, 35) + '...' : itemName;
+
+        page.drawText(safeName, { 
+            x: MARGIN, y: yPos, size: 14, font: fontBold, color: black 
+        });
         yPos -= 18;
 
-        // Customizations (Logos/Names)
+        // Customizations (Main Design)
         const cust = item.customizations || {};
-        
-        // Main Design
         if (cust.mainDesign) {
-             page.drawText(`  • Design: ${cust.mainDesign}`, { x: 30, y: yPos, size: 10, font: fontReg, color: rgb(0.3, 0.3, 0.3) });
-             yPos -= 14;
+             page.drawText(`   Design: ${cust.mainDesign}`, { 
+                 x: MARGIN + 10, y: yPos, size: 12, font: fontReg, color: black 
+             });
+             yPos -= 16;
         }
 
-        // Names
+        // Customizations (Names)
         if (Array.isArray(cust.names)) {
             cust.names.forEach(n => {
-                page.drawText(`  • Name: ${n.text} (${n.position})`, { x: 30, y: yPos, size: 10, font: fontReg, color: rgb(0.3, 0.3, 0.3) });
-                yPos -= 14;
+                page.drawText(`   Name: ${n.text} (${n.position})`, { 
+                    x: MARGIN + 10, y: yPos, size: 12, font: fontReg, color: black 
+                });
+                yPos -= 16;
             });
         }
         
-        yPos -= 10; // Extra spacing between items
+        yPos -= 10; // Spacing between items
     });
 
     const pdfBytes = await pdfDoc.save();
+    const base64Pdf = Buffer.from(pdfBytes).toString('base64');
 
-    // --- 2. HANDLE OUTPUT MODE ---
+    // --- 2. HANDLE OUTPUT ---
     
-    // MODE A: Cloud Print (PrintNode)
     if (mode === 'cloud' && apiKey && printerId) {
-        const base64Pdf = Buffer.from(pdfBytes).toString('base64');
-        
         console.log(`Sending Job to PrintNode (Printer: ${printerId})...`);
         const pnRes = await fetch('https://api.printnode.com/printjobs', {
             method: 'POST',
@@ -90,12 +123,8 @@ export async function POST(req: Request) {
         }
         
         return NextResponse.json({ success: true, message: "Sent to Printer" });
-    } 
-    
-    // MODE B: Download / Preview (Local)
-    else {
-        const base64 = Buffer.from(pdfBytes).toString('base64');
-        return NextResponse.json({ success: true, pdfBase64: base64 });
+    } else {
+        return NextResponse.json({ success: true, pdfBase64: base64Pdf });
     }
 
   } catch (error: any) {
