@@ -1,131 +1,145 @@
 import { NextResponse } from 'next/server';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { order, mode, apiKey, printerId } = body;
+    const { order, printerId, apiKey } = await req.json();
 
-    // --- CONFIGURATION ---
-    const PAGE_WIDTH = 288;  // 4 inches
-    const PAGE_HEIGHT = 432; // 6 inches
-    const MARGIN = 15;       // Safe margin (approx 5mm)
-    
-    // --- 1. GENERATE PDF ---
+    if (!apiKey || !printerId || !order) {
+      return NextResponse.json({ error: "Missing Config" }, { status: 400 });
+    }
+
+    // 1. Create PDF
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    
-    // Fonts
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const black = rgb(0, 0, 0);
 
-    // --- DRAW CONTENT ---
+    // 2. Add Page (Standard 4x6)
+    // 288 pts wide x 432 pts high
+    let page = pdfDoc.addPage([288, 432]);
+    const { width } = page.getSize();
+
+    // --- BOTTOM-ANCHORED LAYOUT ---
+    // Since your printer is cutting off the top, we will start printing
+    // from the MIDDLE (y=250) and work our way down to the bottom (y=0).
+    // This forces the content into the "safe zone" you can see.
+    let cursorY = 250; 
+    const margin = 15; 
     
-    // 1. Order Header
-    let yPos = PAGE_HEIGHT - MARGIN - 20; // Start from top
+    const moveDown = (amount: number) => { cursorY -= amount; };
+
+    // --- DEBUG MARKER ---
+    // This draws a line where we START printing. If you don't see this, 
+    // your printer is cutting off even the middle.
+    page.drawLine({ start: { x: margin, y: cursorY }, end: { x: width - margin, y: cursorY }, thickness: 2, color: rgb(0,0,0) });
+    moveDown(15);
+
+    // --- HEADER ---
+    page.drawText(order.customer_name || 'Guest', {
+        x: margin,
+        y: cursorY,
+        size: 16,
+        font: fontBold,
+    });
+    moveDown(15);
+
+    page.drawText(`Order #${String(order.id).slice(0, 8)}`, {
+        x: margin,
+        y: cursorY,
+        size: 12,
+        font: font,
+    });
+    moveDown(10);
     
-    page.drawText(`ORDER #${String(order.id).slice(0, 8).toUpperCase()}`, { 
-        x: MARGIN, y: yPos, size: 24, font: fontBold, color: black 
+    // Date
+    page.drawText(new Date().toLocaleDateString(), {
+        x: margin,
+        y: cursorY,
+        size: 10,
+        font: font,
     });
+    moveDown(15);
 
-    yPos -= 30; // Move down
-
-    // 2. Customer Name
-    page.drawText(`${order.customer_name || 'Guest'}`, { 
-        x: MARGIN, y: yPos, size: 18, font: fontReg, color: black 
-    });
-
-    yPos -= 20;
-
-    // 3. Date
-    const dateStr = new Date(order.created_at).toLocaleString();
-    page.drawText(dateStr, { 
-        x: MARGIN, y: yPos, size: 10, font: fontReg, color: black 
-    });
-
-    yPos -= 10;
-
-    // Divider Line
-    page.drawLine({ 
-        start: { x: MARGIN, y: yPos }, 
-        end: { x: PAGE_WIDTH - MARGIN, y: yPos }, 
-        thickness: 1.5, 
-        color: black 
-    });
-
-    yPos -= 25;
-
-    // 4. Items List
+    // --- ITEMS ---
     const items = Array.isArray(order.cart_data) ? order.cart_data : [];
 
-    items.forEach(item => {
-        if (!item) return;
+    items.forEach((item: any) => {
+        // If we get too close to the footer, stop (simple single-page mode for safety)
+        if (cursorY < 40) return;
 
-        // Product Name + Size
-        const itemName = `• ${item.productName} (${item.size})`;
+        // Product Name (Bold)
+        let pName = item.productName || 'Item';
+        if (pName.length > 25) pName = pName.substring(0, 23) + '...';
         
-        // Wrap text if too long (Simple truncation for safety)
-        const safeName = itemName.length > 35 ? itemName.substring(0, 35) + '...' : itemName;
+        page.drawText(pName, { x: margin, y: cursorY, size: 12, font: fontBold });
+        moveDown(12);
 
-        page.drawText(safeName, { 
-            x: MARGIN, y: yPos, size: 14, font: fontBold, color: black 
-        });
-        yPos -= 18;
+        // Size
+        page.drawText(`Size: ${item.size || 'N/A'}`, { x: margin, y: cursorY, size: 12, font: font });
+        moveDown(12);
 
-        // Customizations (Main Design)
-        const cust = item.customizations || {};
-        if (cust.mainDesign) {
-             page.drawText(`   Design: ${cust.mainDesign}`, { 
-                 x: MARGIN + 10, y: yPos, size: 12, font: fontReg, color: black 
-             });
-             yPos -= 16;
-        }
-
-        // Customizations (Names)
-        if (Array.isArray(cust.names)) {
-            cust.names.forEach(n => {
-                page.drawText(`   Name: ${n.text} (${n.position})`, { 
-                    x: MARGIN + 10, y: yPos, size: 12, font: fontReg, color: black 
-                });
-                yPos -= 16;
+        // Customizations (Compressed)
+        if (item.customizations) {
+            const c = item.customizations;
+            if (c.mainDesign) {
+                page.drawText(`Main: ${c.mainDesign}`, { x: margin + 10, y: cursorY, size: 10, font });
+                moveDown(10);
+            }
+            c.names?.forEach((n: any) => {
+                if(n.text) {
+                    page.drawText(`Name: ${n.text}`, { x: margin + 10, y: cursorY, size: 10, font });
+                    moveDown(10);
+                }
+            });
+             c.logos?.forEach((l: any) => {
+                if(l.type) {
+                    page.drawText(`Logo: ${l.type}`, { x: margin + 10, y: cursorY, size: 10, font });
+                    moveDown(10);
+                }
             });
         }
         
-        yPos -= 10; // Spacing between items
+        moveDown(5);
+        // Dash Separator
+        page.drawText("- - - - - - - - - - - - -", { x: margin, y: cursorY, size: 8, font });
+        moveDown(15);
     });
 
-    const pdfBytes = await pdfDoc.save();
-    const base64Pdf = Buffer.from(pdfBytes).toString('base64');
+    // --- FOOTER ---
+    page.drawText("Lev Custom", {
+        x: margin,
+        y: 15, // Absolute bottom
+        size: 8,
+        font: font,
+        color: rgb(0.5, 0.5, 0.5),
+    });
 
-    // --- 2. HANDLE OUTPUT ---
-    
-    if (mode === 'cloud' && apiKey && printerId) {
-        console.log(`Sending Job to PrintNode (Printer: ${printerId})...`);
-        const pnRes = await fetch('https://api.printnode.com/printjobs', {
-            method: 'POST',
-            headers: {
-                'Authorization': 'Basic ' + Buffer.from(apiKey + ':').toString('base64'),
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                printerId: parseInt(printerId),
-                title: `Order #${order.id}`,
-                contentType: 'pdf_base64',
-                content: base64Pdf,
-                source: 'Kiosk Admin'
-            })
-        });
+    // 3. Output
+    const pdfBytes = await pdfDoc.saveAsBase64();
 
-        if (!pnRes.ok) {
-            const errText = await pnRes.text();
-            throw new Error(`PrintNode Error: ${errText}`);
-        }
-        
-        return NextResponse.json({ success: true, message: "Sent to Printer" });
-    } else {
-        return NextResponse.json({ success: true, pdfBase64: base64Pdf });
+    const response = await fetch('https://api.printnode.com/printjobs', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(apiKey + ':').toString('base64'),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        printerId: parseInt(printerId),
+        title: `Order #${order.id}`,
+        contentType: 'pdf_base64', 
+        content: pdfBytes, 
+        source: 'Lev Custom Admin'
+      })
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText);
     }
+
+    return NextResponse.json({ success: true });
 
   } catch (error: any) {
     console.error("Print Error:", error);
