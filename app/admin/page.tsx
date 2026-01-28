@@ -96,13 +96,9 @@ export default function AdminPage() {
   // --- AUTO PRINT LOGIC ---
   useEffect(() => {
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
-
-    // Check if a new order was added to the top of the list
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0];
-      // Only auto-print if it hasn't been printed yet and is recent
       if (!newestOrder.printed && (new Date() - new Date(newestOrder.created_at) < 30000)) {
-        console.log("Auto-printing new order:", newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
@@ -188,187 +184,59 @@ export default function AdminPage() {
 
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
-  // --- PRINT FUNCTION ---
   const printLabel = async (order) => {
       if (!order) return;
-      
-      // Mark Printed in UI and DB
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
       await supabase.from('orders').update({ printed: true }).eq('id', order.id);
-
       const isCloud = pnEnabled && pnApiKey && pnPrinterId;
-      const mode = isCloud ? 'cloud' : 'download';
-      
       try {
           const res = await fetch('/api/printnode', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                  order, 
-                  mode, 
-                  apiKey: pnApiKey, 
-                  printerId: pnPrinterId 
-              })
+              body: JSON.stringify({ order, mode: isCloud ? 'cloud' : 'download', apiKey: pnApiKey, printerId: pnPrinterId })
           });
-          
           const result = await res.json();
-          if (!result.success) {
-              console.error("Print Error:", result.error);
-              return;
-          }
-
-          if (!isCloud) {
+          if (result.success && !isCloud) {
               const pdfBytes = Uint8Array.from(atob(result.pdfBase64), c => c.charCodeAt(0));
               const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-              const url = window.URL.createObjectURL(blob);
-              window.open(url, '_blank');
+              window.open(window.URL.createObjectURL(blob), '_blank');
           }
-
-      } catch (e) {
-          console.error("Network Error:", e.message);
-      }
+      } catch (e) {}
   };
 
-  // --- SAFE EDIT FUNCTIONS ---
+  // --- EDIT FUNCTIONS ---
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      const cleanCart = rawCart
-        .filter(item => item !== null && item !== undefined)
-        .map(item => ({
+      const cleanCart = rawCart.filter(i => i).map(item => ({
             ...item,
             productName: item.productName || 'Unknown',
             size: item.size || 'N/A',
-            customizations: {
-                mainDesign: item.customizations?.mainDesign || '',
-                logos: Array.isArray(item.customizations?.logos) ? item.customizations.logos : [],
-                names: Array.isArray(item.customizations?.names) ? item.customizations.names : [],
-                backList: !!item.customizations?.backList,
-                metallic: !!item.customizations?.metallic
-            }
+            customizations: { mainDesign: item.customizations?.mainDesign || '', logos: Array.isArray(item.customizations?.logos) ? item.customizations.logos : [], names: Array.isArray(item.customizations?.names) ? item.customizations.names : [], backList: !!item.customizations?.backList, metallic: !!item.customizations?.metallic }
       }));
       setEditingOrder({ ...order, cart_data: cleanCart }); 
       setOriginalOrderTotal(order.total_price || 0);
   };
-
   const closeEditModal = () => { setEditingOrder(null); };
   const handleEditChange = (f, v) => setEditingOrder(p => ({ ...p, [f]: v }));
-  const handleEditItem = (index, field, value) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          newCart[index] = { ...newCart[index], [field]: value };
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleUpdateMainDesign = (index, value) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[index] };
-          const newCust = { ...newItem.customizations, mainDesign: value };
-          newItem.customizations = newCust;
-          newCart[index] = newItem;
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleEditName = (idx, nIdx, val) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newNames = [...newCust.names];
-          if(newNames[nIdx]) {
-              newNames[nIdx] = { ...newNames[nIdx], text: val };
-              newCust.names = newNames;
-              newItem.customizations = newCust;
-              newCart[idx] = newItem;
-          }
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleAddAccent = (idx) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newLogos = [...(newCust.logos || [])];
-          newLogos.push({ type: logos[0]?.label || 'Logo', position: 'Left Sleeve' });
-          newCust.logos = newLogos;
-          newItem.customizations = newCust;
-          newCart[idx] = newItem;
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleAddName = (idx) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newNames = [...(newCust.names || [])];
-          newNames.push({ text: '', position: 'Hood' });
-          newCust.names = newNames;
-          newItem.customizations = newCust;
-          newCart[idx] = newItem;
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleUpdateAccent = (idx, lIdx, field, val) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newLogos = [...newCust.logos];
-          if(newLogos[lIdx]) {
-              newLogos[lIdx] = { ...newLogos[lIdx], [field]: val };
-              newCust.logos = newLogos;
-              newItem.customizations = newCust;
-              newCart[idx] = newItem;
-          }
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleUpdateNamePos = (idx, nIdx, val) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newNames = [...newCust.names];
-          if(newNames[nIdx]) {
-              newNames[nIdx] = { ...newNames[nIdx], position: val };
-              newCust.names = newNames;
-              newItem.customizations = newCust;
-              newCart[idx] = newItem;
-          }
-          return { ...prev, cart_data: newCart };
-      });
-  };
+  const handleEditItem = (idx, f, v) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx] = { ...newCart[idx], [f]: v }; return { ...prev, cart_data: newCart }; }); };
+  const handleUpdateMainDesign = (idx, v) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.mainDesign = v; return { ...prev, cart_data: newCart }; }); };
+  const handleEditName = (idx, nIdx, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.names[nIdx].text = val; return { ...prev, cart_data: newCart }; }); };
+  const handleAddAccent = (idx) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.logos.push({ type: logos[0]?.label || 'Logo', position: 'Left Sleeve' }); return { ...prev, cart_data: newCart }; }); };
+  const handleAddName = (idx) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.names.push({ text: '', position: 'Hood' }); return { ...prev, cart_data: newCart }; }); };
+  const handleUpdateAccent = (idx, lIdx, f, v) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.logos[lIdx][f] = v; return { ...prev, cart_data: newCart }; }); };
+  const handleUpdateNamePos = (idx, nIdx, v) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.names[nIdx].position = v; return { ...prev, cart_data: newCart }; }); };
 
   const saveOrderEdits = async () => { 
       if(!editingOrder) return; 
       setLoading(true); 
       const priceDifference = newOrderTotal - originalOrderTotal;
-      const isUpcharge = priceDifference > 0;
-      const { error } = await supabase.from('orders').update({ 
-          customer_name: editingOrder.customer_name, 
-          cart_data: editingOrder.cart_data, 
-          shipping_address: editingOrder.shipping_address,
-          total_price: newOrderTotal 
-      }).eq('id', editingOrder.id); 
-      if(error) { alert("Error: " + error.message); setLoading(false); return; }
-      if (isUpcharge) {
-          const upgradeCart = [{
-              productName: `Add-on Order #${String(editingOrder.id).slice(0,4)}`,
-              finalPrice: priceDifference,
-              size: 'N/A',
-              customizations: { mainDesign: 'Upgrade' }
-          }];
-          try {
-              const res = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart: upgradeCart, customerName: editingOrder.customer_name }) });
-              const data = await res.json();
-              if(data.url) { window.location.href = data.url; return; } else { alert("Payment Link Error"); }
-          } catch(e) { alert("Payment Error: " + e.message); }
-      } else {
-          setOrders(orders.map(o => o.id === editingOrder.id ? editingOrder : o)); 
-          closeEditModal(); 
-      }
+      const { error } = await supabase.from('orders').update({ customer_name: editingOrder.customer_name, cart_data: editingOrder.cart_data, total_price: newOrderTotal }).eq('id', editingOrder.id); 
+      if(!error && priceDifference > 0) {
+          const upgradeCart = [{ productName: `Upcharge Order #${String(editingOrder.id).slice(0,4)}`, finalPrice: priceDifference, size: 'N/A', customizations: { mainDesign: 'Upgrade' } }];
+          const res = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart: upgradeCart, customerName: editingOrder.customer_name }) });
+          const data = await res.json();
+          if(data.url) window.location.href = data.url;
+      } else { setOrders(orders.map(o => o.id === editingOrder.id ? editingOrder : o)); closeEditModal(); }
       setLoading(false); 
   };
 
@@ -380,15 +248,15 @@ export default function AdminPage() {
   const updatePrice = async (pid, v) => { setProducts(products.map(p => p.id === pid ? { ...p, base_price: v } : p)); await supabase.from('products').update({ base_price: v }).eq('id', pid); };
   const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
-  const downloadTemplate = () => { try { const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, cost_price: item.cost_price || 8.50, _Reference_Name: getProductName(item.product_id) || item.product_id })); const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory"); XLSX.writeFile(wb, "Inventory.xlsx"); } catch (e) {} };
-  const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
-  const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing"); await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: newProdType, sort_order: 99 }]); const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL']; await supabase.from('inventory').insert(sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }))); alert("Created!"); setNewProdId(''); fetchInventory(); };
-  const handleGuestUpload = (e) => { const f = e.target.files[0]; if (!f) return; setLoading(true); const r = new FileReader(); r.onload = async (evt) => { try { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); for (const row of d) { const n = row['Name'] || row['name'] || row['Guest']; const s = row['Size'] || row['size']; if (n) await supabase.from('guests').insert([{ name: String(n).trim(), size: s ? String(s).trim() : null, has_ordered: false }]); } alert(`Imported!`); fetchGuests(); } catch (e) {} setLoading(false); }; r.readAsBinaryString(f); };
-  const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
+  const downloadTemplate = () => { const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, cost_price: item.cost_price || 8.50 })); const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory"); XLSX.writeFile(wb, "Inventory.xlsx"); };
+  const downloadCSV = () => { const rows = orders.map(o => [o.id, o.customer_name, o.status, o.total_price].join(',')); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI("ID,Name,Status,Total\n" + rows.join('\n')); link.download = "orders.csv"; link.click(); };
+  const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return; await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, type: newProdType, sort_order: 99 }]); const sizes = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL']; await supabase.from('inventory').insert(sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }))); fetchInventory(); };
+  const handleGuestUpload = (e) => { const f = e.target.files[0]; if (!f) return; setLoading(true); const r = new FileReader(); r.onload = async (evt) => { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); for (const row of d) { if (row.Name) await supabase.from('guests').insert([{ name: String(row.Name).trim(), size: row.Size, has_ordered: false }]); } fetchGuests(); setLoading(false); }; r.readAsBinaryString(f); };
+  const resetGuest = async (id) => { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); };
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
-  const handleBulkUpload = (e) => { const f = e.target.files[0]; if (!f) return; setUploadLog(["Reading..."]); setLoading(true); const r = new FileReader(); r.onload = async (evt) => { try { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); if (!d.length) { setLoading(false); return; } const logs = []; for (const row of d) { const clean = {}; Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); const pid = String(clean['product_id']).trim(); const sz = String(clean['size']).trim(); const cnt = parseInt(clean['count']); const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).maybeSingle(); if (ex) { await supabase.from('inventory').update({ count: cnt, cost_price: cst }).eq('product_id', pid).eq('size', sz); logs.push(`Updated ${pid}`); } else { await supabase.from('inventory').insert([{ product_id: pid, size: sz, count: cnt, cost_price: cst, active: true }]); logs.push(`Created ${pid}`); } } setUploadLog(logs); fetchInventory(); } catch (e) { setUploadLog([e.message]); } setLoading(false); }; r.readAsBinaryString(f); };
+  const handleBulkUpload = (e) => { const f = e.target.files[0]; if (!f) return; setLoading(true); const r = new FileReader(); r.onload = async (evt) => { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); for (const row of d) { await supabase.from('inventory').update({ count: row.count, cost_price: row.cost_price }).eq('product_id', row.product_id).eq('size', row.size); } fetchInventory(); setLoading(false); }; r.readAsBinaryString(f); };
 
-  if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
+  if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
   return (
@@ -406,19 +274,10 @@ export default function AdminPage() {
 
         {activeTab === 'orders' && ( <div className="space-y-6"> 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
-            <div className="bg-white p-4 rounded shadow border-l-4 border-green-500"><p className="text-xs text-gray-500 font-bold uppercase">Gross Revenue</p><p className="text-3xl font-black text-green-700">${stats.revenue.toFixed(2)}</p></div> 
+            <div className="bg-white p-4 rounded shadow border-l-4 border-green-500"><p className="text-xs text-gray-500 font-bold uppercase">Revenue</p><p className="text-3xl font-black text-green-700">${stats.revenue.toFixed(2)}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
-            <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
-            
-            {/* AUTO-PRINT UI */}
-            <div className="bg-blue-900 p-4 rounded shadow flex flex-col justify-center items-center text-white">
-                <p className="text-xs font-bold uppercase mb-2 opacity-80">Auto-Print Labels</p>
-                <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="sr-only peer" />
-                    <div className="w-14 h-7 bg-blue-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-500"></div>
-                    <span className="ml-3 text-sm font-bold">{autoPrintEnabled ? 'ON' : 'OFF'}</span>
-                </label>
-            </div> 
+            <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
+            <div className="bg-blue-900 p-4 rounded shadow flex flex-col justify-center items-center text-white"><p className="text-xs font-bold uppercase mb-2 opacity-80">Auto-Print</p><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="sr-only peer" /><div className="w-14 h-7 bg-blue-700 rounded-full peer peer-checked:bg-green-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-full"></div></label></div> 
           </div> 
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{orders.filter(o => o.status !== 'completed').map((order) => {
@@ -426,25 +285,48 @@ export default function AdminPage() {
                 return (
                 <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
                     <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
-                    <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                    <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div></td>
-                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => {
-                        const customs = item?.customizations || {};
-                        return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> );
-                    })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                    <td className="p-4 align-top text-right">
-                        <button onClick={() => openEditModal(order)} className="p-2 rounded mr-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold">✏️</button>
-                        {order.status !== 'refunded' && order.payment_intent_id && ( <button onClick={() => handleRefund(order.id, order.payment_intent_id)} className="p-2 rounded mr-2 bg-red-50 text-red-500 hover:bg-red-100 font-bold">💸</button> )}
-                        <button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 font-bold ${order.printed ? 'bg-gray-100 text-gray-400' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>🖨️</button>
-                        <button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg">🗑️</button>
-                    </td>
+                    <td className="p-4 align-top text-sm text-gray-500" suppressHydrationWarning>{new Date(order.created_at).toLocaleString()}</td>
+                    <td className="p-4 align-top font-bold">{order.customer_name}</td>
+                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => ( <div key={i} className="mb-2"><span className="font-bold">{item?.productName}</span> ({item?.size})</div> ))}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
+                    <td className="p-4 align-top text-right"><button onClick={() => openEditModal(order)} className="p-2 mr-2 text-blue-600 font-bold">✏️</button><button onClick={() => printLabel(order)} className={`p-2 mr-2 font-bold ${order.printed ? 'text-gray-400' : 'text-green-600'}`}>🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 font-bold">🗑️</button></td>
                 </tr>
             )})}</tbody></table> 
           </div> 
         </div> )}
-        {/* ... (rest of tabs same as before) */}
+
+        {activeTab === 'history' && ( <div><div className="bg-gray-800 text-white p-4 rounded-t-lg flex justify-between items-center font-bold"><h2>Archive</h2><button onClick={downloadCSV}>CSV</button></div><div className="bg-white shadow rounded-b-lg border border-gray-300 p-10 text-center">{orders.filter(o => o.status === 'completed').length === 0 ? "Empty" : "Items found"}</div></div> )}
+
+        {activeTab === 'inventory' && ( <div className="grid md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded shadow border"><h2 className="font-bold mb-4">Add Item</h2><form onSubmit={handleAddProductWithSizeUpdates} className="space-y-3"><input className="w-full border p-2" placeholder="ID" value={newProdId} onChange={e => setNewProdId(e.target.value)}/><input className="w-full border p-2" placeholder="Name" value={newProdName} onChange={e => setNewProdName(e.target.value)}/><button className="w-full bg-green-600 text-white font-bold py-2">Create</button></form></div>
+            <div className="md:col-span-2 space-y-6"><div className="bg-white shadow rounded border overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-100"><tr><th className="p-3">Product</th><th className="p-3">Price</th><th className="p-3">Action</th></tr></thead><tbody>{products.map(p => (<tr key={p.id} className="border-b"><td className="p-3 font-bold">{p.name}</td><td className="p-3"><input type="number" className="w-20 border p-1" value={p.base_price} onChange={e => updatePrice(p.id, e.target.value)}/></td><td className="p-3"><button onClick={() => deleteProduct(p.id)} className="text-red-500">🗑️</button></td></tr>))}</tbody></table></div></div>
+        </div> )}
+
+        {activeTab === 'guests' && (<div className="bg-white p-6 rounded shadow border"><h2 className="font-bold mb-4">Guests</h2><input type="file" onChange={handleGuestUpload}/><table className="w-full text-left mt-6"><thead className="bg-gray-100"><tr><th className="p-3">Name</th><th className="p-3">Status</th></tr></thead><tbody>{guests.map(g => (<tr key={g.id} className="border-b"><td className="p-3">{g.name}</td><td className="p-3">{g.has_ordered ? "Redeemed" : "Wait"}</td></tr>))}</tbody></table></div>)}
+        
+        {activeTab === 'logos' && (<div className="bg-white p-6 rounded shadow border"><h2 className="font-bold mb-4">Add Logo</h2><form onSubmit={addLogo} className="grid grid-cols-2 gap-4"><input className="border p-2" placeholder="Name" value={newLogoName} onChange={e => setNewLogoName(e.target.value)}/><button className="bg-blue-900 text-white font-bold p-2">Add</button></form><div className="mt-6 space-y-2">{logos.map(l => (<div key={l.id} className="flex justify-between p-2 border-b"><span>{l.label}</span><button onClick={() => deleteLogo(l.id)} className="text-red-500">🗑️</button></div>))}</div></div>)}
+        
+        {activeTab === 'settings' && (<div className="bg-white p-8 rounded shadow border max-w-xl mx-auto"><h2 className="font-bold text-2xl mb-6">Settings</h2><input className="w-full border p-3 mb-4" placeholder="Event Name" value={eventName} onChange={e => setEventName(e.target.value)}/><div className="bg-purple-50 p-4 rounded mb-6 border border-purple-200 font-bold">Cloud Printing<div className="flex justify-between mt-2">Enable?<input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)}/></div><input className="w-full p-2 border mt-2 text-sm" placeholder="API Key" value={pnApiKey} onChange={e => setPnApiKey(e.target.value)}/><div className="flex mt-2 gap-2"><input className="flex-1 p-2 border" placeholder="Printer ID" value={pnPrinterId} onChange={e => setPnPrinterId(e.target.value)}/><button onClick={discoverPrinters} className="bg-purple-600 text-white px-4 text-xs">Find</button></div></div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 shadow">Save</button></div>)}
+
+        {editingOrder && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <div className="p-6 border-b flex justify-between bg-gray-50 rounded-t-xl"><h2 className="font-bold text-lg">Edit Order #{String(editingOrder.id).slice(0,8)}</h2><button onClick={closeEditModal} className="text-2xl text-gray-500">×</button></div>
+                    <div className="p-6 space-y-6">
+                        <div className="bg-blue-50 p-4 rounded border border-blue-100"><label className="block text-xs font-bold uppercase text-blue-900 mb-1">Customer Name</label><input className="w-full p-2 border rounded font-bold" value={editingOrder.customer_name} onChange={(e) => handleEditChange('customer_name', e.target.value)} /></div>
+                        {editingOrder.cart_data.map((item, idx) => (
+                            <div key={idx} className="bg-white p-4 border rounded-lg shadow-sm">
+                                <div className="flex justify-between items-center mb-4 pb-2 border-b"><span className="font-bold text-lg">{item.productName}</span><select className="border-2 p-1 rounded font-bold" value={item.size} onChange={(e) => handleEditItem(idx, 'size', e.target.value)}>{SIZE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                                <div className="mb-4"><div className="text-xs font-bold text-gray-500 uppercase mb-1">Main Design</div><select className="w-full border p-2 rounded" value={item.customizations?.mainDesign || ''} onChange={(e) => handleUpdateMainDesign(idx, e.target.value)}><option value="">None</option>{logos.filter(l => l.category === 'main').map(l => (<option key={l.id} value={l.label}>{l.label}</option>))}</select></div>
+                                <div className="space-y-2 mb-4"><div className="text-xs font-bold text-gray-500 uppercase">Accents ($5)</div>{item.customizations?.logos?.map((l, lIdx) => (<div key={lIdx} className="flex gap-2"><select className="border p-2 rounded flex-1 text-sm font-bold" value={l.type} onChange={(e) => handleUpdateAccent(idx, lIdx, 'type', e.target.value)}>{logos.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}</select><select className="border p-2 rounded w-40 text-sm" value={l.position} onChange={(e) => handleUpdateAccent(idx, lIdx, 'position', e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select></div>))}<button onClick={() => handleAddAccent(idx)} className="text-xs text-blue-600 font-bold">+ Accent</button></div>
+                                <div className="space-y-2"><div className="text-xs font-bold text-gray-500 uppercase">Personalization ($5)</div>{item.customizations?.names?.map((n, nIdx) => (<div key={nIdx} className="flex gap-2"><input className="border p-2 rounded flex-1 text-sm uppercase font-bold" value={n.text} onChange={(e) => handleEditName(idx, nIdx, e.target.value)} /><select className="border p-2 rounded w-40 text-sm" value={n.position} onChange={(e) => handleUpdateNamePos(idx, nIdx, e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select></div>))}<button onClick={() => handleAddName(idx)} className="text-xs text-blue-600 font-bold">+ Name</button></div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="p-6 border-t flex justify-end gap-3 bg-gray-50 rounded-b-xl"><button onClick={closeEditModal} className="px-4 py-2 text-gray-600 font-bold">Cancel</button><button onClick={saveOrderEdits} className="px-6 py-2 bg-blue-600 text-white font-bold rounded shadow">{newOrderTotal > originalOrderTotal ? `Save & Pay $${(newOrderTotal - originalOrderTotal).toFixed(2)}` : "Save"}</button></div>
+                </div>
+            </div>
+        )}
       </div>
-      {/* (MODAL CODE HERE - REMAINS THE SAME AS PREVIOUS) */}
     </div>
   );
 }
