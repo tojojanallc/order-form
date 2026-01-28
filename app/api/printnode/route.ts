@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,13 +8,11 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { order, mode, apiKey, printerId } = body;
 
-    // --- CONFIG: LANDSCAPE MODE (6x4) ---
-    // We swap the dimensions. 6 inches wide, 4 inches tall.
-    const PAGE_WIDTH = 432;  // 6 inches
-    const PAGE_HEIGHT = 288; // 4 inches
-    const MARGIN = 20;
+    // --- 1. SETUP PAGE (Back to Letter Size) ---
+    // This size successfully printed text (sideways) for you earlier.
+    const PAGE_WIDTH = 612;  // 8.5 inches
+    const PAGE_HEIGHT = 432; // 6 inches
     
-    // 1. Create PDF
     const pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     
@@ -22,66 +20,61 @@ export async function POST(req: Request) {
     const fontReg = await pdfDoc.embedFont(StandardFonts.TimesRoman);
     const black = rgb(0, 0, 0);
 
-    // 2. Draw Content
-    // Since it's landscape, we have more width (432) and less height (288).
-    let yPos = PAGE_HEIGHT - MARGIN - 15;
+    // --- 2. CALCULATE POSITION ---
+    // We stick to the Left edge (X=20) because that's where your printer looks.
+    const START_X = 20; 
+    let yPos = 380; // Start from top
+
+    // --- 3. DRAW CONTENT ---
     
-    // Header (Top Left)
+    // Header
     page.drawText(`ORDER #${String(order.id).slice(0, 8).toUpperCase()}`, { 
-        x: MARGIN, y: yPos, size: 24, font: fontBold, color: black 
+        x: START_X + 10, y: yPos, size: 24, font: fontBold, color: black 
     });
-
-    // Date (Top Right)
-    const dateStr = new Date(order.created_at).toLocaleDateString();
-    page.drawText(dateStr, { 
-        x: PAGE_WIDTH - MARGIN - 60, y: yPos, size: 12, font: fontReg, color: black 
-    });
-
     yPos -= 30;
 
-    // Customer Name
+    // Customer
     page.drawText(`${order.customer_name || 'Guest'}`, { 
-        x: MARGIN, y: yPos, size: 18, font: fontReg, color: black 
+        x: START_X + 10, y: yPos, size: 18, font: fontReg, color: black 
     });
+    yPos -= 25;
 
+    // Date
+    page.drawText(new Date(order.created_at).toLocaleString(), { 
+        x: START_X + 10, y: yPos, size: 10, font: fontReg, color: black 
+    });
     yPos -= 15;
 
     // Line
     page.drawLine({ 
-        start: { x: MARGIN, y: yPos }, 
-        end: { x: PAGE_WIDTH - MARGIN, y: yPos }, 
+        start: { x: START_X + 10, y: yPos }, 
+        end: { x: START_X + 270, y: yPos }, 
         thickness: 2, color: black 
     });
-
     yPos -= 25;
 
-    // Items List
+    // Items
     const items = Array.isArray(order.cart_data) ? order.cart_data : [];
 
     items.forEach(item => {
         if (!item) return;
-        if (yPos < 20) return; // Stop if we run out of paper
-
         const itemName = `• ${item.productName} (${item.size})`;
-        // We have more horizontal space now, so we can truncate less
-        const safeName = itemName.length > 45 ? itemName.substring(0, 45) + '...' : itemName;
+        const safeName = itemName.length > 30 ? itemName.substring(0, 30) + '...' : itemName;
 
         page.drawText(safeName, { 
-            x: MARGIN, y: yPos, size: 14, font: fontBold, color: black 
+            x: START_X + 10, y: yPos, size: 14, font: fontBold, color: black 
         });
-        yPos -= 18;
+        yPos -= 20;
 
         // Customizations
         const cust = item.customizations || {};
-        
         if (cust.mainDesign) {
-             page.drawText(`   Design: ${cust.mainDesign}`, { x: MARGIN + 20, y: yPos, size: 12, font: fontReg, color: black });
+             page.drawText(`   Design: ${cust.mainDesign}`, { x: START_X + 20, y: yPos, size: 12, font: fontReg, color: black });
              yPos -= 16;
         }
-
         if (Array.isArray(cust.names)) {
             cust.names.forEach(n => {
-                page.drawText(`   Name: ${n.text}`, { x: MARGIN + 20, y: yPos, size: 12, font: fontReg, color: black });
+                page.drawText(`   Name: ${n.text}`, { x: START_X + 20, y: yPos, size: 12, font: fontReg, color: black });
                 yPos -= 16;
             });
         }
@@ -91,7 +84,7 @@ export async function POST(req: Request) {
     const pdfBytes = await pdfDoc.save();
     const base64Pdf = Buffer.from(pdfBytes).toString('base64');
 
-    // 3. Send
+    // --- 4. SEND WITH ROTATION ---
     if (mode === 'cloud' && apiKey && printerId) {
         const pnRes = await fetch('https://api.printnode.com/printjobs', {
             method: 'POST',
@@ -105,8 +98,11 @@ export async function POST(req: Request) {
                 contentType: 'pdf_base64',
                 content: base64Pdf,
                 source: 'Kiosk Admin',
-                // Force rotation if the printer is stubborn
-                options: { rotate: 0 } 
+                // *** THE FIX: FORCE 90 DEGREE ROTATION ***
+                options: { 
+                    fit_to_page: false,
+                    rotate: 90 
+                } 
             })
         });
 
