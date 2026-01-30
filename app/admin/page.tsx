@@ -22,6 +22,7 @@ const POSITIONS = [
     { id: 'rear', label: 'Rear' }
 ];
 
+// These are the ONLY statuses that will show in the dashboard
 const STATUSES = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
   pending_shipping: { label: 'To Be Shipped', color: 'bg-purple-100 text-purple-800 border-purple-300' },
@@ -83,26 +84,26 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- 1. THE FIXED ENGINE: REALTIME + FILTERED POLLING ---
+  // --- ENGINE: LIVE REFRESH + POLLING ---
   useEffect(() => {
     if (isAuthorized && mounted) {
-        // Initial Data Load
+        // 1. Initial Load
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
 
-        // A. Realtime Listener (Immediate Trigger)
+        // 2. Realtime Listener
         let channel = null;
         if (supabase) {
             channel = supabase.channel('admin_sync_main')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                    console.log("DB Update Detected via Socket");
-                    fetchOrders(); // Forces the UI to refresh with FILTERS
+                    // When any change happens (insert/update), re-fetch the filtered list
+                    console.log("DB Change detected!");
+                    fetchOrders(); 
                 })
                 .subscribe();
         }
 
-        // B. Polling (Backup every 5s) - NOW WITH FILTERS
+        // 3. Polling Backup (Every 5s)
         const interval = setInterval(() => {
-            // We call fetchOrders() directly to ensure the filters (neq incomplete) are ALWAYS applied
             fetchOrders(); 
         }, 5000);
 
@@ -113,21 +114,25 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- 2. AUTO-PRINT TRIGGER ---
+  // --- ENGINE: AUTO-PRINT ---
   useEffect(() => {
+    // 1. Set baseline on first load so we don't print history
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
       return;
     }
+
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
+    // 2. Detect if a new order has appeared in the list
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
-      const isNew = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000; // 2 min window
+      // Safety: Only print if order is less than 5 minutes old (handles latency)
+      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
       
-      // Because we filtered incomplete orders, if it appears here, it IS PAID.
-      if (isNew && !newestOrder.printed) {
-        console.log("New PAID order detected - Printing...");
+      // Since fetchOrders only grabs PAID orders, we don't need to check status here
+      if (isRecent && !newestOrder.printed) {
+        console.log("New PAID order detected. Printing:", newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
@@ -188,19 +193,22 @@ export default function AdminPage() {
     } catch (e) {}
   }, [orders, inventory, mounted]);
 
-  // --- ACTIONS ---
+  // Actions
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
-  // *** THE FILTER THAT MATTERS ***
+  // *** FIXED FETCH: STRICT ALLOW-LIST FILTER ***
+  // This ignores 'incomplete' or 'awaiting_payment' orders completely.
   const fetchOrders = async () => { 
       if (!supabase) return; 
+      // Get the keys from STATUSES object (pending, shipped, etc.)
+      const validStatuses = Object.keys(STATUSES);
+      
       const { data } = await supabase
           .from('orders')
           .select('*')
-          // HIDE unpaid rows so printer never sees them
-          .neq('status', 'incomplete') 
-          .neq('status', 'awaiting_payment')
+          .in('status', validStatuses) // ONLY fetch if status is valid/paid
           .order('created_at', { ascending: false }); 
+      
       if (data) setOrders(data); 
   };
 
@@ -239,7 +247,9 @@ export default function AdminPage() {
 
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({
+      const cleanCart = rawCart
+        .filter(item => item !== null && item !== undefined)
+        .map(item => ({
             ...item,
             productName: item.productName || 'Unknown',
             size: item.size || 'N/A',
