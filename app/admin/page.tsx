@@ -83,23 +83,22 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: DEBUGGING MODE ---
+  // --- ENGINE: LIVE REFRESH + POLLING ---
   useEffect(() => {
     if (isAuthorized && mounted) {
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
         
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_debug')
+            channel = supabase.channel('admin_sync_main')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                    console.log("🔥 REALTIME EVENT FIRED:", payload);
-                    console.log("🔥 NEW STATUS:", payload.new?.status);
+                    // When DB changes, re-run the fetch (which now includes filters)
                     fetchOrders(); 
                 })
                 .subscribe();
         }
 
-        const interval = setInterval(() => { fetchOrders(); }, 5000);
+        const interval = setInterval(() => { fetchOrders(); }, 5000); // Poll every 5s
 
         return () => { 
             if(channel && supabase) supabase.removeChannel(channel); 
@@ -108,8 +107,9 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT (Logged) ---
+  // --- ENGINE: AUTO-PRINT ---
   useEffect(() => {
+    // 1. Establish baseline on first load
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
       return;
@@ -117,15 +117,15 @@ export default function AdminPage() {
 
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
+    // 2. Logic: If the filtered order list grows, a new PAID order has arrived.
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
-      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000;
       
-      console.log(`[AUTO-PRINT CHECK] Order ID: ${newestOrder.id}, Status: ${newestOrder.status}, Printed: ${newestOrder.printed}`);
-
-      // In Debug mode, we print EVERYTHING so we can see if it fires
+      // Safety: Only print if created recently (< 5 mins)
+      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
+      
       if (isRecent && !newestOrder.printed) {
-        console.log("🖨️ ATTEMPTING TO PRINT ORDER:", newestOrder.id);
+        console.log("New PAID order detected. Printing:", newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
@@ -186,26 +186,27 @@ export default function AdminPage() {
     } catch (e) {}
   }, [orders, inventory, mounted]);
 
-  // --- ACTIONS ---
+  // ACTIONS
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
-  // *** DEBUG FETCH: GRABS EVERYTHING & LOGS IT ***
+  // *** FIXED FETCH: HIDES UNPAID ORDERS ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
       
-      // Removed filters so we can see the "ghost" orders
       const { data } = await supabase
           .from('orders')
           .select('*')
           .order('created_at', { ascending: false }); 
       
       if (data) {
-          // LOGGING THE FIRST 3 ORDERS TO CONSOLE
-          console.log("---- FETCHED ORDER SNAPSHOT ----");
-          data.slice(0, 3).forEach(o => {
-              console.log(`ID: ${o.id} | Status: "${o.status}" | Customer: ${o.customer_name}`);
+          // Filter logic: Only show if payment_status is PAID, OR if it's a Hosted order (total_price 0)
+          // We strictly exclude "unpaid" or "incomplete" if those values exist.
+          const validOrders = data.filter(o => {
+              const pStatus = o.payment_status ? o.payment_status.toLowerCase() : '';
+              if (pStatus === 'unpaid' || pStatus === 'incomplete') return false;
+              return true;
           });
-          setOrders(data); 
+          setOrders(validOrders); 
       }
   };
 
