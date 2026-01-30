@@ -52,11 +52,11 @@ export default function AdminPage() {
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
-  // --- AUTO PRINT & FILTER STATE ---
+  // --- AUTO PRINT STATE ---
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
-  const [hideUnpaid, setHideUnpaid] = useState(false); // DEFAULT TO OFF so you can see what's broken
+  const [hideUnpaid, setHideUnpaid] = useState(false); 
   const audioRef = useRef(null);
-  const lastOrderCount = useRef(0);
+  const processedOrderIds = useRef(new Set()); // Prevents double printing in same session
 
   // Forms
   const [newProdId, setNewProdId] = useState('');
@@ -84,23 +84,21 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: LIVE REFRESH + POLLING ---
+  // --- ENGINE: LIVE REFRESH ---
   useEffect(() => {
     if (isAuthorized && mounted) {
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
         
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync_master_v2')
+            channel = supabase.channel('admin_sync_strict')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                    console.log("DB Update Detected!");
+                    console.log("DB Update Detected.");
                     fetchOrders(); 
                 })
                 .subscribe();
         }
-
         const interval = setInterval(() => { fetchOrders(); }, 5000); 
-
         return () => { 
             if(channel && supabase) supabase.removeChannel(channel); 
             clearInterval(interval);
@@ -108,32 +106,32 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT ---
+  // --- ENGINE: STRICT AUTO-PRINT ---
   useEffect(() => {
-    if (lastOrderCount.current === 0 && orders.length > 0) {
-      lastOrderCount.current = orders.length;
-      return;
-    }
-
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
-    if (orders.length > lastOrderCount.current) {
-      const newestOrder = orders[0]; 
-      
-      // Determine if paid based on strict or loose status
-      const pStatus = newestOrder.payment_status ? newestOrder.payment_status.toLowerCase() : '';
-      const mainStatus = newestOrder.status || 'pending';
-      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || newestOrder.total_price === 0 || (mainStatus !== 'incomplete' && mainStatus !== 'awaiting_payment');
-      
-      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
-      
-      if (isRecent && isPaid && !newestOrder.printed) {
-        console.log("Auto-Printing Order:", newestOrder.id);
-        if (audioRef.current) audioRef.current.play().catch(() => {});
-        printLabel(newestOrder);
-      }
-    }
-    lastOrderCount.current = orders.length;
+    // Scan the top 5 recent orders to see if any just became Paid
+    const recentOrders = orders.slice(0, 5);
+
+    recentOrders.forEach(order => {
+        // 1. TIMING CHECK: Must be less than 5 mins old
+        const isRecent = (new Date().getTime() - new Date(order.created_at).getTime()) < 300000;
+        
+        // 2. STRICT PAYMENT CHECK: 
+        // Must explicitly say 'paid' or 'succeeded', OR be a free ($0) order.
+        // We DO NOT trust the 'pending' status alone anymore.
+        const pStatus = order.payment_status ? order.payment_status.toLowerCase() : '';
+        const isStrictlyPaid = (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0);
+
+        // 3. EXECUTE
+        if (isRecent && isStrictlyPaid && !order.printed && !processedOrderIds.current.has(order.id)) {
+            console.log("✅ STRICT PRINT TRIGGERED: Order", order.id);
+            processedOrderIds.current.add(order.id); // Mark handled in memory so it doesn't loop
+            
+            if (audioRef.current) audioRef.current.play().catch(() => {});
+            printLabel(order);
+        }
+    });
   }, [orders, autoPrintEnabled, mounted]);
 
   // Recalculate Totals
@@ -375,29 +373,81 @@ export default function AdminPage() {
   const downloadTemplate = () => { try { const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, cost_price: item.cost_price || 8.50, _Reference_Name: getProductName(item.product_id) || item.product_id })); const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory"); XLSX.writeFile(wb, "Inventory.xlsx"); } catch (e) {} };
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing"); await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: newProdType, sort_order: 99 }]); const sizes = SIZE_ORDER; await supabase.from('inventory').insert(sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }))); alert("Created!"); setNewProdId(''); fetchInventory(); };
-  const handleGuestUpload = (e) => { const f = e.target.files[0]; if (!f) return; setLoading(true); const r = new FileReader(); r.onload = async (evt) => { try { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); for (const row of d) { const n = row['Name'] || row['name'] || row['Guest']; const s = row['Size'] || row['size']; if (n) await supabase.from('guests').insert([{ name: String(n).trim(), size: s ? String(s).trim() : null, has_ordered: false }]); } alert(`Imported!`); fetchGuests(); } catch (e) {} setLoading(false); }; r.readAsBinaryString(f); };
+  
+  const handleGuestUpload = (e) => { 
+      const f = e.target.files[0]; 
+      if (!f) return; 
+      setLoading(true); 
+      const r = new FileReader(); 
+      r.onload = async (evt) => { 
+          try { 
+              const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
+              for (const row of d) { 
+                  const n = row['Name'] || row['name'] || row['Guest']; 
+                  const s = row['Size'] || row['size']; 
+                  if (n) await supabase.from('guests').insert([{ name: String(n).trim(), size: s ? String(s).trim() : null, has_ordered: false }]); 
+              } 
+              alert(`Imported!`); 
+              fetchGuests(); 
+          } catch (e) {} 
+          setLoading(false); 
+      }; 
+      r.readAsBinaryString(f); 
+  };
+
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
-  const handleBulkUpload = (e) => { const f = e.target.files[0]; if (!f) return; setUploadLog(["Reading..."]); setLoading(true); const r = new FileReader(); r.onload = async (evt) => { try { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); if (!d.length) { setLoading(false); return; } const logs = []; for (const row of d) { const clean = {}; Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); const pid = String(clean['product_id']).trim(); const sz = String(clean['size']).trim(); const cnt = parseInt(clean['count']); const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).maybeSingle(); if (ex) { await supabase.from('inventory').update({ count: cnt, cost_price: cst }).eq('product_id', pid).eq('size', sz); logs.push(`Updated ${pid}`); } else { await supabase.from('inventory').insert([{ product_id: pid, size: sz, count: cnt, cost_price: cst, active: true }]); logs.push(`Created ${pid}`); } } setUploadLog(logs); fetchInventory(); } catch (e) { setUploadLog([e.message]); } setLoading(false); }; r.readAsBinaryString(f); };
+  
+  const handleBulkUpload = (e) => { 
+      const f = e.target.files[0]; 
+      if (!f) return; 
+      setUploadLog(["Reading..."]); 
+      setLoading(true); 
+      const r = new FileReader(); 
+      r.onload = async (evt) => { 
+          try { 
+              const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
+              if (!d.length) { setLoading(false); return; } 
+              const logs = []; 
+              for (const row of d) { 
+                  const clean = {}; 
+                  Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); 
+                  const pid = String(clean['product_id']).trim(); 
+                  const sz = String(clean['size']).trim(); 
+                  const cnt = parseInt(clean['count']); 
+                  const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; 
+                  const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).maybeSingle(); 
+                  if (ex) { 
+                      await supabase.from('inventory').update({ count: cnt, cost_price: cst }).eq('product_id', pid).eq('size', sz); 
+                      logs.push(`Updated ${pid}`); 
+                  } else { 
+                      await supabase.from('inventory').insert([{ product_id: pid, size: sz, count: cnt, cost_price: cst, active: true }]); 
+                      logs.push(`Created ${pid}`); 
+                  } 
+              } 
+              setUploadLog(logs); 
+              fetchInventory(); 
+          } catch (e) { 
+              setUploadLog([e.message]); 
+          } 
+          setLoading(false); 
+      }; 
+      r.readAsBinaryString(f); 
+  };
 
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
-  // *** VISIBLE ORDERS FILTER: CONTROLLABLE ***
+  // *** RENDER FILTERING: THE SAFETY NET ***
   const visibleOrders = orders.filter(o => {
-      if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded'; // If toggle off, show everything except history
+      // Toggle logic
+      if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded';
 
-      // If toggle ON, strict paid check
       const pStatus = o.payment_status ? o.payment_status.toLowerCase() : '';
-      // A LOOSER CHECK: If status is 'pending' (i.e., not incomplete), assume it's paid enough to show
-      const isStatusReady = o.status !== 'incomplete' && o.status !== 'awaiting_payment';
       const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0;
-      
-      // Show if it's explicitly paid OR if the main status says it's ready (fallback)
-      return (isPaid || isStatusReady) && o.status !== 'completed' && o.status !== 'refunded';
+      return isPaid && o.status !== 'completed' && o.status !== 'refunded';
   });
 
-  // *** FIXED HISTORY FILTER (Safe Array Check) ***
   const historyOrders = Array.isArray(orders) ? orders.filter(o => o.status === 'completed' || o.status === 'refunded') : [];
 
   return (
@@ -434,15 +484,21 @@ export default function AdminPage() {
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
-                // *** DEBUG VISIBILITY: Shows raw status so we can see why it thinks it's unpaid ***
-                const pStatus = order.payment_status ? String(order.payment_status) : 'NULL';
-                const rawStatus = order.status; 
                 
+                // *** VISUAL LOGIC FIX ***
+                const pStatus = order.payment_status ? order.payment_status.toLowerCase() : '';
+                const mainStatus = order.status || 'pending';
+                // Assume it is PAID if it has a valid payment status OR if it's not strictly marked incomplete/awaiting
+                const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0 || (mainStatus !== 'incomplete' && mainStatus !== 'awaiting_payment');
+                
+                const displayPaymentLabel = isPaid ? 'PAID' : 'UNPAID';
+                const displayColor = isPaid ? 'text-green-600' : 'text-red-500';
+
                 return (
                 <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
                     <td className="p-4 align-top">
                         <select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-                        <div className="text-[9px] font-mono text-gray-400 mt-1 uppercase">St: {rawStatus} | Pay: {pStatus}</div>
+                        <div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div>
                     </td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                     <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div></td>
