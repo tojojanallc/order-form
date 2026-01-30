@@ -16,17 +16,17 @@ export async function POST(request) {
 
   try {
     const body = await request.json();
-    const { cart, customerName } = body;
+    // We now expect an 'orderId' if the order was already created in the frontend
+    const { cart, customerName, orderId } = body; 
 
-    // --- DECREMENT INVENTORY (BY PRODUCT ID + SIZE) ---
+    // --- DECREMENT INVENTORY ---
     for (const item of cart) {
         if (!item.productId || !item.size) continue;
-
         const { data: currentStock } = await supabase
             .from('inventory')
             .select('count')
-            .eq('product_id', item.productId) // Matches ID
-            .eq('size', item.size)            // Matches Size
+            .eq('product_id', item.productId)
+            .eq('size', item.size)
             .single();
 
         if (currentStock) {
@@ -37,7 +37,7 @@ export async function POST(request) {
                 .eq('size', item.size);
         }
     }
-    // --------------------------------------------------
+    // ---------------------------
 
     const lineItems = cart.map((item) => {
         const descriptionParts = [
@@ -57,7 +57,7 @@ export async function POST(request) {
                     name: item.productName,
                     description: descriptionParts.join(', ').substring(0, 400),
                 },
-                unit_amount: item.finalPrice * 100, 
+                unit_amount: Math.round(item.finalPrice * 100), // Ensure integer
             },
             quantity: 1,
         };
@@ -69,7 +69,11 @@ export async function POST(request) {
       mode: 'payment',
       success_url: `${request.headers.get('origin')}/success`,
       cancel_url: `${request.headers.get('origin')}/`,
-      metadata: { customer_name: customerName },
+      // CRITICAL: We pass the orderId (if it exists) so the webhook can find it later
+      metadata: { 
+          customer_name: customerName,
+          supabase_order_id: orderId || '' 
+      },
     });
 
     return NextResponse.json({ url: session.url });
