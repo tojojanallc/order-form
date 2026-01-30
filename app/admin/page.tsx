@@ -47,6 +47,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ revenue: 0, count: 0, net: 0, topItem: '-' });
   const [uploadLog, setUploadLog] = useState([]); 
+  const [missingColumnAlert, setMissingColumnAlert] = useState(false);
 
   const [editingOrder, setEditingOrder] = useState(null);
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
@@ -54,7 +55,6 @@ export default function AdminPage() {
 
   // --- AUTO PRINT STATE ---
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
-  // CHANGED TO TRUE: By default, we hide the garbage (unpaid) orders
   const [hideUnpaid, setHideUnpaid] = useState(true); 
   const audioRef = useRef(null);
   const lastOrderCount = useRef(0);
@@ -93,7 +93,7 @@ export default function AdminPage() {
         
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync_strict_v6')
+            channel = supabase.channel('admin_sync_safemode')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
                     console.log("DB Update Detected.");
                     fetchOrders(); 
@@ -108,7 +108,7 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT ---
+  // --- ENGINE: STRICT AUTO-PRINT (Safe Mode) ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
@@ -121,21 +121,19 @@ export default function AdminPage() {
       const newestOrder = orders[0]; 
       const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
       
-      // Determine Status
-      const rawPay = newestOrder.payment_status; // Might be undefined
-      const isPaid = rawPay === 'paid' || rawPay === 'succeeded' || Number(newestOrder.total_price) === 0;
+      // CHECK IF COLUMN EXISTS
+      const pStatus = newestOrder.payment_status; 
+      
+      // STRICT: We require 'paid' or 'succeeded'. If column is missing (undefined), this is FALSE.
+      const isPaid = (pStatus === 'paid' || pStatus === 'succeeded' || Number(newestOrder.total_price) === 0);
 
-      // Only print if explicitly paid/free
       if (isRecent && isPaid && !newestOrder.printed && !processedIds.current.has(newestOrder.id)) {
-        console.log("✅ AUTO-PRINT: Order IS Paid.", newestOrder.id);
+        console.log("✅ PAID ORDER DETECTED. Printing:", newestOrder.id);
         processedIds.current.add(newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       } else {
-        // Log column names to find the missing data
-        if (!rawPay && isRecent) {
-            console.log("🛑 MISSING PAYMENT STATUS. Available Columns:", Object.keys(newestOrder));
-        }
+        console.log("🛑 AUTO-PRINT BLOCKED. Status not 'paid' or column missing.", { id: newestOrder.id, pStatus });
       }
     }
     lastOrderCount.current = orders.length;
@@ -196,10 +194,19 @@ export default function AdminPage() {
 
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
+  // *** FETCH & DETECT MISSING COLUMNS ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
       const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); 
-      if (data) setOrders(data); 
+      if (data) {
+          if (data.length > 0) {
+              const keys = Object.keys(data[0]);
+              if (!keys.includes('payment_status')) {
+                  setMissingColumnAlert(true);
+              }
+          }
+          setOrders(data); 
+      }
   };
 
   const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
@@ -219,16 +226,17 @@ export default function AdminPage() {
   const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
-  // *** SAFE PRINT LABEL (No Crash on 400) ***
+  // *** SAFE PRINT LABEL ***
   const printLabel = async (order) => {
       if (!order) return;
       
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
       
+      // Try updating DB
       try {
         await supabase.from('orders').update({ printed: true }).eq('id', order.id);
       } catch (err) {
-          // Ignore 400 errors from Supabase
+          console.warn("DB Update Skipped (Printed flag)");
       }
 
       const isCloud = pnEnabled && pnApiKey && pnPrinterId;
@@ -451,13 +459,13 @@ export default function AdminPage() {
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
-  // *** VISIBLE ORDERS FILTER: STRICTLY HIDE UNDEFINED/NULL PAYMENTS ***
+  // *** RENDER FILTERING ***
   const visibleOrders = orders.filter(o => {
-      // Toggle logic
       if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded';
 
       const pStatus = (o.payment_status || '').toLowerCase();
-      // Only show if PAID or FREE.
+      // STRICT CHECK: IF payment_status is MISSING (undefined), assume UNPAID.
+      // Do NOT check general status 'pending' here, because database defaults new orders to 'pending'.
       const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0;
       
       return isPaid && o.status !== 'completed' && o.status !== 'refunded';
@@ -469,6 +477,15 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-black font-sans">
       <audio ref={audioRef} src="/ding.mp3" preload="auto" />
       <div className="max-w-7xl mx-auto">
+        
+        {/* MISSING COLUMN ALERT */}
+        {missingColumnAlert && (
+            <div className="bg-red-600 text-white p-4 rounded mb-6 font-bold text-center animate-pulse">
+                ⚠️ CRITICAL DATABASE ERROR: Missing 'payment_status' column. <br/>
+                Please run the SQL fix in Supabase to enable auto-printing and payment tracking.
+            </div>
+        )}
+
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <h1 className="text-3xl font-black text-gray-900">{eventName || 'Admin Dashboard'}</h1>
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
@@ -501,7 +518,7 @@ export default function AdminPage() {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
                 
                 // *** VISUAL LOGIC: RAW DATA DUMP ***
-                const pStatus = (order.payment_status || 'NULL').toUpperCase();
+                const pStatus = order.payment_status ? String(order.payment_status).toUpperCase() : 'MISSING';
                 const isPaid = pStatus === 'PAID' || pStatus === 'SUCCEEDED' || Number(order.total_price) === 0;
                 
                 const displayPaymentLabel = isPaid ? 'PAID' : pStatus; 
