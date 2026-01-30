@@ -41,9 +41,14 @@ export default function OrderForm() {
   const [shippingCity, setShippingCity] = useState('');
   const [shippingState, setShippingState] = useState('');
   const [shippingZip, setShippingZip] = useState('');
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   
+  // --- SQUARE TERMINAL STATE ---
+  const [isTerminalProcessing, setIsTerminalProcessing] = useState(false);
+  const [terminalStatus, setTerminalStatus] = useState('');
+
   const [guests, setGuests] = useState([]);
   const [selectedGuest, setSelectedGuest] = useState(null); 
   const [guestSearch, setGuestSearch] = useState('');
@@ -135,7 +140,6 @@ export default function OrderForm() {
 
   // --- LOGIC: FILTER VISIBLE PRODUCTS ---
   const visibleProducts = products.filter(p => {
-      // Show products if ANY size is active (Removed strict hosted restriction)
       return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
   });
 
@@ -157,7 +161,6 @@ export default function OrderForm() {
 
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    // Removed strict single-size return for hosted mode
     const unsorted = Object.keys(activeItems).filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true).map(key => key.replace(`${selectedProduct.id}_`, ''));
     return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
@@ -166,13 +169,10 @@ export default function OrderForm() {
   // --- SMART SIZE SELECTION ---
   useEffect(() => {
     if (visibleSizes.length > 0) {
-        // Only change size if the current one isn't valid for this product
         if (!visibleSizes.includes(size)) { 
-            // 1. Try to use Guest Size if it exists and is valid for this product
             if (paymentMode === 'hosted' && selectedGuest?.size && visibleSizes.includes(selectedGuest.size)) { 
                 setSize(selectedGuest.size); 
             } 
-            // 2. Otherwise default to the first available size
             else { 
                 setSize(visibleSizes[0]); 
             }
@@ -248,6 +248,75 @@ export default function OrderForm() {
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
+  // --- NEW: HANDLE TERMINAL CHECKOUT ---
+  const handleTerminalCheckout = async () => {
+    if (cart.length === 0) return alert("Cart is empty");
+    if (!customerName) return alert("Please enter Name");
+
+    setIsTerminalProcessing(true);
+    setTerminalStatus("Creating Order...");
+
+    try {
+        // 1. Create the Order via API (Reserve Stock + Create DB Row)
+        const createRes = await fetch('/api/create-retail-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                cart, 
+                customerName, 
+                total: calculateGrandTotal() 
+            })
+        });
+
+        const orderData = await createRes.json();
+        if (!orderData.success) throw new Error(orderData.error);
+        
+        const orderId = orderData.orderId;
+        setTerminalStatus("Sent to Terminal... Please Tap Card.");
+
+        // 2. Wake up the Terminal
+        const payRes = await fetch('/api/terminal-pay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                orderId: orderId, 
+                amount: calculateGrandTotal() 
+            })
+        });
+
+        const payData = await payRes.json();
+        if (!payData.success) throw new Error(payData.error);
+
+        // 3. LISTEN for Success (Realtime)
+        const channel = supabase.channel(`terminal_watch_${orderId}`)
+            .on(
+                'postgres_changes', 
+                { 
+                    event: 'UPDATE', 
+                    schema: 'public', 
+                    table: 'orders', 
+                    filter: `id=eq.${orderId}` 
+                }, 
+                (payload) => {
+                    if (payload.new.payment_status === 'paid') {
+                        // SUCCESS!
+                        supabase.removeChannel(channel);
+                        setOrderComplete(true);
+                        setCart([]);
+                        setCustomerName('');
+                        setIsTerminalProcessing(false);
+                    }
+                }
+            )
+            .subscribe();
+
+    } catch (err) {
+        alert("Terminal Error: " + err.message);
+        setIsTerminalProcessing(false);
+        setTerminalStatus('');
+    }
+  };
+
   const handleCheckout = async () => {
     if (paymentMode === 'hosted') {
         if (!selectedGuest) { alert("Please verify your name first."); return; }
@@ -310,7 +379,7 @@ export default function OrderForm() {
   const showPrice = paymentMode === 'retail';
 
   return (
-    // UPDATED LAYOUT CONTAINER: Centered flex + Max width 7xl
+    // UPDATED LAYOUT CONTAINER
     <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900 flex justify-center items-start">
       <div className="w-full max-w-7xl grid md:grid-cols-3 gap-8">
         
@@ -435,7 +504,7 @@ export default function OrderForm() {
 
             </div>
             
-            {/* Footer only shows if not hosted OR (hosted + verified) */}
+            {/* Footer */}
             {(paymentMode === 'retail' || selectedGuest) && (
                 <div className="text-white p-6 sticky bottom-0 flex justify-between items-center" style={{ backgroundColor: headerColor }}><div><p className="text-white text-opacity-80 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p><p className="text-2xl font-bold">{showPrice ? `$${calculateTotal()}` : 'Free'}</p></div>
                 <button onClick={handleAddToCart} className="bg-white text-black px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform hover:opacity-90" disabled={!selectedProduct}>Add to Cart</button>
@@ -479,16 +548,46 @@ export default function OrderForm() {
                     <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once"><h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} /><div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div><input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} /></div>
                     )}
                     
-                    {showPrice && <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4"><span className="font-bold text-black">Total Due</span><span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span></div>}
+                    {showPrice && (
+                        <div className="flex justify-between items-center mb-4 border-t border-gray-300 pt-4">
+                            <span className="font-bold text-black">Total Due</span>
+                            <span className="font-bold text-2xl text-blue-900">${calculateGrandTotal()}</span>
+                        </div>
+                    )}
                     
-                    <button 
-                        onClick={handleCheckout} 
-                        disabled={isSubmitting || (paymentMode === 'hosted' && !selectedGuest)} 
-                        className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting ? 'bg-gray-400' : 'hover:opacity-90'}`}
-                        style={{ backgroundColor: isSubmitting ? 'gray' : headerColor }}
-                    >
-                        {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay Now with Stripe")}
-                    </button>
+                    {/* --- ACTION BUTTONS (Updated) --- */}
+                    <div className="space-y-3">
+                        {/* 1. SQUARE TERMINAL BUTTON (Retail Only) */}
+                        {paymentMode === 'retail' && (
+                            <button 
+                                onClick={handleTerminalCheckout}
+                                disabled={isSubmitting || isTerminalProcessing}
+                                className={`w-full py-4 text-xl font-bold rounded-xl shadow-lg transition-all text-white flex items-center justify-center gap-2 ${
+                                    isTerminalProcessing 
+                                    ? 'bg-purple-600 animate-pulse cursor-wait' 
+                                    : 'bg-purple-700 hover:bg-purple-800'
+                                }`}
+                            >
+                                {isTerminalProcessing ? (
+                                    <span>📟 {terminalStatus}</span>
+                                ) : (
+                                    <span>📟 Pay with Terminal</span>
+                                )}
+                            </button>
+                        )}
+
+                        {/* 2. STRIPE / HOSTED BUTTON */}
+                        <button 
+                            onClick={handleCheckout} 
+                            disabled={isSubmitting || isTerminalProcessing || (paymentMode === 'hosted' && !selectedGuest)} 
+                            className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${
+                                isSubmitting || isTerminalProcessing ? 'bg-gray-400' : 'hover:opacity-90'
+                            }`}
+                            style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}
+                        >
+                            {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link (Email/SMS)")}
+                        </button>
+                    </div>
                 </div>
                 )}
             </div>
