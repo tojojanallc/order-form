@@ -2,35 +2,48 @@ import { NextResponse } from 'next/server';
 import { Client, Environment } from 'square';
 
 export async function POST(request) {
-  // 1. SAFETY CHECK: Do the keys exist?
+  // 1. SAFETY CHECK: Verify Keys
   if (!process.env.SQUARE_ACCESS_TOKEN) {
-      console.error("MISSING KEY: SQUARE_ACCESS_TOKEN");
-      return NextResponse.json({ error: "Server Error: Missing Square Token" }, { status: 500 });
+      console.error("❌ CRITICAL: SQUARE_ACCESS_TOKEN is missing from env variables");
+      return NextResponse.json({ error: "Server Configuration Error: Missing Square Token" }, { status: 500 });
   }
   if (!process.env.SQUARE_TERMINAL_ID) {
-      console.error("MISSING KEY: SQUARE_TERMINAL_ID");
-      return NextResponse.json({ error: "Server Error: Missing Terminal ID" }, { status: 500 });
+      console.error("❌ CRITICAL: SQUARE_TERMINAL_ID is missing from env variables");
+      return NextResponse.json({ error: "Server Configuration Error: Missing Terminal ID" }, { status: 500 });
   }
 
-  // 2. Initialize Client
-  const squareClient = new Client({
-    accessToken: process.env.SQUARE_ACCESS_TOKEN,
-    environment: Environment.Production, 
-  });
-
   try {
-    const { orderId, amount, currency = 'USD' } = await request.json();
+    // 2. Parse Data
+    const body = await request.json();
+    const { orderId, amount, currency = 'USD' } = body;
 
-    if (!orderId || !amount) {
-      return NextResponse.json({ error: 'Missing data' }, { status: 400 });
+    console.log(`🔌 API Input Received: Order ${orderId}, Amount: ${amount}`);
+
+    // 3. Validation
+    if (!orderId) {
+        return NextResponse.json({ error: "Validation Error: Missing Order ID" }, { status: 400 });
+    }
+    
+    // Ensure amount is a valid number
+    const finalAmount = Math.round(Number(amount) * 100);
+    if (isNaN(finalAmount) || finalAmount <= 0) {
+        return NextResponse.json({ error: `Validation Error: Invalid Amount (${amount})` }, { status: 400 });
     }
 
-    // 3. Send Request to Square
+    // 4. Initialize Square
+    const squareClient = new Client({
+      accessToken: process.env.SQUARE_ACCESS_TOKEN,
+      environment: Environment.Production, 
+    });
+
+    // 5. Send to Terminal
+    console.log(`🚀 Sending ${finalAmount} cents to Terminal ${process.env.SQUARE_TERMINAL_ID}...`);
+    
     const response = await squareClient.terminalApi.createTerminalCheckout({
       idempotencyKey: crypto.randomUUID(),
       checkout: {
         amountMoney: {
-          amount: Math.round(amount * 100), // e.g. 1000 cents = $10.00
+          amount: BigInt(finalAmount), // SDK often requires BigInt for money
           currency: currency,
         },
         deviceOptions: {
@@ -42,10 +55,10 @@ export async function POST(request) {
     });
 
     const checkout = response.result.checkout;
+    console.log("✅ Square Response Received:", checkout.id);
 
-    // 4. BIGINT FIX (CRITICAL)
-    // Square returns 'BigInt' values which crash Next.js JSON. 
-    // We must convert them to strings manually.
+    // 6. SERIALIZATION FIX (BigInt Crash Prevention)
+    // Convert BigInts to strings before returning JSON
     const safeResponse = JSON.parse(JSON.stringify(checkout, (key, value) =>
         typeof value === 'bigint' ? value.toString() : value
     ));
@@ -57,13 +70,19 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    // 5. Deep Error Logging
-    console.error("Square API Error:", error);
+    // 7. Deep Error Logging
+    console.error("❌ Square API Error:", error);
     
     let msg = error.message;
-    // If Square sent a detailed error list, grab the first one
-    if (error.result && error.result.errors && error.result.errors.length > 0) {
-        msg = error.result.errors[0].detail; 
+    
+    // Attempt to extract deep Square errors
+    if (error.result && error.result.errors) {
+        msg = error.result.errors.map(e => `${e.category}: ${e.detail}`).join(', ');
+    } else if (error.body) {
+        try {
+            const body = JSON.parse(error.body);
+            if (body.errors) msg = body.errors[0].detail;
+        } catch (e) {}
     }
 
     return NextResponse.json({ error: "Square Failed", details: msg }, { status: 500 });
