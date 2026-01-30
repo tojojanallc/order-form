@@ -440,8 +440,7 @@ export default function AdminPage() {
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   const deleteProduct = async (id) => { if (!confirm("Delete product?")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
-  
-// FIX: Update Product Info (Name, Image, Price) directly from table
+  // FIX: Update Product Info (Name, Image, Price) directly from table
   const updateProductInfo = async (pid, field, value) => {
       setProducts(products.map(p => p.id === pid ? { ...p, [field]: value } : p));
       await supabase.from('products').update({ [field]: value }).eq('id', pid);
