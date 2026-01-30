@@ -22,7 +22,7 @@ const POSITIONS = [
     { id: 'rear', label: 'Rear' }
 ];
 
-// These are the ONLY statuses that will show in the dashboard
+// ONLY these statuses will be fetched. 'incomplete' or 'created' are excluded.
 const STATUSES = {
   pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
   pending_shipping: { label: 'To Be Shipped', color: 'bg-purple-100 text-purple-800 border-purple-300' },
@@ -84,27 +84,27 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: LIVE REFRESH + POLLING ---
+  // --- ENGINE: REALTIME + FILTERED POLLING ---
   useEffect(() => {
     if (isAuthorized && mounted) {
-        // 1. Initial Load
+        // Initial Fetch
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
-
-        // 2. Realtime Listener
+        
+        // 1. Realtime Listener
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync_main')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                    // When any change happens (insert/update), re-fetch the filtered list
-                    console.log("DB Change detected!");
-                    fetchOrders(); 
-                })
-                .subscribe();
+            channel = supabase
+              .channel('admin_sync_main')
+              .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+                  console.log("Change Detected - Re-fetching...");
+                  fetchOrders(); 
+              })
+              .subscribe();
         }
 
-        // 3. Polling Backup (Every 5s)
+        // 2. Polling (Backup)
         const interval = setInterval(() => {
-            fetchOrders(); 
+             fetchOrders(); 
         }, 5000);
 
         return () => { 
@@ -114,9 +114,9 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT ---
+  // --- ENGINE: AUTO-PRINT (Strict) ---
   useEffect(() => {
-    // 1. Set baseline on first load so we don't print history
+    // 1. Set baseline on load
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
       return;
@@ -124,15 +124,16 @@ export default function AdminPage() {
 
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
-    // 2. Detect if a new order has appeared in the list
+    // 2. Check for NEW orders
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
-      // Safety: Only print if order is less than 5 minutes old (handles latency)
-      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
       
-      // Since fetchOrders only grabs PAID orders, we don't need to check status here
-      if (isRecent && !newestOrder.printed) {
-        console.log("New PAID order detected. Printing:", newestOrder.id);
+      // 3. Double Check: Is it paid? (Status must be in our known list)
+      const isValidStatus = STATUSES[newestOrder.status];
+      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000; // 5 min
+      
+      if (isValidStatus && isRecent && !newestOrder.printed) {
+        console.log("Printing Paid Order:", newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
@@ -193,22 +194,18 @@ export default function AdminPage() {
     } catch (e) {}
   }, [orders, inventory, mounted]);
 
-  // Actions
+  // --- ACTIONS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
-  // *** FIXED FETCH: STRICT ALLOW-LIST FILTER ***
-  // This ignores 'incomplete' or 'awaiting_payment' orders completely.
+  // *** FIXED FETCH: ONLY GET VALID STATUSES ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
-      // Get the keys from STATUSES object (pending, shipped, etc.)
-      const validStatuses = Object.keys(STATUSES);
-      
+      const validKeys = Object.keys(STATUSES); // ['pending', 'shipped', 'ready', etc...]
       const { data } = await supabase
           .from('orders')
           .select('*')
-          .in('status', validStatuses) // ONLY fetch if status is valid/paid
+          .in('status', validKeys) // THIS EXCLUDES 'incomplete'/'awaiting_payment'
           .order('created_at', { ascending: false }); 
-      
       if (data) setOrders(data); 
   };
 
@@ -247,9 +244,7 @@ export default function AdminPage() {
 
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      const cleanCart = rawCart
-        .filter(item => item !== null && item !== undefined)
-        .map(item => ({
+      const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({
             ...item,
             productName: item.productName || 'Unknown',
             size: item.size || 'N/A',
