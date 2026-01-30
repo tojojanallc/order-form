@@ -441,6 +441,7 @@ export default function AdminPage() {
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
+  // *** FIXED: BULK UPLOAD WITH PARENT CREATION ***
   const handleBulkUpload = (e) => { 
       const f = e.target.files[0]; 
       if (!f) return; 
@@ -451,7 +452,9 @@ export default function AdminPage() {
           try { 
               const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
               if (!d.length) { setLoading(false); return; } 
-              const logs = []; 
+              const logs = [];
+              const productIdsSeen = new Set();
+
               for (const row of d) { 
                   const clean = {}; 
                   Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); 
@@ -459,13 +462,31 @@ export default function AdminPage() {
                   const sz = String(clean['size']).trim(); 
                   const cnt = parseInt(clean['count']); 
                   const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; 
+                  
+                  // 1. ENSURE PARENT PRODUCT EXISTS
+                  if (!productIdsSeen.has(pid)) {
+                      productIdsSeen.add(pid);
+                      const { data: existingProd } = await supabase.from('products').select('id').eq('id', pid).single();
+                      if (!existingProd) {
+                          await supabase.from('products').insert([{
+                              id: pid,
+                              name: clean['_reference_name'] || pid.replace(/_/g, ' ').toUpperCase(),
+                              base_price: 30, // Default price
+                              type: 'top', // Default type
+                              sort_order: 99
+                          }]);
+                          logs.push(`✅ Created Parent: ${pid}`);
+                      }
+                  }
+
+                  // 2. UPDATE INVENTORY
                   const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).maybeSingle(); 
                   if (ex) { 
                       await supabase.from('inventory').update({ count: cnt, cost_price: cst }).eq('product_id', pid).eq('size', sz); 
-                      logs.push(`Updated ${pid}`); 
+                      logs.push(`Updated Stock: ${pid} ${sz}`); 
                   } else { 
                       await supabase.from('inventory').insert([{ product_id: pid, size: sz, count: cnt, cost_price: cst, active: true }]); 
-                      logs.push(`Created ${pid}`); 
+                      logs.push(`Created Stock: ${pid} ${sz}`); 
                   } 
               } 
               setUploadLog(logs); 
@@ -476,6 +497,33 @@ export default function AdminPage() {
           setLoading(false); 
       }; 
       r.readAsBinaryString(f); 
+  };
+
+  // *** NEW: REPAIR UTILITY ***
+  const fixOrphanedProducts = async () => {
+      setLoading(true);
+      const { data: inv } = await supabase.from('inventory').select('product_id');
+      const { data: prods } = await supabase.from('products').select('id');
+      
+      const invIds = [...new Set(inv.map(i => i.product_id))];
+      const prodIds = prods.map(p => p.id);
+      const missing = invIds.filter(id => !prodIds.includes(id));
+
+      if(missing.length > 0) {
+          const newProds = missing.map(id => ({
+              id: id,
+              name: id.replace(/_/g, ' ').toUpperCase(),
+              base_price: 30,
+              type: 'top',
+              sort_order: 99
+          }));
+          await supabase.from('products').insert(newProds);
+          alert(`Fixed ${missing.length} missing products!`);
+          fetchInventory();
+      } else {
+          alert("All data is healthy!");
+      }
+      setLoading(false);
   };
 
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
@@ -588,13 +636,21 @@ export default function AdminPage() {
                             <button className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700">Create Product</button>
                         </form>
                     </div>
-                    <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200"><h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2><div className="flex gap-2 mb-4"><button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Current Stock</button></div><input type="file" accept=".xlsx, .xls" onChange={handleBulkUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200" />{uploadLog.length > 0 && (<div className="mt-4 p-2 bg-black text-green-400 text-xs font-mono h-48 overflow-y-auto rounded border border-gray-700">{uploadLog.map((log, i) => <div key={i} className="mb-1 border-b border-gray-800 pb-1">{log}</div>)}</div>)}</div>
+                    <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200">
+                        <h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2>
+                        <div className="flex gap-2 mb-4">
+                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Current Stock</button>
+                            <button onClick={fixOrphanedProducts} className="text-xs bg-red-100 border border-red-300 px-3 py-1 rounded text-red-700 font-bold hover:bg-red-200">🛠️ Fix Missing Items</button>
+                        </div>
+                        <input type="file" accept=".xlsx, .xls" onChange={handleBulkUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200" />
+                        {uploadLog.length > 0 && (<div className="mt-4 p-2 bg-black text-green-400 text-xs font-mono h-48 overflow-y-auto rounded border border-gray-700">{uploadLog.map((log, i) => <div key={i} className="mb-1 border-b border-gray-800 pb-1">{log}</div>)}</div>)}
+                    </div>
                 </div>
                 <div className="md:col-span-2 space-y-6">
                     {/* FIX: Added max-height and scrolling to Manage Prices */}
-                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col max-h-[500px]">
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
                         <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Prices (Scroll for more)</div>
-                        <div className="overflow-y-auto">
+                        <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left">
                                 <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3">Image</th><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th><th className="p-3 text-right">Action</th></tr></thead>
                                 <tbody>
@@ -611,9 +667,9 @@ export default function AdminPage() {
                         </div>
                     </div>
                     {/* FIX: Added max-height and scrolling to Stock Table */}
-                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col max-h-[600px]">
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
                         <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Stock & Costs</div>
-                        <div className="overflow-y-auto">
+                        <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left">
                                 <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4 text-center">Unit Cost ($)</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead>
                                 <tbody>
@@ -645,16 +701,49 @@ export default function AdminPage() {
                     <div className="p-6 border-b flex justify-between bg-gray-50 rounded-t-xl"><h2 className="font-bold text-lg">Edit Order #{String(editingOrder.id).slice(0,8)}</h2><button onClick={closeEditModal} className="text-2xl text-gray-500 hover:text-black">×</button></div>
                     <div className="p-6 space-y-6">
                         <div className="bg-blue-50 p-4 rounded border border-blue-100"><label className="block text-xs font-bold uppercase text-blue-900 mb-1">Customer Name</label><input className="w-full p-2 border rounded font-bold" value={editingOrder.customer_name} onChange={(e) => handleEditChange('customer_name', e.target.value)} /></div>
+                        
                         {editingOrder.cart_data.map((item, idx) => (
                             <div key={idx} className="bg-white p-4 border rounded-lg shadow-sm">
-                                <div className="flex justify-between items-center mb-4 pb-2 border-b"><span className="font-bold text-lg">{item.productName}</span><select className="border-2 p-1 rounded font-bold bg-gray-50" value={item.size} onChange={(e) => handleEditItem(idx, 'size', e.target.value)}>{SIZE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-                                <div className="mb-4"><div className="text-xs font-bold text-gray-500 uppercase mb-1">Main Design</div><select className="w-full border p-2 rounded font-bold" value={item.customizations?.mainDesign || ''} onChange={(e) => handleUpdateMainDesign(idx, e.target.value)} ><option value="">(None)</option>{logos.filter(l => l.category === 'main').map(l => ( <option key={l.id} value={l.label}>{l.label}</option> ))}</select></div>
-                                <div className="space-y-2 mb-4"><div className="text-xs font-bold text-gray-500 uppercase">Accents ($5)</div>{item.customizations?.logos?.map((l, lIdx) => (<div key={lIdx} className="flex gap-2"><select className="border p-2 rounded flex-1 text-sm font-bold" value={l.type} onChange={(e) => handleUpdateAccent(idx, lIdx, 'type', e.target.value)}>{logos.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}</select><select className="border p-2 rounded w-40 text-sm" value={l.position} onChange={(e) => handleUpdateAccent(idx, lIdx, 'position', e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select></div>))}<button onClick={() => handleAddAccent(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Accent</button></div>
-                                <div className="space-y-2"><div className="text-xs font-bold text-gray-500 uppercase">Personalization ($5)</div>{item.customizations?.names?.map((n, nIdx) => (<div key={nIdx} className="flex gap-2"><input className="border p-2 rounded flex-1 text-sm uppercase font-bold" value={n.text} onChange={(e) => handleEditName(idx, nIdx, e.target.value)} placeholder="NAME" /><select className="border p-2 rounded w-40 text-sm" value={n.position} onChange={(e) => handleUpdateNamePos(idx, nIdx, e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select></div>))}<button onClick={() => handleAddName(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Name</button></div>
+                                <div className="flex justify-between items-center mb-4 pb-2 border-b">
+                                    <span className="font-bold text-lg">{item.productName}</span>
+                                    <select className="border-2 p-1 rounded font-bold bg-gray-50" value={item.size} onChange={(e) => handleEditItem(idx, 'size', e.target.value)}>{SIZE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                                </div>
+                                <div className="mb-4">
+                                    <div className="text-xs font-bold text-gray-500 uppercase mb-1">Main Design</div>
+                                    <select className="w-full border p-2 rounded font-bold" value={item.customizations?.mainDesign || ''} onChange={(e) => handleUpdateMainDesign(idx, e.target.value)} >
+                                        <option value="">(None)</option>
+                                        {logos.filter(l => l.category === 'main').map(l => ( <option key={l.id} value={l.label}>{l.label}</option> ))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2 mb-4">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">Accents ($5)</div>
+                                    {item.customizations?.logos?.map((l, lIdx) => (
+                                        <div key={lIdx} className="flex gap-2">
+                                            <select className="border p-2 rounded flex-1 text-sm font-bold" value={l.type} onChange={(e) => handleUpdateAccent(idx, lIdx, 'type', e.target.value)}>{logos.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}</select>
+                                            <select className="border p-2 rounded w-40 text-sm" value={l.position} onChange={(e) => handleUpdateAccent(idx, lIdx, 'position', e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select>
+                                        </div>
+                                    ))}
+                                    <button onClick={() => handleAddAccent(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Accent</button>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">Personalization ($5)</div>
+                                    {item.customizations?.names?.map((n, nIdx) => (
+                                        <div key={nIdx} className="flex gap-2">
+                                            <input className="border p-2 rounded flex-1 text-sm uppercase font-bold" value={n.text} onChange={(e) => handleEditName(idx, nIdx, e.target.value)} placeholder="NAME" />
+                                            <select className="border p-2 rounded w-40 text-sm" value={n.position} onChange={(e) => handleUpdateNamePos(idx, nIdx, e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select>
+                                        </div>
+                                    ))}
+                                    <button onClick={() => handleAddName(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Name</button>
+                                </div>
                             </div>
                         ))}
                     </div>
-                    <div className="p-6 border-t flex justify-end gap-3 bg-gray-50 rounded-b-xl"><button onClick={closeEditModal} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-200 rounded">Cancel</button><button onClick={saveOrderEdits} className={`px-6 py-2 text-white font-bold rounded shadow transition-colors ${newOrderTotal > originalOrderTotal ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`} >{loading ? "Saving..." : (newOrderTotal > originalOrderTotal ? `Save & Pay Difference ($${(newOrderTotal - originalOrderTotal).toFixed(2)})` : "Save Changes")}</button></div>
+                    <div className="p-6 border-t flex justify-end gap-3 bg-gray-50 rounded-b-xl">
+                        <button onClick={closeEditModal} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-200 rounded">Cancel</button>
+                        <button onClick={saveOrderEdits} className={`px-6 py-2 text-white font-bold rounded shadow transition-colors ${newOrderTotal > originalOrderTotal ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`} >
+                            {loading ? "Saving..." : (newOrderTotal > originalOrderTotal ? `Save & Pay Difference ($${(newOrderTotal - originalOrderTotal).toFixed(2)})` : "Save Changes")}
+                        </button>
+                    </div>
                 </div>
             </div>
         )}
