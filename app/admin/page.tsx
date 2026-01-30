@@ -54,9 +54,10 @@ export default function AdminPage() {
 
   // --- AUTO PRINT STATE ---
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
-  const [hideUnpaid, setHideUnpaid] = useState(false); 
+  const [hideUnpaid, setHideUnpaid] = useState(false);
   const audioRef = useRef(null);
   const lastOrderCount = useRef(0);
+  const processedIds = useRef(new Set());
 
   // Forms
   const [newProdId, setNewProdId] = useState('');
@@ -91,16 +92,14 @@ export default function AdminPage() {
         
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync_v4')
+            channel = supabase.channel('admin_sync_debug')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                    console.log("DB Update Detected:", payload);
+                    console.log("Change detected:", payload);
                     fetchOrders(); 
                 })
                 .subscribe();
         }
-
         const interval = setInterval(() => { fetchOrders(); }, 5000); 
-
         return () => { 
             if(channel && supabase) supabase.removeChannel(channel); 
             clearInterval(interval);
@@ -110,30 +109,32 @@ export default function AdminPage() {
 
   // --- ENGINE: STRICT AUTO-PRINT ---
   useEffect(() => {
-    if (lastOrderCount.current === 0 && orders.length > 0) {
-      lastOrderCount.current = orders.length;
-      return;
-    }
-
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
+    // We only care if the list GREW or changed significantly
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
       
-      // *** STRICT PAYMENT CHECK ***
-      // We do NOT check order.status anymore because it defaults to 'pending'.
-      // We ONLY trust payment_status or $0 price.
-      const pStatus = (newestOrder.payment_status || '').toLowerCase();
-      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(newestOrder.total_price) === 0;
+      // *** STRICTEST PAYMENT CHECK ***
+      // 1. Must NOT be 'incomplete' or 'awaiting_payment' status
+      // 2. If 'payment_status' exists, it must be 'paid'
+      // 3. OR total is 0
+      const status = (newestOrder.status || '').toLowerCase();
+      const payStatus = (newestOrder.payment_status || '').toLowerCase();
+      const isFree = Number(newestOrder.total_price) === 0;
+
+      // Debug Logic: If payment_status is NULL, we assume UNPAID unless it's free
+      const isPaid = (payStatus === 'paid' || payStatus === 'succeeded' || isFree) && (status !== 'incomplete');
       
       const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
       
-      if (isRecent && isPaid && !newestOrder.printed) {
-        console.log("✅ AUTO-PRINT: Order IS Paid.", newestOrder.id);
+      if (isRecent && isPaid && !newestOrder.printed && !processedIds.current.has(newestOrder.id)) {
+        console.log("✅ PAID ORDER DETECTED. Printing:", newestOrder.id);
+        processedIds.current.add(newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       } else {
-        console.log("⚠️ SKIP PRINT: Order not paid or old.", { id: newestOrder.id, pStatus, isPaid, isRecent });
+        console.log("⚠️ SKIP PRINT. ID:", newestOrder.id, "Paid:", isPaid, "Recent:", isRecent, "PayStatus:", payStatus);
       }
     }
     lastOrderCount.current = orders.length;
@@ -192,13 +193,19 @@ export default function AdminPage() {
     } catch (e) {}
   }, [orders, inventory, mounted]);
 
-  // ACTIONS
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
+  // *** FETCH & LOG STRUCTURE ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
       const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); 
-      if (data) setOrders(data); 
+      if (data) {
+          if(data.length > 0) {
+             // THIS LOG WILL SHOW US THE REAL COLUMN NAMES
+             console.log("🔍 FIRST ORDER STRUCTURE:", data[0]); 
+          }
+          setOrders(data); 
+      }
   };
 
   const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
@@ -218,18 +225,18 @@ export default function AdminPage() {
   const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
-  // *** FIXED PRINT LABEL: Handles errors gracefully ***
+  // *** SAFE PRINT LABEL (Catches 400 Errors) ***
   const printLabel = async (order) => {
       if (!order) return;
       
       // Update UI first
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
       
-      // Try DB update - wrap in try/catch to ignore the 400 error if column is missing/strict
+      // Try updating DB, but catch error if column doesn't exist
       try {
         await supabase.from('orders').update({ printed: true }).eq('id', order.id);
-      } catch (dbErr) {
-          console.warn("Could not mark printed in DB (non-fatal):", dbErr);
+      } catch (err) {
+          console.warn("DB Update Skipped (Printed flag):", err);
       }
 
       const isCloud = pnEnabled && pnApiKey && pnPrinterId;
@@ -452,16 +459,13 @@ export default function AdminPage() {
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
-  // *** VISIBLE ORDERS FILTER & LOGIC ***
-  // Strictly filter in render so you see what's actually paid
+  // *** VISIBLE ORDERS FILTER ***
   const visibleOrders = orders.filter(o => {
-      // Allow toggle to see everything if debugging
       if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded';
 
-      const pStatus = (o.payment_status || '').toLowerCase();
-      // STRICT PAID CHECK
-      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0;
-      
+      const payStatus = (o.payment_status || '').toLowerCase();
+      // Only show if PAID or FREE.
+      const isPaid = payStatus === 'paid' || payStatus === 'succeeded' || Number(o.total_price) === 0;
       return isPaid && o.status !== 'completed' && o.status !== 'refunded';
   });
 
@@ -503,8 +507,8 @@ export default function AdminPage() {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
                 
                 // *** VISUAL LOGIC: MATCHING PRINTER LOGIC STRICTLY ***
-                const pStatus = (order.payment_status || '').toLowerCase();
-                const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0;
+                const payStatus = (order.payment_status || '').toLowerCase();
+                const isPaid = payStatus === 'paid' || payStatus === 'succeeded' || Number(order.total_price) === 0;
                 
                 const displayPaymentLabel = isPaid ? 'PAID' : 'UNPAID';
                 const displayColor = isPaid ? 'text-green-600' : 'text-red-500';
