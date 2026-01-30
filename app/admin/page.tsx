@@ -83,27 +83,27 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: HYBRID REFRESH (REALTIME + POLLING) ---
+  // --- 1. THE FIXED ENGINE: REALTIME + FILTERED POLLING ---
   useEffect(() => {
     if (isAuthorized && mounted) {
-        // 1. Initial Load
+        // Initial Data Load
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
 
-        // 2. Realtime Listener
+        // A. Realtime Listener (Immediate Trigger)
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync_hybrid')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-                    console.log("Realtime Trigger!");
-                    fetchOrders(); 
+            channel = supabase.channel('admin_sync_main')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+                    console.log("DB Update Detected via Socket");
+                    fetchOrders(); // Forces the UI to refresh with FILTERS
                 })
                 .subscribe();
         }
 
-        // 3. FAIL-SAFE POLLING (Every 5 seconds)
-        // This ensures that even if Realtime disconnects, the list updates.
+        // B. Polling (Backup every 5s) - NOW WITH FILTERS
         const interval = setInterval(() => {
-            fetchOrders();
+            // We call fetchOrders() directly to ensure the filters (neq incomplete) are ALWAYS applied
+            fetchOrders(); 
         }, 5000);
 
         return () => { 
@@ -113,7 +113,7 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT ---
+  // --- 2. AUTO-PRINT TRIGGER ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
@@ -123,11 +123,11 @@ export default function AdminPage() {
 
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
-      // Safety: Only print if order is less than 2 minutes old
-      const isNew = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000;
+      const isNew = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000; // 2 min window
       
+      // Because we filtered incomplete orders, if it appears here, it IS PAID.
       if (isNew && !newestOrder.printed) {
-        console.log("New Order Detected - Printing...");
+        console.log("New PAID order detected - Printing...");
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
@@ -135,7 +135,7 @@ export default function AdminPage() {
     lastOrderCount.current = orders.length;
   }, [orders, autoPrintEnabled, mounted]);
 
-  //Recalculation
+  // Recalculate Totals
   useEffect(() => {
       if (editingOrder && mounted) {
           let total = 0;
@@ -191,12 +191,13 @@ export default function AdminPage() {
   // --- ACTIONS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
-  // *** FETCH MODIFIED: Filters out incomplete/unpaid orders ***
+  // *** THE FILTER THAT MATTERS ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
       const { data } = await supabase
           .from('orders')
           .select('*')
+          // HIDE unpaid rows so printer never sees them
           .neq('status', 'incomplete') 
           .neq('status', 'awaiting_payment')
           .order('created_at', { ascending: false }); 
@@ -211,17 +212,7 @@ export default function AdminPage() {
   const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); };
   const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
-  
-  const handleRefund = async (orderId, paymentIntentId) => {
-    if (!confirm("Refund?")) return;
-    setLoading(true);
-    try {
-        const result = await refundOrder(orderId, paymentIntentId);
-        if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); }
-    } catch(e) { alert("Error: " + e.message); }
-    setLoading(false);
-  };
-
+  const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
   const printLabel = async (order) => {
@@ -248,9 +239,7 @@ export default function AdminPage() {
 
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      const cleanCart = rawCart
-        .filter(item => item !== null && item !== undefined)
-        .map(item => ({
+      const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({
             ...item,
             productName: item.productName || 'Unknown',
             size: item.size || 'N/A',
@@ -385,68 +374,10 @@ export default function AdminPage() {
   const downloadTemplate = () => { try { const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, cost_price: item.cost_price || 8.50, _Reference_Name: getProductName(item.product_id) || item.product_id })); const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory"); XLSX.writeFile(wb, "Inventory.xlsx"); } catch (e) {} };
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing"); await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: newProdType, sort_order: 99 }]); const sizes = SIZE_ORDER; await supabase.from('inventory').insert(sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }))); alert("Created!"); setNewProdId(''); fetchInventory(); };
-  
-  // *** RESTORED HANDLE UPLOADS ***
-  const handleGuestUpload = (e) => { 
-      const f = e.target.files[0]; 
-      if (!f) return; 
-      setLoading(true); 
-      const r = new FileReader(); 
-      r.onload = async (evt) => { 
-          try { 
-              const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
-              for (const row of d) { 
-                  const n = row['Name'] || row['name'] || row['Guest']; 
-                  const s = row['Size'] || row['size']; 
-                  if (n) await supabase.from('guests').insert([{ name: String(n).trim(), size: s ? String(s).trim() : null, has_ordered: false }]); 
-              } 
-              alert(`Imported!`); 
-              fetchGuests(); 
-          } catch (e) {} 
-          setLoading(false); 
-      }; 
-      r.readAsBinaryString(f); 
-  };
-
+  const handleGuestUpload = (e) => { const f = e.target.files[0]; if (!f) return; setLoading(true); const r = new FileReader(); r.onload = async (evt) => { try { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); for (const row of d) { const n = row['Name'] || row['name'] || row['Guest']; const s = row['Size'] || row['size']; if (n) await supabase.from('guests').insert([{ name: String(n).trim(), size: s ? String(s).trim() : null, has_ordered: false }]); } alert(`Imported!`); fetchGuests(); } catch (e) {} setLoading(false); }; r.readAsBinaryString(f); };
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
-  
-  const handleBulkUpload = (e) => { 
-      const f = e.target.files[0]; 
-      if (!f) return; 
-      setUploadLog(["Reading..."]); 
-      setLoading(true); 
-      const r = new FileReader(); 
-      r.onload = async (evt) => { 
-          try { 
-              const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
-              if (!d.length) { setLoading(false); return; } 
-              const logs = []; 
-              for (const row of d) { 
-                  const clean = {}; 
-                  Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); 
-                  const pid = String(clean['product_id']).trim(); 
-                  const sz = String(clean['size']).trim(); 
-                  const cnt = parseInt(clean['count']); 
-                  const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; 
-                  const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).maybeSingle(); 
-                  if (ex) { 
-                      await supabase.from('inventory').update({ count: cnt, cost_price: cst }).eq('product_id', pid).eq('size', sz); 
-                      logs.push(`Updated ${pid}`); 
-                  } else { 
-                      await supabase.from('inventory').insert([{ product_id: pid, size: sz, count: cnt, cost_price: cst, active: true }]); 
-                      logs.push(`Created ${pid}`); 
-                  } 
-              } 
-              setUploadLog(logs); 
-              fetchInventory(); 
-          } catch (e) { 
-              setUploadLog([e.message]); 
-          } 
-          setLoading(false); 
-      }; 
-      r.readAsBinaryString(f); 
-  };
+  const handleBulkUpload = (e) => { const f = e.target.files[0]; if (!f) return; setUploadLog(["Reading..."]); setLoading(true); const r = new FileReader(); r.onload = async (evt) => { try { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); if (!d.length) { setLoading(false); return; } const logs = []; for (const row of d) { const clean = {}; Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); const pid = String(clean['product_id']).trim(); const sz = String(clean['size']).trim(); const cnt = parseInt(clean['count']); const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).maybeSingle(); if (ex) { await supabase.from('inventory').update({ count: cnt, cost_price: cst }).eq('product_id', pid).eq('size', sz); logs.push(`Updated ${pid}`); } else { await supabase.from('inventory').insert([{ product_id: pid, size: sz, count: cnt, cost_price: cst, active: true }]); logs.push(`Created ${pid}`); } } setUploadLog(logs); fetchInventory(); } catch (e) { setUploadLog([e.message]); } setLoading(false); }; r.readAsBinaryString(f); };
 
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
