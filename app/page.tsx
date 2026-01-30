@@ -248,7 +248,7 @@ export default function OrderForm() {
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
-  // --- NEW: HANDLE TERMINAL CHECKOUT ---
+  // --- UPDATED: HANDLE TERMINAL CHECKOUT (With Robust Error Handling) ---
   const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
@@ -268,6 +268,12 @@ export default function OrderForm() {
             })
         });
 
+        // Debug: Check if the server returned HTML (error) or JSON
+        if (!createRes.ok) {
+            const errText = await createRes.text();
+            throw new Error(`Order Creation Failed (${createRes.status}): ${errText.substring(0, 100)}`);
+        }
+
         const orderData = await createRes.json();
         if (!orderData.success) throw new Error(orderData.error);
         
@@ -283,6 +289,12 @@ export default function OrderForm() {
                 amount: calculateGrandTotal() 
             })
         });
+
+        // Debug: Check if the server returned HTML (error) or JSON
+        if (!payRes.ok) {
+            const errText = await payRes.text();
+            throw new Error(`Terminal Request Failed (${payRes.status}): ${errText.substring(0, 100)}`);
+        }
 
         const payData = await payRes.json();
         if (!payData.success) throw new Error(payData.error);
@@ -311,7 +323,8 @@ export default function OrderForm() {
             .subscribe();
 
     } catch (err) {
-        alert("Terminal Error: " + err.message);
+        console.error("Checkout Error:", err);
+        alert("System Error: " + err.message);
         setIsTerminalProcessing(false);
         setTerminalStatus('');
     }
