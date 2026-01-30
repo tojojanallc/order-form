@@ -83,25 +83,17 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: POLLING REFRESH (FAIL-SAFE) ---
-  // Checks for new orders every 5 seconds regardless of connection type
+  // --- ENGINE: LIVE REFRESH ---
   useEffect(() => {
     if (isAuthorized && mounted) {
-        // Initial Fetch
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
-        
-        // Start Polling
-        const interval = setInterval(() => {
-            // Quietly fetch orders in background
-            if(supabase) {
-                supabase.from('orders').select('*').order('created_at', { ascending: false })
-                .then(({ data }) => {
-                    if (data) setOrders(data);
-                });
-            }
-        }, 5000); // 5 Seconds
-
-        return () => clearInterval(interval);
+        if (supabase) {
+            const channel = supabase.channel('admin_sync').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+                console.log("DB Update: Fetching orders...");
+                fetchOrders(); 
+            }).subscribe();
+            return () => { supabase.removeChannel(channel); };
+        }
     }
   }, [isAuthorized, mounted]);
 
@@ -115,9 +107,7 @@ export default function AdminPage() {
 
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
-      // Only print if order is less than 2 minutes old
-      const isNew = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000;
-      
+      const isNew = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 60000;
       if (isNew && !newestOrder.printed) {
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
@@ -126,7 +116,7 @@ export default function AdminPage() {
     lastOrderCount.current = orders.length;
   }, [orders, autoPrintEnabled, mounted]);
 
-  // Recalculate Totals
+  //Recalculation
   useEffect(() => {
       if (editingOrder && mounted) {
           let total = 0;
@@ -179,28 +169,29 @@ export default function AdminPage() {
     } catch (e) {}
   }, [orders, inventory, mounted]);
 
-  // Actions
+  // --- ACTIONS (UPDATED FETCH) ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
-  const fetchOrders = async () => { if (!supabase) return; const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); };
+  
+  // *** FIXED: Filter out incomplete/unpaid orders ***
+  const fetchOrders = async () => { 
+      if (!supabase) return; 
+      const { data } = await supabase
+          .from('orders')
+          .select('*')
+          .neq('status', 'incomplete') // Hides orders stuck in checkout
+          .neq('status', 'awaiting_payment') // Hides unpaid
+          .order('created_at', { ascending: false }); 
+      if (data) setOrders(data); 
+  };
+
   const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
   const fetchLogos = async () => { if (!supabase) return; const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); };
   const fetchGuests = async () => { if (!supabase) return; const { data } = await supabase.from('guests').select('*').order('name'); if (data) setGuests(data); };
   const fetchSettings = async () => { if (!supabase) return; const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setHeaderColor(data.header_color || '#1e3a8a'); setPaymentMode(data.payment_mode || 'retail'); setPrinterType(data.printer_type || 'label'); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); setOfferPersonalization(data.offer_personalization ?? true); setPnEnabled(data.printnode_enabled || false); setPnApiKey(data.printnode_api_key || ''); setPnPrinterId(data.printnode_printer_id || ''); } };
   const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, header_color: headerColor, payment_mode: paymentMode, printer_type: printerType, offer_back_names: offerBackNames, offer_metallic: offerMetallic, offer_personalization: offerPersonalization, printnode_enabled: pnEnabled, printnode_api_key: pnApiKey, printnode_printer_id: pnPrinterId }).eq('id', 1); alert("Saved!"); };
-  const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); };
-  const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
-  
-  const handleRefund = async (orderId, paymentIntentId) => {
-    if (!confirm("Refund?")) return;
-    setLoading(true);
-    try {
-        const result = await refundOrder(orderId, paymentIntentId);
-        if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); }
-    } catch(e) { alert("Error: " + e.message); }
-    setLoading(false);
-  };
-
+  const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
+  const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
   const printLabel = async (order) => {
@@ -227,9 +218,7 @@ export default function AdminPage() {
 
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      const cleanCart = rawCart
-        .filter(item => item !== null && item !== undefined)
-        .map(item => ({
+      const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({
             ...item,
             productName: item.productName || 'Unknown',
             size: item.size || 'N/A',
@@ -390,8 +379,6 @@ export default function AdminPage() {
             <div className="bg-white p-4 rounded shadow border-l-4 border-green-500"><p className="text-xs text-gray-500 font-bold uppercase">Gross Revenue</p><p className="text-3xl font-black text-green-700">${stats.revenue.toFixed(2)}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
-            
-            {/* NEW: AUTO-PRINT UI INSERTED HERE */}
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
                 <p className="text-xs text-gray-500 font-bold uppercase">Printing Control</p>
                 <div className="flex items-center gap-2">
@@ -401,7 +388,7 @@ export default function AdminPage() {
             </div> 
           </div> 
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
-            <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{orders.filter(o => o.status !== 'completed').map((order) => {
+            <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 uppercase text-xs">Status</th><th className="p-4 uppercase text-xs">Customer</th><th className="p-4 uppercase text-xs">Items</th><th className="p-4 text-right uppercase text-xs">Actions</th></tr></thead><tbody>{orders.filter(o => o.status !== 'completed').map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
                 return (
                 <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
