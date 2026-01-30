@@ -54,7 +54,7 @@ export default function AdminPage() {
 
   // --- AUTO PRINT STATE ---
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
-  const [hideUnpaid, setHideUnpaid] = useState(false); // Default OFF so you can see new orders coming in
+  const [hideUnpaid, setHideUnpaid] = useState(false); 
   const audioRef = useRef(null);
   const lastOrderCount = useRef(0);
   const processedIds = useRef(new Set());
@@ -72,6 +72,7 @@ export default function AdminPage() {
   const [eventName, setEventName] = useState('');
   const [eventLogo, setEventLogo] = useState('');
   const [headerColor, setHeaderColor] = useState('#1e3a8a'); 
+  // IMPORTANT: We track this to decide if we trust unpaid orders
   const [paymentMode, setPaymentMode] = useState('retail'); 
   const [printerType, setPrinterType] = useState('label'); 
   const [offerBackNames, setOfferBackNames] = useState(true);
@@ -92,7 +93,7 @@ export default function AdminPage() {
         
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync_strict_final')
+            channel = supabase.channel('admin_sync_guest_fix')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
                     fetchOrders(); 
                 })
@@ -106,7 +107,7 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT ---
+  // --- ENGINE: SMART AUTO-PRINT ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
@@ -119,19 +120,27 @@ export default function AdminPage() {
       const newestOrder = orders[0]; 
       const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
       
-      // STRICT CHECK: Must explicitly be 'paid' or 'succeeded'
       const pStatus = (newestOrder.payment_status || '').toLowerCase();
-      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(newestOrder.total_price) === 0;
+      
+      // *** HYBRID LOGIC ***
+      // 1. If 'Hosted' Mode: Trust EVERYTHING that isn't explicitly incomplete.
+      // 2. If 'Retail' Mode: Trust only 'paid', 'succeeded', or $0 orders.
+      const isHostedEvent = paymentMode === 'hosted';
+      const isStrictlyPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(newestOrder.total_price) === 0;
+      
+      const isValid = isHostedEvent 
+          ? (newestOrder.status !== 'incomplete' && newestOrder.status !== 'awaiting_payment')
+          : isStrictlyPaid;
 
-      if (isRecent && isPaid && !newestOrder.printed && !processedIds.current.has(newestOrder.id)) {
-        console.log("✅ AUTO-PRINT:", newestOrder.id);
+      if (isRecent && isValid && !newestOrder.printed && !processedIds.current.has(newestOrder.id)) {
+        console.log("✅ AUTO-PRINT (Mode: " + paymentMode + "):", newestOrder.id);
         processedIds.current.add(newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
     }
     lastOrderCount.current = orders.length;
-  }, [orders, autoPrintEnabled, mounted]);
+  }, [orders, autoPrintEnabled, mounted, paymentMode]);
 
   // Recalculate Totals
   useEffect(() => {
@@ -160,8 +169,7 @@ export default function AdminPage() {
   useEffect(() => {
     if(!mounted || !orders) return;
     try {
-        // Only count stats for strictly PAID orders
-        const activeOrders = orders.filter(o => (o.payment_status === 'paid' || o.payment_status === 'succeeded'));
+        const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'refunded');
         if (activeOrders.length > 0) {
             const revenue = activeOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
             const count = activeOrders.length;
@@ -204,7 +212,25 @@ export default function AdminPage() {
       else setGuests([]);
   };
 
-  const fetchSettings = async () => { if (!supabase) return; const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setHeaderColor(data.header_color || '#1e3a8a'); setPaymentMode(data.payment_mode || 'retail'); setPrinterType(data.printer_type || 'label'); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); setOfferPersonalization(data.offer_personalization ?? true); setPnEnabled(data.printnode_enabled || false); setPnApiKey(data.printnode_api_key || ''); setPnPrinterId(data.printnode_printer_id || ''); } };
+  const fetchSettings = async () => { 
+      if (!supabase) return; 
+      const { data } = await supabase.from('event_settings').select('*').single(); 
+      if (data) { 
+          setEventName(data.event_name); 
+          setEventLogo(data.event_logo_url || ''); 
+          setHeaderColor(data.header_color || '#1e3a8a'); 
+          // CRITICAL: We need this to determine if we trust unpaid orders
+          setPaymentMode(data.payment_mode || 'retail'); 
+          setPrinterType(data.printer_type || 'label'); 
+          setOfferBackNames(data.offer_back_names ?? true); 
+          setOfferMetallic(data.offer_metallic ?? true); 
+          setOfferPersonalization(data.offer_personalization ?? true); 
+          setPnEnabled(data.printnode_enabled || false); 
+          setPnApiKey(data.printnode_api_key || ''); 
+          setPnPrinterId(data.printnode_printer_id || ''); 
+      } 
+  };
+
   const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, header_color: headerColor, payment_mode: paymentMode, printer_type: printerType, offer_back_names: offerBackNames, offer_metallic: offerMetallic, offer_personalization: offerPersonalization, printnode_enabled: pnEnabled, printnode_api_key: pnApiKey, printnode_printer_id: pnPrinterId }).eq('id', 1); alert("Saved!"); };
   const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); };
@@ -438,13 +464,18 @@ export default function AdminPage() {
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
-  // *** VISIBLE ORDERS FILTER: STRICT ***
+  // *** VISIBLE ORDERS FILTER: CONTROLLABLE ***
   const visibleOrders = orders.filter(o => {
+      // Toggle logic
       if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded';
 
-      // STRICTLY require 'paid', 'succeeded', or free price.
       const pStatus = (o.payment_status || '').toLowerCase();
-      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0;
+      // If HOSTED, trust the order exists (since no payment needed).
+      // If RETAIL, require strictly PAID or $0
+      const isHostedEvent = paymentMode === 'hosted';
+      const isPaid = isHostedEvent 
+          ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') 
+          : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
       
       return isPaid && o.status !== 'completed' && o.status !== 'refunded';
   });
@@ -470,6 +501,7 @@ export default function AdminPage() {
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
             
+            {/* TOGGLES UI */}
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
                 <div className="flex items-center gap-2 mb-2">
                     <input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4 accent-blue-900 cursor-pointer" />
@@ -485,11 +517,16 @@ export default function AdminPage() {
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
                 
-                // *** STRICT VISUAL LOGIC ***
+                // *** VISUAL LOGIC: HYBRID ***
                 const pStatus = (order.payment_status || '').toLowerCase();
-                const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0;
+                const isHostedEvent = paymentMode === 'hosted';
                 
-                const displayPaymentLabel = isPaid ? 'PAID' : 'UNPAID';
+                // If Hosted, treat valid tracking statuses as "Paid" (Green)
+                const isPaid = isHostedEvent
+                    ? (order.status !== 'incomplete' && order.status !== 'awaiting_payment')
+                    : (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0);
+                
+                const displayPaymentLabel = isPaid ? (isHostedEvent ? 'HOSTED' : 'PAID') : 'UNPAID';
                 const displayColor = isPaid ? 'text-green-600' : 'text-red-500';
 
                 return (
