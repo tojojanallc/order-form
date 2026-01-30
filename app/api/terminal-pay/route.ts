@@ -1,47 +1,51 @@
 import { NextResponse } from 'next/server';
 import { Client, Environment } from 'square';
 
-// Initialize Square Client
-// Make sure SQUARE_ACCESS_TOKEN is in your .env.local
-const square = new Client({
-  accessToken: process.env.SQUARE_ACCESS_TOKEN,
-  environment: Environment.Production, // Must be Production for physical devices
-});
-
 export async function POST(request) {
+  // 1. Initialize Square INSIDE the function (Lazy Loading)
+  // This prevents the build from crashing if keys are missing during compile time.
+  const squareClient = new Client({
+    accessToken: process.env.SQUARE_ACCESS_TOKEN,
+    environment: Environment.Production, 
+  });
+
   try {
-    const { orderId, amount } = await request.json();
+    const { orderId, amount, currency = 'USD' } = await request.json();
 
     if (!orderId || !amount) {
-      return NextResponse.json({ error: 'Missing orderId or amount' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing data' }, { status: 400 });
     }
 
-    console.log(`🚀 Sending $${amount} request to Terminal for Order #${orderId}...`);
-
-    const response = await square.terminalApi.createTerminalCheckout({
-      idempotencyKey: crypto.randomUUID(), // Prevents double-charging on network glitches
+    // 2. Create the Terminal Checkout Request
+    const response = await squareClient.terminalApi.createTerminalCheckout({
+      idempotencyKey: crypto.randomUUID(),
       checkout: {
         amountMoney: {
-          amount: Math.round(amount * 100), // Convert $30.00 to 3000 cents
-          currency: 'USD',
+          amount: Math.round(amount * 100), 
+          currency: currency,
         },
         deviceOptions: {
-          deviceId: process.env.SQUARE_TERMINAL_ID, // The ID you just got (db_...)
+          deviceId: process.env.SQUARE_TERMINAL_ID,
         },
-        referenceId: String(orderId), // CRITICAL: This links the payment back to Supabase
-        note: `Order #${orderId}`, // Shows on the Terminal screen
+        referenceId: String(orderId), 
+        note: `Order #${orderId}`,
       },
     });
 
     const checkout = response.result.checkout;
-    console.log("✅ Terminal request sent:", checkout.id);
-
-    return NextResponse.json({ success: true, checkoutId: checkout.id });
+    
+    return NextResponse.json({ 
+      success: true, 
+      status: checkout.status,
+      checkoutId: checkout.id 
+    });
 
   } catch (error) {
-    // Log the deep error details from Square for easier debugging
+    // Enhanced Error Logging
+    // If error.result exists, it contains the deep Square API error details
     const details = error.result ? JSON.stringify(error.result, null, 2) : error.message;
-    console.error("Square Terminal Error:", details);
-    return NextResponse.json({ error: "Terminal Error", details }, { status: 500 });
+    console.error("Terminal API Error:", details);
+    
+    return NextResponse.json({ error: "Square Error", details }, { status: 500 });
   }
 }
