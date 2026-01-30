@@ -54,7 +54,7 @@ export default function AdminPage() {
 
   // --- AUTO PRINT STATE ---
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
-  const [hideUnpaid, setHideUnpaid] = useState(false); 
+  const [hideUnpaid, setHideUnpaid] = useState(true); 
   const audioRef = useRef(null);
   const lastOrderCount = useRef(0);
   const processedIds = useRef(new Set());
@@ -72,7 +72,6 @@ export default function AdminPage() {
   const [eventName, setEventName] = useState('');
   const [eventLogo, setEventLogo] = useState('');
   const [headerColor, setHeaderColor] = useState('#1e3a8a'); 
-  // IMPORTANT: We track this to decide if we trust unpaid orders
   const [paymentMode, setPaymentMode] = useState('retail'); 
   const [printerType, setPrinterType] = useState('label'); 
   const [offerBackNames, setOfferBackNames] = useState(true);
@@ -86,20 +85,34 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: REFRESH ---
+  // --- ENGINE: SYNCED REFRESH (Guest List + Orders) ---
   useEffect(() => {
     if (isAuthorized && mounted) {
+        // Initial Fetch
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
         
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync_guest_fix')
+            channel = supabase.channel('admin_global_sync')
+                // 1. If Orders change, refresh Orders AND Guests (to update 'Redeemed' status)
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+                    console.log("⚡ Order Update: Refreshing All Lists...");
                     fetchOrders(); 
+                    fetchGuests(); 
+                })
+                // 2. If Guests change directly (e.g. upload), refresh Guests
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, () => {
+                    fetchGuests();
                 })
                 .subscribe();
         }
-        const interval = setInterval(() => { fetchOrders(); }, 5000); 
+
+        // 3. Fallback Polling (Every 5s) - Updates BOTH
+        const interval = setInterval(() => { 
+            fetchOrders(); 
+            fetchGuests(); 
+        }, 5000); 
+
         return () => { 
             if(channel && supabase) supabase.removeChannel(channel); 
             clearInterval(interval);
@@ -107,7 +120,7 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: SMART AUTO-PRINT ---
+  // --- ENGINE: AUTO-PRINT (Smart Logic) ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
@@ -121,19 +134,16 @@ export default function AdminPage() {
       const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
       
       const pStatus = (newestOrder.payment_status || '').toLowerCase();
-      
-      // *** HYBRID LOGIC ***
-      // 1. If 'Hosted' Mode: Trust EVERYTHING that isn't explicitly incomplete.
-      // 2. If 'Retail' Mode: Trust only 'paid', 'succeeded', or $0 orders.
       const isHostedEvent = paymentMode === 'hosted';
       const isStrictlyPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(newestOrder.total_price) === 0;
       
+      // If Hosted, we trust almost anything. If Retail, we need proof of payment.
       const isValid = isHostedEvent 
           ? (newestOrder.status !== 'incomplete' && newestOrder.status !== 'awaiting_payment')
           : isStrictlyPaid;
 
       if (isRecent && isValid && !newestOrder.printed && !processedIds.current.has(newestOrder.id)) {
-        console.log("✅ AUTO-PRINT (Mode: " + paymentMode + "):", newestOrder.id);
+        console.log("✅ AUTO-PRINT (Synced):", newestOrder.id);
         processedIds.current.add(newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
@@ -205,6 +215,7 @@ export default function AdminPage() {
 
   const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
   const fetchLogos = async () => { if (!supabase) return; const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); };
+  
   const fetchGuests = async () => { 
       if (!supabase) return; 
       const { data } = await supabase.from('guests').select('*').order('name'); 
@@ -219,7 +230,6 @@ export default function AdminPage() {
           setEventName(data.event_name); 
           setEventLogo(data.event_logo_url || ''); 
           setHeaderColor(data.header_color || '#1e3a8a'); 
-          // CRITICAL: We need this to determine if we trust unpaid orders
           setPaymentMode(data.payment_mode || 'retail'); 
           setPrinterType(data.printer_type || 'label'); 
           setOfferBackNames(data.offer_back_names ?? true); 
@@ -470,12 +480,11 @@ export default function AdminPage() {
       if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded';
 
       const pStatus = (o.payment_status || '').toLowerCase();
-      // If HOSTED, trust the order exists (since no payment needed).
-      // If RETAIL, require strictly PAID or $0
       const isHostedEvent = paymentMode === 'hosted';
+      // If HOSTED, trust the order exists. If RETAIL, require payment or free.
       const isPaid = isHostedEvent 
           ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') 
-          : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
+          : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0 || (pStatus === '' && o.status === 'pending'));
       
       return isPaid && o.status !== 'completed' && o.status !== 'refunded';
   });
@@ -520,11 +529,9 @@ export default function AdminPage() {
                 // *** VISUAL LOGIC: HYBRID ***
                 const pStatus = (order.payment_status || '').toLowerCase();
                 const isHostedEvent = paymentMode === 'hosted';
-                
-                // If Hosted, treat valid tracking statuses as "Paid" (Green)
                 const isPaid = isHostedEvent
                     ? (order.status !== 'incomplete' && order.status !== 'awaiting_payment')
-                    : (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0);
+                    : (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0 || (pStatus === '' && order.status === 'pending'));
                 
                 const displayPaymentLabel = isPaid ? (isHostedEvent ? 'HOSTED' : 'PAID') : 'UNPAID';
                 const displayColor = isPaid ? 'text-green-600' : 'text-red-500';
