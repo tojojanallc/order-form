@@ -83,27 +83,23 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE 1: REFRESH LOGIC (Socket + Polling) ---
+  // --- ENGINE: DEBUGGING MODE ---
   useEffect(() => {
     if (isAuthorized && mounted) {
-        // Initial Load
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
         
-        // A. Realtime Listener
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync')
+            channel = supabase.channel('admin_debug')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                    console.log("DB Update Detected!");
-                    fetchOrders(); // This runs the filtered fetch
+                    console.log("🔥 REALTIME EVENT FIRED:", payload);
+                    console.log("🔥 NEW STATUS:", payload.new?.status);
+                    fetchOrders(); 
                 })
                 .subscribe();
         }
 
-        // B. Polling Backup (Every 5s)
-        const interval = setInterval(() => {
-             fetchOrders(); 
-        }, 5000);
+        const interval = setInterval(() => { fetchOrders(); }, 5000);
 
         return () => { 
             if(channel && supabase) supabase.removeChannel(channel); 
@@ -112,7 +108,7 @@ export default function AdminPage() {
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE 2: AUTO-PRINT LOGIC (New + Paid) ---
+  // --- ENGINE: AUTO-PRINT (Logged) ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
@@ -123,13 +119,13 @@ export default function AdminPage() {
 
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
-      
-      // Because fetchOrders() now EXCLUDES incomplete orders, anything that appears here IS paid.
-      // We just check if it's recent (last 2 minutes) to avoid printing old history on refresh
       const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000;
       
+      console.log(`[AUTO-PRINT CHECK] Order ID: ${newestOrder.id}, Status: ${newestOrder.status}, Printed: ${newestOrder.printed}`);
+
+      // In Debug mode, we print EVERYTHING so we can see if it fires
       if (isRecent && !newestOrder.printed) {
-        console.log("New PAID order detected. Printing:", newestOrder.id);
+        console.log("🖨️ ATTEMPTING TO PRINT ORDER:", newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
@@ -193,21 +189,24 @@ export default function AdminPage() {
   // --- ACTIONS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
-  // *** FIXED FETCH: STRICT ALLOW-LIST FILTER ***
+  // *** DEBUG FETCH: GRABS EVERYTHING & LOGS IT ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
       
-      // We extract the allowed keys: ['pending', 'shipped', 'ready', ...]
-      // This automatically excludes 'incomplete', 'awaiting_payment', 'created'
-      const validStatuses = Object.keys(STATUSES); 
-
+      // Removed filters so we can see the "ghost" orders
       const { data } = await supabase
           .from('orders')
           .select('*')
-          .in('status', validStatuses) // <--- THIS IS THE FIX
           .order('created_at', { ascending: false }); 
       
-      if (data) setOrders(data); 
+      if (data) {
+          // LOGGING THE FIRST 3 ORDERS TO CONSOLE
+          console.log("---- FETCHED ORDER SNAPSHOT ----");
+          data.slice(0, 3).forEach(o => {
+              console.log(`ID: ${o.id} | Status: "${o.status}" | Customer: ${o.customer_name}`);
+          });
+          setOrders(data); 
+      }
   };
 
   const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
@@ -245,9 +244,7 @@ export default function AdminPage() {
 
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      const cleanCart = rawCart
-        .filter(item => item !== null && item !== undefined)
-        .map(item => ({
+      const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({
             ...item,
             productName: item.productName || 'Unknown',
             size: item.size || 'N/A',
@@ -440,8 +437,6 @@ export default function AdminPage() {
             )})}</tbody></table> 
           </div> 
         </div> )}
-
-        {activeTab === 'history' && ( <div> <div className="bg-gray-800 text-white p-4 rounded-t-lg flex justify-between items-center"><h2 className="font-bold text-xl">Order Archive (Completed)</h2><button onClick={downloadCSV} className="bg-white text-black px-4 py-2 rounded font-bold hover:bg-gray-200 text-sm">📥 Download CSV</button></div> <div className="bg-white shadow rounded-b-lg overflow-hidden border border-gray-300 overflow-x-auto"> {orders.filter(o => o.status === 'completed').length === 0 ? <div className="p-8 text-center text-gray-500">History is empty.</div> : ( <table className="w-full text-left min-w-[800px]"> <thead className="bg-gray-100 text-gray-500"> <tr> <th className="p-4">Event Name</th> <th className="p-4">Date</th> <th className="p-4">Customer</th> <th className="p-4">Items</th> <th className="p-4 text-right">Total</th> </tr> </thead> <tbody> {orders.filter(o => o.status === 'completed').map((order) => { const safeItems = Array.isArray(order.cart_data) ? order.cart_data : []; return ( <tr key={order.id} className="border-b hover:bg-gray-50 opacity-75"> <td className="p-4 font-bold text-blue-900">{order.event_name || '-'}</td> <td className="p-4 text-sm" suppressHydrationWarning>{new Date(order.created_at).toLocaleString()}</td> <td className="p-4 font-bold">{order.customer_name}</td> <td className="p-4 text-sm">{safeItems.map(i => i?.productName).join(', ')}</td> <td className="p-4 text-right font-bold">${order.total_price}</td> </tr> ); })} </tbody> </table>)} </div> </div> )}
 
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
