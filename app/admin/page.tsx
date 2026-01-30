@@ -83,38 +83,42 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: LIVE REFRESH (FIXED) ---
+  // --- ENGINE: POLLING REFRESH (FAIL-SAFE) ---
+  // Checks for new orders every 5 seconds regardless of connection type
   useEffect(() => {
     if (isAuthorized && mounted) {
+        // Initial Fetch
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
-        if (supabase) {
-            const channel = supabase.channel('admin_sync').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-                console.log("DB Update Detected: Refreshing UI...");
-                fetchOrders(); // This ensures the table updates when a new order comes in
-            }).subscribe();
-            return () => { supabase.removeChannel(channel); };
-        }
+        
+        // Start Polling
+        const interval = setInterval(() => {
+            // Quietly fetch orders in background
+            if(supabase) {
+                supabase.from('orders').select('*').order('created_at', { ascending: false })
+                .then(({ data }) => {
+                    if (data) setOrders(data);
+                });
+            }
+        }, 5000); // 5 Seconds
+
+        return () => clearInterval(interval);
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT (FIXED) ---
+  // --- ENGINE: AUTO-PRINT ---
   useEffect(() => {
-    // 1. Establish baseline on first load so we don't print history
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
       return;
     }
-
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
-    // 2. If order count increases, we have a new order
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
-      // Safety: Only print if order is less than 2 minutes old (handles slight clock drift)
-      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000;
+      // Only print if order is less than 2 minutes old
+      const isNew = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000;
       
-      if (isRecent && !newestOrder.printed) {
-        console.log("Auto-printing order:", newestOrder.id);
+      if (isNew && !newestOrder.printed) {
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
@@ -122,7 +126,7 @@ export default function AdminPage() {
     lastOrderCount.current = orders.length;
   }, [orders, autoPrintEnabled, mounted]);
 
-  // Recalculate New Total Safe
+  // Recalculate Totals
   useEffect(() => {
       if (editingOrder && mounted) {
           let total = 0;
@@ -161,8 +165,7 @@ export default function AdminPage() {
                     if (!item) return;
                     const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
                     const unitCost = Number(invItem?.cost_price || 8.00);
-                    const overhead = 1.50; 
-                    totalCOGS += (unitCost + overhead);
+                    totalCOGS += (unitCost + 1.50);
                     const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
                     itemCounts[key] = (itemCounts[key] || 0) + 1;
                 });
@@ -176,7 +179,7 @@ export default function AdminPage() {
     } catch (e) {}
   }, [orders, inventory, mounted]);
 
-  // ACTIONS
+  // Actions
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   const fetchOrders = async () => { if (!supabase) return; const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); if (data) setOrders(data); };
   const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
@@ -187,7 +190,17 @@ export default function AdminPage() {
   const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); };
   const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
-  const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
+  
+  const handleRefund = async (orderId, paymentIntentId) => {
+    if (!confirm("Refund?")) return;
+    setLoading(true);
+    try {
+        const result = await refundOrder(orderId, paymentIntentId);
+        if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); }
+    } catch(e) { alert("Error: " + e.message); }
+    setLoading(false);
+  };
+
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
   const printLabel = async (order) => {
@@ -214,7 +227,9 @@ export default function AdminPage() {
 
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({
+      const cleanCart = rawCart
+        .filter(item => item !== null && item !== undefined)
+        .map(item => ({
             ...item,
             productName: item.productName || 'Unknown',
             size: item.size || 'N/A',
@@ -375,6 +390,8 @@ export default function AdminPage() {
             <div className="bg-white p-4 rounded shadow border-l-4 border-green-500"><p className="text-xs text-gray-500 font-bold uppercase">Gross Revenue</p><p className="text-3xl font-black text-green-700">${stats.revenue.toFixed(2)}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
+            
+            {/* NEW: AUTO-PRINT UI INSERTED HERE */}
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
                 <p className="text-xs text-gray-500 font-bold uppercase">Printing Control</p>
                 <div className="flex items-center gap-2">
