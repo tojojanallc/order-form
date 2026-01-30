@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'; 
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -66,6 +66,7 @@ export default function OrderForm() {
   const [eventLogo, setEventLogo] = useState('');
   const [headerColor, setHeaderColor] = useState('#1e3a8a'); 
   const [paymentMode, setPaymentMode] = useState('retail'); 
+  const [retailPaymentMethod, setRetailPaymentMethod] = useState('stripe'); // NEW: Controls button type
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
   const [showPersonalization, setShowPersonalization] = useState(true);
@@ -109,6 +110,7 @@ export default function OrderForm() {
         setEventLogo(settings.event_logo_url);
         setHeaderColor(settings.header_color || '#1e3a8a'); 
         setPaymentMode(settings.payment_mode || 'retail');
+        setRetailPaymentMethod(settings.retail_payment_method || 'stripe'); // FETCH TOGGLE
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
         setShowPersonalization(settings.offer_personalization ?? true);
@@ -554,8 +556,8 @@ export default function OrderForm() {
                     
                     {/* --- ACTION BUTTONS (Updated) --- */}
                     <div className="space-y-3">
-                        {/* 1. SQUARE TERMINAL BUTTON (Retail Only) */}
-                        {paymentMode === 'retail' && (
+                        {/* 1. SQUARE TERMINAL BUTTON (Retail Only + Toggle ON) */}
+                        {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && (
                             <button 
                                 onClick={handleTerminalCheckout}
                                 disabled={isSubmitting || isTerminalProcessing}
@@ -573,17 +575,19 @@ export default function OrderForm() {
                             </button>
                         )}
 
-                        {/* 2. STRIPE / HOSTED BUTTON */}
-                        <button 
-                            onClick={handleCheckout} 
-                            disabled={isSubmitting || isTerminalProcessing || (paymentMode === 'hosted' && !selectedGuest)} 
-                            className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${
-                                isSubmitting || isTerminalProcessing ? 'bg-gray-400' : 'hover:opacity-90'
-                            }`}
-                            style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}
-                        >
-                            {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link (Email/SMS)")}
-                        </button>
+                        {/* 2. STRIPE / HOSTED BUTTON (If not terminal OR if hosted) */}
+                        {((paymentMode === 'retail' && retailPaymentMethod !== 'terminal') || paymentMode === 'hosted') && (
+                            <button 
+                                onClick={handleCheckout} 
+                                disabled={isSubmitting || isTerminalProcessing || (paymentMode === 'hosted' && !selectedGuest)} 
+                                className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${
+                                    isSubmitting || isTerminalProcessing ? 'bg-gray-400' : 'hover:opacity-90'
+                                }`}
+                                style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}
+                            >
+                                {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link (Email/SMS)")}
+                            </button>
+                        )}
                     </div>
                 </div>
                 )}
