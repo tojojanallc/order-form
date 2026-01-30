@@ -52,8 +52,9 @@ export default function AdminPage() {
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
-  // --- AUTO PRINT STATE ---
+  // --- AUTO PRINT & FILTER STATE ---
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
+  const [hideUnpaid, setHideUnpaid] = useState(true); // Default to hiding unpaid, but allow toggling
   const audioRef = useRef(null);
   const lastOrderCount = useRef(0);
 
@@ -109,7 +110,6 @@ export default function AdminPage() {
 
   // --- ENGINE: AUTO-PRINT ---
   useEffect(() => {
-    // 1. Establish baseline on first load
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
       return;
@@ -117,17 +117,15 @@ export default function AdminPage() {
 
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
-    // 2. Logic: If the filtered order list grows, a new PAID order has arrived.
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
       
-      // Safety: Only print if created recently (< 5 mins)
+      // Strict Check for Payment Status before printing
+      const pStatus = newestOrder.payment_status ? newestOrder.payment_status.toLowerCase() : '';
+      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(newestOrder.total_price) === 0;
       const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
       
-      // Only print if it's actually marked paid or free
-      const pStatus = newestOrder.payment_status ? newestOrder.payment_status.toLowerCase() : '';
-      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || newestOrder.total_price === 0;
-
+      // Print ONLY if paid and recent
       if (isRecent && isPaid && !newestOrder.printed) {
         console.log("New PAID order detected. Printing:", newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
@@ -193,7 +191,7 @@ export default function AdminPage() {
   // ACTIONS
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
-  // *** FETCH ALL, THEN FILTER IN RENDER ***
+  // *** FETCH ALL ORDERS (Filtering happens in Render now) ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
       const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); 
@@ -202,13 +200,11 @@ export default function AdminPage() {
 
   const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
   const fetchLogos = async () => { if (!supabase) return; const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); };
-  
-  // *** FIXED FETCH GUESTS TO ENSURE ARRAY ***
   const fetchGuests = async () => { 
       if (!supabase) return; 
       const { data } = await supabase.from('guests').select('*').order('name'); 
       if (data) setGuests(data); 
-      else setGuests([]); // Fallback to empty array
+      else setGuests([]);
   };
 
   const fetchSettings = async () => { if (!supabase) return; const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setHeaderColor(data.header_color || '#1e3a8a'); setPaymentMode(data.payment_mode || 'retail'); setPrinterType(data.printer_type || 'label'); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); setOfferPersonalization(data.offer_personalization ?? true); setPnEnabled(data.printnode_enabled || false); setPnApiKey(data.printnode_api_key || ''); setPnPrinterId(data.printnode_printer_id || ''); } };
@@ -443,19 +439,16 @@ export default function AdminPage() {
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
-  // *** VISIBLE ORDERS FILTER: This creates the "Safety Shield" ***
+  // *** VISIBLE ORDERS FILTER: CONTROLLABLE ***
   const visibleOrders = orders.filter(o => {
-      // 1. Must be Paid
-      const pStatus = o.payment_status ? o.payment_status.toLowerCase() : '';
-      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || o.total_price === 0;
-      
-      // 2. Must NOT be 'incomplete' or 'awaiting_payment' (Redundant check but safe)
-      const isComplete = o.status !== 'incomplete' && o.status !== 'awaiting_payment';
+      if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded'; // If toggle off, show everything except history
 
-      // 3. Must NOT be 'completed' or 'refunded' (Those go to History)
+      // If toggle ON, strict paid check
+      const pStatus = o.payment_status ? o.payment_status.toLowerCase() : '';
+      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0;
       const isActive = o.status !== 'completed' && o.status !== 'refunded';
 
-      return isPaid && isComplete && isActive;
+      return isPaid && isActive;
   });
 
   const historyOrders = orders.filter(o => o.status === 'completed' || o.status === 'refunded');
@@ -479,21 +472,28 @@ export default function AdminPage() {
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
             
-            {/* NEW: AUTO-PRINT UI INSERTED HERE */}
+            {/* TOGGLES UI */}
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
-                <p className="text-xs text-gray-500 font-bold uppercase">Printing Control</p>
-                <div className="flex items-center gap-2">
-                    <input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-5 h-5 accent-blue-900 cursor-pointer" />
-                    <label htmlFor="autoPrint" className="text-sm font-black text-gray-800 cursor-pointer uppercase">Auto-Print Labels</label>
+                <div className="flex items-center gap-2 mb-2">
+                    <input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4 accent-blue-900 cursor-pointer" />
+                    <label htmlFor="autoPrint" className="text-xs font-black text-gray-800 cursor-pointer uppercase">Auto-Print Paid</label>
+                </div>
+                <div className="flex items-center gap-2 border-t pt-2">
+                    <input type="checkbox" id="hideUnpaid" checked={hideUnpaid} onChange={(e) => setHideUnpaid(e.target.checked)} className="w-4 h-4 accent-red-600 cursor-pointer" />
+                    <label htmlFor="hideUnpaid" className="text-xs font-bold text-red-600 cursor-pointer uppercase">Hide Unpaid? ({orders.length - visibleOrders.length} hidden)</label>
                 </div>
             </div> 
           </div> 
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
+                const pStatus = order.payment_status || 'unpaid';
                 return (
                 <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
-                    <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
+                    <td className="p-4 align-top">
+                        <select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+                        <div className={`text-[10px] uppercase font-bold mt-1 ${pStatus === 'paid' || pStatus === 'succeeded' ? 'text-green-600' : 'text-red-500'}`}>{pStatus}</div>
+                    </td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                     <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div></td>
                     <td className="p-4 align-top text-sm">{safeItems.map((item, i) => {
@@ -510,8 +510,6 @@ export default function AdminPage() {
             )})}</tbody></table> 
           </div> 
         </div> )}
-
-        {activeTab === 'history' && ( <div> <div className="bg-gray-800 text-white p-4 rounded-t-lg flex justify-between items-center"><h2 className="font-bold text-xl">Order Archive (Completed)</h2><button onClick={downloadCSV} className="bg-white text-black px-4 py-2 rounded font-bold hover:bg-gray-200 text-sm">📥 Download CSV</button></div> <div className="bg-white shadow rounded-b-lg overflow-hidden border border-gray-300 overflow-x-auto"> {historyOrders.length === 0 ? <div className="p-8 text-center text-gray-500">History is empty.</div> : ( <table className="w-full text-left min-w-[800px]"> <thead className="bg-gray-100 text-gray-500"> <tr> <th className="p-4">Event Name</th> <th className="p-4">Date</th> <th className="p-4">Customer</th> <th className="p-4">Items</th> <th className="p-4 text-right">Total</th> </tr> </thead> <tbody> {historyOrders.map((order) => { const safeItems = Array.isArray(order.cart_data) ? order.cart_data : []; return ( <tr key={order.id} className="border-b hover:bg-gray-50 opacity-75"> <td className="p-4 font-bold text-blue-900">{order.event_name || '-'}</td> <td className="p-4 text-sm" suppressHydrationWarning>{new Date(order.created_at).toLocaleString()}</td> <td className="p-4 font-bold">{order.customer_name}</td> <td className="p-4 text-sm">{safeItems.map(i => i?.productName).join(', ')}</td> <td className="p-4 text-right font-bold">${order.total_price}</td> </tr> ); })} </tbody> </table>)} </div> </div> )}
 
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
