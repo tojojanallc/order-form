@@ -83,41 +83,51 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: LIVE REFRESH (FIXED) ---
+  // --- ENGINE: HYBRID REFRESH (REALTIME + POLLING) ---
   useEffect(() => {
     if (isAuthorized && mounted) {
+        // 1. Initial Load
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
+
+        // 2. Realtime Listener
+        let channel = null;
         if (supabase) {
-            const channel = supabase
-              .channel('admin_sync_main')
-              .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                  console.log("DB Update Detected! Refreshing UI...");
-                  fetchOrders(); // Forces the UI to refresh
-              })
-              .subscribe();
-            return () => { supabase.removeChannel(channel); };
+            channel = supabase.channel('admin_sync_hybrid')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+                    console.log("Realtime Trigger!");
+                    fetchOrders(); 
+                })
+                .subscribe();
         }
+
+        // 3. FAIL-SAFE POLLING (Every 5 seconds)
+        // This ensures that even if Realtime disconnects, the list updates.
+        const interval = setInterval(() => {
+            fetchOrders();
+        }, 5000);
+
+        return () => { 
+            if(channel && supabase) supabase.removeChannel(channel); 
+            clearInterval(interval);
+        };
     }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT (FIXED) ---
+  // --- ENGINE: AUTO-PRINT ---
   useEffect(() => {
-    // 1. If first load, just set the baseline, don't print history
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
       return;
     }
-
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
-    // 2. If order count increases, we have a new order
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
       // Safety: Only print if order is less than 2 minutes old
-      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000;
+      const isNew = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 120000;
       
-      if (isRecent && !newestOrder.printed) {
-        console.log("Auto-printing order:", newestOrder.id);
+      if (isNew && !newestOrder.printed) {
+        console.log("New Order Detected - Printing...");
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
       }
@@ -125,7 +135,7 @@ export default function AdminPage() {
     lastOrderCount.current = orders.length;
   }, [orders, autoPrintEnabled, mounted]);
 
-  // Recalculate Totals
+  //Recalculation
   useEffect(() => {
       if (editingOrder && mounted) {
           let total = 0;
@@ -164,8 +174,7 @@ export default function AdminPage() {
                     if (!item) return;
                     const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
                     const unitCost = Number(invItem?.cost_price || 8.00);
-                    const overhead = 1.50; 
-                    totalCOGS += (unitCost + overhead);
+                    totalCOGS += (unitCost + 1.50);
                     const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
                     itemCounts[key] = (itemCounts[key] || 0) + 1;
                 });
@@ -182,14 +191,14 @@ export default function AdminPage() {
   // --- ACTIONS ---
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
-  // *** FIXED FETCH: Filters out incomplete orders ***
+  // *** FETCH MODIFIED: Filters out incomplete/unpaid orders ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
       const { data } = await supabase
           .from('orders')
           .select('*')
-          .neq('status', 'incomplete') // Hide payment_intent pending
-          .neq('status', 'awaiting_payment') // Hide unpaid
+          .neq('status', 'incomplete') 
+          .neq('status', 'awaiting_payment')
           .order('created_at', { ascending: false }); 
       if (data) setOrders(data); 
   };
@@ -199,18 +208,7 @@ export default function AdminPage() {
   const fetchGuests = async () => { if (!supabase) return; const { data } = await supabase.from('guests').select('*').order('name'); if (data) setGuests(data); };
   const fetchSettings = async () => { if (!supabase) return; const { data } = await supabase.from('event_settings').select('*').single(); if (data) { setEventName(data.event_name); setEventLogo(data.event_logo_url || ''); setHeaderColor(data.header_color || '#1e3a8a'); setPaymentMode(data.payment_mode || 'retail'); setPrinterType(data.printer_type || 'label'); setOfferBackNames(data.offer_back_names ?? true); setOfferMetallic(data.offer_metallic ?? true); setOfferPersonalization(data.offer_personalization ?? true); setPnEnabled(data.printnode_enabled || false); setPnApiKey(data.printnode_api_key || ''); setPnPrinterId(data.printnode_printer_id || ''); } };
   const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, header_color: headerColor, payment_mode: paymentMode, printer_type: printerType, offer_back_names: offerBackNames, offer_metallic: offerMetallic, offer_personalization: offerPersonalization, printnode_enabled: pnEnabled, printnode_api_key: pnApiKey, printnode_printer_id: pnPrinterId }).eq('id', 1); alert("Saved!"); };
-  
-  // *** RESTORED & DEFINED closeEvent ***
-  const closeEvent = async () => { 
-      if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; 
-      setLoading(true); 
-      await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); 
-      await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); 
-      alert("Event Closed!"); 
-      fetchOrders(); 
-      setLoading(false); 
-  };
-
+  const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); };
   const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
   
@@ -224,16 +222,7 @@ export default function AdminPage() {
     setLoading(false);
   };
 
-  const discoverPrinters = async () => { 
-      if(!pnApiKey) return alert("Enter API Key"); 
-      setLoading(true); 
-      try { 
-          const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); 
-          const data = await res.json(); 
-          if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } 
-      } catch (e) {} 
-      setLoading(false); 
-  };
+  const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
   const printLabel = async (order) => {
       if (!order) return;
@@ -397,7 +386,7 @@ export default function AdminPage() {
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   const handleAddProductWithSizeUpdates = async (e) => { e.preventDefault(); if (!newProdId || !newProdName) return alert("Missing"); await supabase.from('products').insert([{ id: newProdId.toLowerCase().replace(/\s/g, '_'), name: newProdName, base_price: newProdPrice, image_url: newProdImage, type: newProdType, sort_order: 99 }]); const sizes = SIZE_ORDER; await supabase.from('inventory').insert(sizes.map(s => ({ product_id: newProdId.toLowerCase().replace(/\s/g, '_'), size: s, count: 0, active: true }))); alert("Created!"); setNewProdId(''); fetchInventory(); };
   
-  // *** FIXED & UNPACKED: handleGuestUpload ***
+  // *** RESTORED HANDLE UPLOADS ***
   const handleGuestUpload = (e) => { 
       const f = e.target.files[0]; 
       if (!f) return; 
@@ -422,7 +411,6 @@ export default function AdminPage() {
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
-  // *** FIXED & UNPACKED: handleBulkUpload ***
   const handleBulkUpload = (e) => { 
       const f = e.target.files[0]; 
       if (!f) return; 
@@ -482,6 +470,7 @@ export default function AdminPage() {
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
             
+            {/* NEW: AUTO-PRINT UI INSERTED HERE */}
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
                 <p className="text-xs text-gray-500 font-bold uppercase">Printing Control</p>
                 <div className="flex items-center gap-2">
