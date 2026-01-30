@@ -62,7 +62,8 @@ export default function AdminPage() {
   // Forms
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
-  const [newProdPrice, setNewProdPrice] = useState(30);
+  const [newProdPrice, setNewProdPrice] = useState('');
+  const [newProdCost, setNewProdCost] = useState('');
   const [newProdImage, setNewProdImage] = useState(''); 
   const [newProdType, setNewProdType] = useState('top'); 
   const [newLogoName, setNewLogoName] = useState('');
@@ -440,6 +441,54 @@ export default function AdminPage() {
   const deleteProduct = async (id) => { if (!confirm("Delete product?")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
   
+// FIX: Update Product Info (Name, Image, Price) directly from table
+  const updateProductInfo = async (pid, field, value) => {
+      setProducts(products.map(p => p.id === pid ? { ...p, [field]: value } : p));
+      await supabase.from('products').update({ [field]: value }).eq('id', pid);
+  };
+
+  // FIX: Update Price & State
+  const updatePrice = async (pid, v) => { 
+      const val = parseFloat(v) || 0; 
+      setProducts(products.map(p => p.id === pid ? { ...p, base_price: val } : p)); 
+      await supabase.from('products').update({ base_price: val }).eq('id', pid); 
+  };
+
+  const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
+  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
+  const downloadTemplate = () => { try { const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, cost_price: item.cost_price || 8.50, _Reference_Name: getProductName(item.product_id) || item.product_id })); const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory"); XLSX.writeFile(wb, "Inventory.xlsx"); } catch (e) {} };
+  const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
+  
+  // FIX: Added Cost to Insert & Removed Auto-Caps on Name
+  const handleAddProductWithSizeUpdates = async (e) => { 
+      e.preventDefault(); 
+      if (!newProdId || !newProdName) return alert("Missing Info"); 
+      const safeId = newProdId.toLowerCase().replace(/\s/g, '_');
+      
+      // Save Product (name as typed)
+      await supabase.from('products').insert([{ 
+          id: safeId, 
+          name: newProdName, 
+          base_price: parseFloat(newProdPrice), 
+          image_url: newProdImage, 
+          type: newProdType, 
+          sort_order: 99 
+      }]); 
+      
+      // Save Inventory with COST
+      const sizes = SIZE_ORDER; 
+      await supabase.from('inventory').insert(sizes.map(s => ({ 
+          product_id: safeId, 
+          size: s, 
+          count: 0, 
+          cost_price: parseFloat(newProdCost), // Uses input cost
+          active: true 
+      }))); 
+      
+      alert("Created!"); 
+      setNewProdId(''); setNewProdName(''); fetchInventory(); 
+  };
+
   // FIX: Handle price update robustly
   const updatePrice = async (pid, v) => { 
       const val = parseFloat(v) || 0; 
@@ -668,7 +717,13 @@ export default function AdminPage() {
                                 </select>
                             </div>
                             <div><label className="text-xs font-bold uppercase">Image URL (Optional)</label><input className="w-full border p-2 rounded" placeholder="https://..." value={newProdImage} onChange={e => setNewProdImage(e.target.value)} /></div>
-                            <div><label className="text-xs font-bold uppercase">Price ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div>
+                            
+                            {/* FIX: COST & PRICE INPUTS */}
+                            <div className="grid grid-cols-2 gap-2">
+                                <div><label className="text-xs font-bold uppercase">Price ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div>
+                                <div><label className="text-xs font-bold uppercase">Unit Cost ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdCost} onChange={e => setNewProdCost(e.target.value)} /></div>
+                            </div>
+
                             <button className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700">Create Product</button>
                         </form>
                     </div>
@@ -683,18 +738,28 @@ export default function AdminPage() {
                     </div>
                 </div>
                 <div className="md:col-span-2 space-y-6">
-                    {/* FIX: Added max-height and scrolling to Manage Prices */}
+                    {/* FIX: Editable "Manage Prices" Table with Scrollbars */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
-                        <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Prices (Scroll for more)</div>
+                        <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Product Info</div>
                         <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left">
-                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3">Image</th><th className="p-3">Product Name</th><th className="p-3">Base Price ($)</th><th className="p-3 text-right">Action</th></tr></thead>
+                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img URL</th><th className="p-3">Product Name</th><th className="p-3 w-24">Price ($)</th><th className="p-3 text-right">Action</th></tr></thead>
                                 <tbody>
                                     {products.map((prod) => (
                                         <tr key={prod.id} className="border-b hover:bg-gray-50">
-                                            <td className="p-3">{prod.image_url ? <img src={prod.image_url} alt={prod.name} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">No Img</div>}</td>
-                                            <td className="p-3 font-bold text-gray-700">{prod.name} <span className="text-xs text-gray-400">({prod.type})</span></td>
-                                            <td className="p-3"><div className="flex items-center gap-1"><span className="text-gray-500 font-bold">$</span><input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price || 0} onChange={(e) => updatePrice(prod.id, e.target.value)} /></div></td>
+                                            <td className="p-3">
+                                                <div className="flex flex-col gap-1">
+                                                    {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-gray-50" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px]">No Img</div>}
+                                                    <input className="text-[10px] border p-1 w-full" placeholder="URL" value={prod.image_url || ''} onChange={(e) => updateProductInfo(prod.id, 'image_url', e.target.value)} />
+                                                </div>
+                                            </td>
+                                            <td className="p-3">
+                                                <input className="font-bold text-gray-700 border p-2 w-full rounded" value={prod.name} onChange={(e) => updateProductInfo(prod.id, 'name', e.target.value)} />
+                                                <div className="text-xs text-gray-400 mt-1">ID: {prod.id}</div>
+                                            </td>
+                                            <td className="p-3">
+                                                <input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price || 0} onChange={(e) => updateProductInfo(prod.id, 'base_price', parseFloat(e.target.value))} />
+                                            </td>
                                             <td className="p-3 text-right"><button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button></td>
                                         </tr>
                                     ))}
@@ -702,26 +767,8 @@ export default function AdminPage() {
                             </table>
                         </div>
                     </div>
-                    {/* FIX: Added max-height and scrolling to Stock Table */}
-                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
-                        <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Stock & Costs</div>
-                        <div className="overflow-y-auto flex-1">
-                            <table className="w-full text-left">
-                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4 text-center">Unit Cost ($)</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead>
-                                <tbody>
-                                    {inventory.map((item) => (
-                                        <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
-                                            <td className="p-4 font-bold">{getProductName(item.product_id)}</td>
-                                            <td className="p-4">{item.size}</td>
-                                            <td className="p-4"><input type="number" className="mx-auto block w-16 border rounded text-center" value={item.cost_price || ''} onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} /></td>
-                                            <td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td>
-                                            <td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    {/* Stock Table with Scrollbars */}
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]"><div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Stock & Costs</div><div className="overflow-y-auto flex-1"><table className="w-full text-left"><thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4 text-center">Unit Cost ($)</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead><tbody>{inventory.map((item) => (<tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}><td className="p-4 font-bold">{getProductName(item.product_id)}</td><td className="p-4">{item.size}</td><td className="p-4"><input type="number" className="mx-auto block w-16 border rounded text-center" value={item.cost_price || ''} onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} /></td><td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td><td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td></tr>))}</tbody></table></div></div>
                 </div>
             </div>
         )}
