@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'; 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -132,7 +132,6 @@ export default function OrderForm() {
               setSelectedGuest(match); 
               setCustomerName(match.name); 
               setGuestError('');
-              // Try to set size immediately if valid for current product
               if (match.size && visibleSizes.includes(match.size)) { setSize(match.size); }
           }
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
@@ -187,18 +186,12 @@ export default function OrderForm() {
   // --- REPAIRED ZONE LOGIC ---
   const getPositionOptions = (itemType) => {
       if (!selectedProduct) return [];
-      
       const name = (selectedProduct.name || '').toLowerCase();
       const id = (selectedProduct.id || '').toLowerCase();
-      
       let pType = 'top'; 
-      
-      if (selectedProduct.type === 'bottom' || 
-          name.includes('jogger') || name.includes('pant') || name.includes('short') ||
-          id.includes('jogger') || id.includes('pant') || id.includes('short')) {
+      if (selectedProduct.type === 'bottom' || name.includes('jogger') || name.includes('pant') || name.includes('short') || id.includes('jogger') || id.includes('pant') || id.includes('short')) {
           pType = 'bottom';
       }
-
       const availableZones = ZONES[pType] || ZONES.top;
       if (itemType === 'logo') return availableZones.filter(z => z.type === 'logo' || z.type === 'both');
       if (itemType === 'name') return availableZones.filter(z => z.type === 'name' || z.type === 'both');
@@ -235,20 +228,18 @@ export default function OrderForm() {
       finalPrice: calculateTotal()
     };
     setCart([...cart, newItem]);
-    
     setLogos([]); setNames([]); setBackNameList(false); setMetallicHighlight(false);
     if (mainOptions.length > 1) setSelectedMainDesign(''); 
   };
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
-  
   const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
-  // --- UPDATED: HANDLE TERMINAL CHECKOUT (With Robust Error Handling) ---
+  // --- UPDATED: ROBUST TERMINAL CHECKOUT (REALTIME + POLLING) ---
   const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
@@ -257,18 +248,13 @@ export default function OrderForm() {
     setTerminalStatus("Creating Order...");
 
     try {
-        // 1. Create the Order via API (Reserve Stock + Create DB Row)
+        // 1. Create the Order via API
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                cart, 
-                customerName, 
-                total: calculateGrandTotal() 
-            })
+            body: JSON.stringify({ cart, customerName, total: calculateGrandTotal() })
         });
 
-        // Debug: Check if the server returned HTML (error) or JSON
         if (!createRes.ok) {
             const errText = await createRes.text();
             throw new Error(`Order Creation Failed (${createRes.status}): ${errText.substring(0, 100)}`);
@@ -284,13 +270,9 @@ export default function OrderForm() {
         const payRes = await fetch('/api/terminal-pay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                orderId: orderId, 
-                amount: calculateGrandTotal() 
-            })
+            body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal() })
         });
 
-        // Debug: Check if the server returned HTML (error) or JSON
         if (!payRes.ok) {
             const errText = await payRes.text();
             throw new Error(`Terminal Request Failed (${payRes.status}): ${errText.substring(0, 100)}`);
@@ -299,32 +281,36 @@ export default function OrderForm() {
         const payData = await payRes.json();
         if (!payData.success) throw new Error(payData.error);
 
-        // 3. LISTEN for Success (Realtime)
+        // --- SUCCESS HANDLER ---
+        const handleSuccess = () => {
+            if (window.pollingRef) clearInterval(window.pollingRef);
+            if (channel) supabase.removeChannel(channel);
+            setOrderComplete(true);
+            setCart([]);
+            setCustomerName('');
+            setIsTerminalProcessing(false);
+        };
+
+        // 3. STRATEGY A: Realtime Listener
         const channel = supabase.channel(`terminal_watch_${orderId}`)
-            .on(
-                'postgres_changes', 
-                { 
-                    event: 'UPDATE', 
-                    schema: 'public', 
-                    table: 'orders', 
-                    filter: `id=eq.${orderId}` 
-                }, 
-                (payload) => {
-                    if (payload.new.payment_status === 'paid') {
-                        // SUCCESS!
-                        supabase.removeChannel(channel);
-                        setOrderComplete(true);
-                        setCart([]);
-                        setCustomerName('');
-                        setIsTerminalProcessing(false);
-                    }
-                }
-            )
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` }, 
+            (payload) => {
+                if (payload.new.payment_status === 'paid') handleSuccess();
+            })
             .subscribe();
+
+        // 4. STRATEGY B: Polling Backup (Every 2 seconds)
+        window.pollingRef = setInterval(async () => {
+            const { data } = await supabase.from('orders').select('payment_status').eq('id', orderId).single();
+            if (data && data.payment_status === 'paid') {
+                handleSuccess();
+            }
+        }, 2000);
 
     } catch (err) {
         console.error("Checkout Error:", err);
         alert("System Error: " + err.message);
+        if (window.pollingRef) clearInterval(window.pollingRef);
         setIsTerminalProcessing(false);
         setTerminalStatus('');
     }
@@ -392,14 +378,12 @@ export default function OrderForm() {
   const showPrice = paymentMode === 'retail';
 
   return (
-    // UPDATED LAYOUT CONTAINER
     <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900 flex justify-center items-start">
       <div className="w-full max-w-7xl grid md:grid-cols-3 gap-8">
         
         {/* LEFT COLUMN: PRODUCT BUILDER */}
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
-            {/* DYNAMIC HEADER COLOR */}
             <div className="text-white p-6 text-center" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-16 mx-auto mb-2" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               <p className="text-white text-opacity-80 text-sm mt-1">{eventLogo ? eventName : 'Order Form'}</p>
