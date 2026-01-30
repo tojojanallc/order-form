@@ -56,7 +56,7 @@ export default function AdminPage() {
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
   const [hideUnpaid, setHideUnpaid] = useState(false); 
   const audioRef = useRef(null);
-  const processedOrderIds = useRef(new Set()); // Prevents double printing in same session
+  const lastOrderCount = useRef(0);
 
   // Forms
   const [newProdId, setNewProdId] = useState('');
@@ -84,21 +84,23 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: LIVE REFRESH ---
+  // --- ENGINE: REFRESH ---
   useEffect(() => {
     if (isAuthorized && mounted) {
         fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests();
         
         let channel = null;
         if (supabase) {
-            channel = supabase.channel('admin_sync_strict')
+            channel = supabase.channel('admin_sync_v4')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                    console.log("DB Update Detected.");
+                    console.log("DB Update Detected:", payload);
                     fetchOrders(); 
                 })
                 .subscribe();
         }
+
         const interval = setInterval(() => { fetchOrders(); }, 5000); 
+
         return () => { 
             if(channel && supabase) supabase.removeChannel(channel); 
             clearInterval(interval);
@@ -108,30 +110,33 @@ export default function AdminPage() {
 
   // --- ENGINE: STRICT AUTO-PRINT ---
   useEffect(() => {
+    if (lastOrderCount.current === 0 && orders.length > 0) {
+      lastOrderCount.current = orders.length;
+      return;
+    }
+
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
-    // Scan the top 5 recent orders to see if any just became Paid
-    const recentOrders = orders.slice(0, 5);
-
-    recentOrders.forEach(order => {
-        // 1. TIMING CHECK: Must be less than 5 mins old
-        const isRecent = (new Date().getTime() - new Date(order.created_at).getTime()) < 300000;
-        
-        // 2. STRICT PAYMENT CHECK: 
-        // Must explicitly say 'paid' or 'succeeded', OR be a free ($0) order.
-        // We DO NOT trust the 'pending' status alone anymore.
-        const pStatus = order.payment_status ? order.payment_status.toLowerCase() : '';
-        const isStrictlyPaid = (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0);
-
-        // 3. EXECUTE
-        if (isRecent && isStrictlyPaid && !order.printed && !processedOrderIds.current.has(order.id)) {
-            console.log("✅ STRICT PRINT TRIGGERED: Order", order.id);
-            processedOrderIds.current.add(order.id); // Mark handled in memory so it doesn't loop
-            
-            if (audioRef.current) audioRef.current.play().catch(() => {});
-            printLabel(order);
-        }
-    });
+    if (orders.length > lastOrderCount.current) {
+      const newestOrder = orders[0]; 
+      
+      // *** STRICT PAYMENT CHECK ***
+      // We do NOT check order.status anymore because it defaults to 'pending'.
+      // We ONLY trust payment_status or $0 price.
+      const pStatus = (newestOrder.payment_status || '').toLowerCase();
+      const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(newestOrder.total_price) === 0;
+      
+      const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
+      
+      if (isRecent && isPaid && !newestOrder.printed) {
+        console.log("✅ AUTO-PRINT: Order IS Paid.", newestOrder.id);
+        if (audioRef.current) audioRef.current.play().catch(() => {});
+        printLabel(newestOrder);
+      } else {
+        console.log("⚠️ SKIP PRINT: Order not paid or old.", { id: newestOrder.id, pStatus, isPaid, isRecent });
+      }
+    }
+    lastOrderCount.current = orders.length;
   }, [orders, autoPrintEnabled, mounted]);
 
   // Recalculate Totals
@@ -190,7 +195,6 @@ export default function AdminPage() {
   // ACTIONS
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
-  // *** FETCH ALL ORDERS ***
   const fetchOrders = async () => { 
       if (!supabase) return; 
       const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); 
@@ -214,10 +218,20 @@ export default function AdminPage() {
   const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
+  // *** FIXED PRINT LABEL: Handles errors gracefully ***
   const printLabel = async (order) => {
       if (!order) return;
+      
+      // Update UI first
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
-      await supabase.from('orders').update({ printed: true }).eq('id', order.id);
+      
+      // Try DB update - wrap in try/catch to ignore the 400 error if column is missing/strict
+      try {
+        await supabase.from('orders').update({ printed: true }).eq('id', order.id);
+      } catch (dbErr) {
+          console.warn("Could not mark printed in DB (non-fatal):", dbErr);
+      }
+
       const isCloud = pnEnabled && pnApiKey && pnPrinterId;
       const mode = isCloud ? 'cloud' : 'download';
       try {
@@ -227,7 +241,7 @@ export default function AdminPage() {
               body: JSON.stringify({ order, mode, apiKey: pnApiKey, printerId: pnPrinterId })
           });
           const result = await res.json();
-          if (!result.success) { console.error(result.error); return; }
+          if (!result.success) { console.error("Print API Error:", result.error); return; }
           if (!isCloud) {
               const pdfBytes = Uint8Array.from(atob(result.pdfBase64), c => c.charCodeAt(0));
               const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -438,13 +452,16 @@ export default function AdminPage() {
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
-  // *** RENDER FILTERING: THE SAFETY NET ***
+  // *** VISIBLE ORDERS FILTER & LOGIC ***
+  // Strictly filter in render so you see what's actually paid
   const visibleOrders = orders.filter(o => {
-      // Toggle logic
+      // Allow toggle to see everything if debugging
       if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded';
 
-      const pStatus = o.payment_status ? o.payment_status.toLowerCase() : '';
+      const pStatus = (o.payment_status || '').toLowerCase();
+      // STRICT PAID CHECK
       const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0;
+      
       return isPaid && o.status !== 'completed' && o.status !== 'refunded';
   });
 
@@ -485,11 +502,9 @@ export default function AdminPage() {
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
                 
-                // *** VISUAL LOGIC FIX ***
-                const pStatus = order.payment_status ? order.payment_status.toLowerCase() : '';
-                const mainStatus = order.status || 'pending';
-                // Assume it is PAID if it has a valid payment status OR if it's not strictly marked incomplete/awaiting
-                const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0 || (mainStatus !== 'incomplete' && mainStatus !== 'awaiting_payment');
+                // *** VISUAL LOGIC: MATCHING PRINTER LOGIC STRICTLY ***
+                const pStatus = (order.payment_status || '').toLowerCase();
+                const isPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0;
                 
                 const displayPaymentLabel = isPaid ? 'PAID' : 'UNPAID';
                 const displayColor = isPaid ? 'text-green-600' : 'text-red-500';
