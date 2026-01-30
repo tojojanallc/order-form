@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { Client, Environment } from 'square';
+import { Client } from 'square'; // Removed 'Environment' from import to prevent crash
 
 export async function POST(request) {
   // 1. SAFETY CHECK: Verify Keys
@@ -30,10 +30,10 @@ export async function POST(request) {
         return NextResponse.json({ error: `Validation Error: Invalid Amount (${amount})` }, { status: 400 });
     }
 
-    // 4. Initialize Square
+    // 4. Initialize Square (FIXED: Using string 'production' instead of Enum)
     const squareClient = new Client({
       accessToken: process.env.SQUARE_ACCESS_TOKEN,
-      environment: Environment.Production, 
+      environment: 'production', // Direct string avoids the "undefined" crash
     });
 
     // 5. Send to Terminal
@@ -43,7 +43,7 @@ export async function POST(request) {
       idempotencyKey: crypto.randomUUID(),
       checkout: {
         amountMoney: {
-          amount: BigInt(finalAmount), // SDK often requires BigInt for money
+          amount: BigInt(finalAmount), // SDK requires BigInt for money
           currency: currency,
         },
         deviceOptions: {
@@ -57,8 +57,8 @@ export async function POST(request) {
     const checkout = response.result.checkout;
     console.log("✅ Square Response Received:", checkout.id);
 
-    // 6. SERIALIZATION FIX (BigInt Crash Prevention)
-    // Convert BigInts to strings before returning JSON
+    // 6. SERIALIZATION FIX (Prevents BigInt Crash)
+    // Convert BigInts to strings before returning JSON to frontend
     const safeResponse = JSON.parse(JSON.stringify(checkout, (key, value) =>
         typeof value === 'bigint' ? value.toString() : value
     ));
