@@ -48,6 +48,7 @@ export default function OrderForm() {
   // --- SQUARE TERMINAL STATE ---
   const [isTerminalProcessing, setIsTerminalProcessing] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState('');
+  const [assignedTerminalId, setAssignedTerminalId] = useState(''); // Stores this iPad's identity
 
   const [guests, setGuests] = useState([]);
   const [selectedGuest, setSelectedGuest] = useState(null); 
@@ -66,7 +67,7 @@ export default function OrderForm() {
   const [eventLogo, setEventLogo] = useState('');
   const [headerColor, setHeaderColor] = useState('#1e3a8a'); 
   const [paymentMode, setPaymentMode] = useState('retail'); 
-  const [retailPaymentMethod, setRetailPaymentMethod] = useState('stripe'); // NEW: Controls button type
+  const [retailPaymentMethod, setRetailPaymentMethod] = useState('stripe'); 
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
   const [showPersonalization, setShowPersonalization] = useState(true);
@@ -79,7 +80,22 @@ export default function OrderForm() {
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
 
+  // --- SETUP MODE STATE ---
+  const [showSetup, setShowSetup] = useState(false);
+  const [availableTerminals, setAvailableTerminals] = useState([]);
+
   useEffect(() => {
+    // 1. Check for Terminal ID in Storage
+    const savedId = localStorage.getItem('square_terminal_id');
+    if (savedId) setAssignedTerminalId(savedId);
+
+    // 2. Check URL for Setup Mode (?setup=true)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('setup') === 'true') {
+        setShowSetup(true);
+        fetchTerminals();
+    }
+
     const fetchData = async () => {
       if (!supabase) return;
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
@@ -110,7 +126,7 @@ export default function OrderForm() {
         setEventLogo(settings.event_logo_url);
         setHeaderColor(settings.header_color || '#1e3a8a'); 
         setPaymentMode(settings.payment_mode || 'retail');
-        setRetailPaymentMethod(settings.retail_payment_method || 'stripe'); // FETCH TOGGLE
+        setRetailPaymentMethod(settings.retail_payment_method || 'stripe'); 
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
         setShowPersonalization(settings.offer_personalization ?? true);
@@ -122,7 +138,19 @@ export default function OrderForm() {
     fetchData();
   }, []);
 
-  // --- AUTO-FILL SIZE ON GUEST VERIFY ---
+  const fetchTerminals = async () => {
+      const { data } = await supabase.from('terminals').select('*');
+      if (data) setAvailableTerminals(data);
+  };
+
+  const selectTerminal = (id) => {
+      localStorage.setItem('square_terminal_id', id);
+      setAssignedTerminalId(id);
+      alert("✅ This iPad is now linked to terminal: " + id);
+      setShowSetup(false);
+      window.history.replaceState({}, document.title, "/"); // Clear URL param
+  };
+
   const verifyGuest = () => {
       if (!guestSearch.trim()) return;
       setGuestError('');
@@ -139,7 +167,6 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // --- LOGIC: FILTER VISIBLE PRODUCTS ---
   const visibleProducts = products.filter(p => {
       return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
   });
@@ -167,7 +194,6 @@ export default function OrderForm() {
   };
   const visibleSizes = getVisibleSizes();
 
-  // --- SMART SIZE SELECTION ---
   useEffect(() => {
     if (visibleSizes.length > 0) {
         if (!visibleSizes.includes(size)) { 
@@ -185,7 +211,6 @@ export default function OrderForm() {
   const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
-  // --- REPAIRED ZONE LOGIC ---
   const getPositionOptions = (itemType) => {
       if (!selectedProduct) return [];
       const name = (selectedProduct.name || '').toLowerCase();
@@ -241,16 +266,16 @@ export default function OrderForm() {
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
-  // --- UPDATED: ROBUST TERMINAL CHECKOUT (REALTIME + POLLING) ---
+  // --- UPDATED: ROBUST TERMINAL CHECKOUT ---
   const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
+    if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.\nAsk Admin to run Setup.");
 
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
 
     try {
-        // 1. Create the Order via API
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -268,11 +293,15 @@ export default function OrderForm() {
         const orderId = orderData.orderId;
         setTerminalStatus("Sent to Terminal... Please Tap Card.");
 
-        // 2. Wake up the Terminal
+        // 2. Wake up the Terminal (Using Assigned ID)
         const payRes = await fetch('/api/terminal-pay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal() })
+            body: JSON.stringify({ 
+                orderId: orderId, 
+                amount: calculateGrandTotal(),
+                deviceId: assignedTerminalId // <--- SEND SPECIFIC ID
+            })
         });
 
         if (!payRes.ok) {
@@ -293,7 +322,6 @@ export default function OrderForm() {
             setIsTerminalProcessing(false);
         };
 
-        // 3. STRATEGY A: Realtime Listener
         const channel = supabase.channel(`terminal_watch_${orderId}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` }, 
             (payload) => {
@@ -301,7 +329,6 @@ export default function OrderForm() {
             })
             .subscribe();
 
-        // 4. STRATEGY B: Polling Backup (Every 2 seconds)
         window.pollingRef = setInterval(async () => {
             const { data } = await supabase.from('orders').select('payment_status').eq('id', orderId).single();
             if (data && data.payment_status === 'paid') {
@@ -361,6 +388,32 @@ export default function OrderForm() {
     }
   };
 
+  // --- SETUP SCREEN ---
+  if (showSetup) {
+      return (
+          <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
+              <h1 className="text-3xl font-bold mb-8">🛠️ Kiosk Setup Mode</h1>
+              <div className="space-y-4 w-full max-w-md">
+                  <p className="text-gray-400 text-center mb-4">Select which Terminal this iPad should trigger:</p>
+                  {availableTerminals.length === 0 ? (
+                      <div className="text-center text-red-400">No Terminals Found. Add them in Admin Dashboard first.</div>
+                  ) : (
+                      availableTerminals.map(t => (
+                          <button 
+                              key={t.id} 
+                              onClick={() => selectTerminal(t.device_id)}
+                              className="w-full bg-gray-800 border border-gray-600 p-4 rounded-lg text-lg font-bold hover:bg-blue-600 hover:border-blue-400 transition-colors"
+                          >
+                              {t.label} <span className="block text-xs font-mono text-gray-500 mt-1">{t.device_id}</span>
+                          </button>
+                      ))
+                  )}
+                  <button onClick={() => setShowSetup(false)} className="w-full mt-8 text-gray-500 hover:text-white">Cancel</button>
+              </div>
+          </div>
+      );
+  }
+
   if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
 
@@ -386,9 +439,10 @@ export default function OrderForm() {
         {/* LEFT COLUMN: PRODUCT BUILDER */}
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
-            <div className="text-white p-6 text-center" style={{ backgroundColor: headerColor }}>
+            <div className="text-white p-6 text-center relative" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-16 mx-auto mb-2" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               <p className="text-white text-opacity-80 text-sm mt-1">{eventLogo ? eventName : 'Order Form'}</p>
+              {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">ID: {assignedTerminalId.slice(-4)}</div>}
             </div>
             
             <div className="p-6 space-y-8">
@@ -554,9 +608,7 @@ export default function OrderForm() {
                         </div>
                     )}
                     
-                    {/* --- ACTION BUTTONS (Updated) --- */}
                     <div className="space-y-3">
-                        {/* 1. SQUARE TERMINAL BUTTON (Retail Only + Toggle ON) */}
                         {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && (
                             <button 
                                 onClick={handleTerminalCheckout}
@@ -575,7 +627,6 @@ export default function OrderForm() {
                             </button>
                         )}
 
-                        {/* 2. STRIPE / HOSTED BUTTON (If not terminal OR if hosted) */}
                         {((paymentMode === 'retail' && retailPaymentMethod !== 'terminal') || paymentMode === 'hosted') && (
                             <button 
                                 onClick={handleCheckout} 
