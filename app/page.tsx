@@ -236,18 +236,38 @@ export default function OrderForm() {
   const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
-  const getPositionOptions = (itemType) => {
+  // --- REPLACED FUNCTION ---
+  const getPositionOptions = (itemType, isAccent = false) => {
       if (!selectedProduct) return [];
+      
+      // 1. Determine if Top or Bottom
       const name = (selectedProduct.name || '').toLowerCase();
       const id = (selectedProduct.id || '').toLowerCase();
       let pType = 'top'; 
       if (selectedProduct.type === 'bottom' || name.includes('jogger') || name.includes('pant') || name.includes('short') || id.includes('jogger') || id.includes('pant') || id.includes('short')) {
           pType = 'bottom';
       }
+      
       const availableZones = ZONES[pType] || ZONES.top;
-      if (itemType === 'logo') return availableZones.filter(z => z.type === 'logo' || z.type === 'both');
-      if (itemType === 'name') return availableZones.filter(z => z.type === 'name' || z.type === 'both');
-      return availableZones;
+      
+      // 2. Filter by Usage Type (Logo vs Name)
+      let options = [];
+      if (itemType === 'logo') {
+          options = availableZones.filter(z => z.type === 'logo' || z.type === 'both');
+      } else if (itemType === 'name') {
+          options = availableZones.filter(z => z.type === 'name' || z.type === 'both');
+      } else {
+          options = availableZones;
+      }
+
+      // 3. STRICT RULE: If Accent on a Top -> REMOVE FRONT OPTIONS
+      if (isAccent && pType === 'top') {
+          // These IDs will be completely removed from the dropdown list
+          const forbidden = ['full_front', 'left_chest', 'center_chest'];
+          options = options.filter(z => !forbidden.includes(z.id));
+      }
+
+      return options;
   };
 
   const calculateTotal = () => {
@@ -576,8 +596,18 @@ export default function OrderForm() {
                                             <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
                                                 <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
                                                 <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
-                                                <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Position...</option>{getPositionOptions('logo').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
-                                                <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
+                                                {/* --- REPLACED DROPDOWN --- */}
+                            <select 
+                                className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} 
+                                value={logo.position} 
+                                onChange={(e) => updateLogo(index, 'position', e.target.value)}
+                            >
+                                <option value="">Position...</option>
+                                {/* We pass 'true' here to trigger the filter we just added */}
+                                {getPositionOptions('logo', true).map(pos => (
+                                    <option key={pos.id} value={pos.label}>{pos.label}</option>
+                                ))}
+                            </select><button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
                                             </div>
                                         );
                                     })}
