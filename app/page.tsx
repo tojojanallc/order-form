@@ -101,7 +101,7 @@ export default function OrderForm() {
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
 
-      const { data: logoData } = await supabase.from('logos').select('label, image_url, category').eq('active', true).order('sort_order');
+      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).order('sort_order');
       if (logoData) {
           setLogoOptions(logoData);
           setMainOptions(logoData.filter(l => l.category === 'main'));
@@ -672,5 +672,23 @@ export default function OrderForm() {
         )}
       </div>
     </div>
+
+    {/* DYNAMIC VISUALIZER */}
+<div className="col-span-1">
+    {(() => {
+        // Find the full logo object for the currently selected design
+        const currentLogoObj = mainOptions.find(o => o.label === selectedMainDesign);
+        
+        // Use the database value (default to 'large' if missing)
+        const sizeFromDB = currentLogoObj?.placement || 'large';
+        
+        return (
+            <PlacementVisualizer 
+                garmentType={selectedProduct.type || 'top'} 
+                logoSize={sizeFromDB} // <--- REAL DATA
+            />
+        );
+    })()}
+</div>
   );
 }
