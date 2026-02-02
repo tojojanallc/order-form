@@ -680,3 +680,70 @@ export default function OrderForm() {
   
 }
 
+const PlacementVisualizer = ({ garmentType, logoSize }) => {
+  const isTop = !garmentType || garmentType === 'top';
+  const color = "#1e3a8a"; // Brand Blue
+
+  // Define visual zones based on size
+  const renderTopZones = () => {
+    if (logoSize === 'large') {
+      // FULL FRONT (Pulsing Square)
+      return (
+        <rect x="75" y="70" width="50" height="50" fill={color} fillOpacity="0.8" rx="4">
+          <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
+        </rect>
+      );
+    } else {
+      // LEFT CHEST (Pulsing Circle)
+      return (
+        <circle cx="125" cy="70" r="8" fill={color} fillOpacity="0.8">
+          <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
+        </circle>
+      );
+    }
+  };
+
+  const renderBottomZones = () => {
+    if (logoSize === 'large') {
+      // LEG VERTICAL (Pulsing Rect)
+      return (
+         <rect x="115" y="100" width="10" height="60" fill={color} fillOpacity="0.8" rx="2">
+            <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
+         </rect>
+      );
+    } else {
+      // THIGH/POCKET (Pulsing Circle)
+      return (
+         <circle cx="80" cy="50" r="6" fill={color} fillOpacity="0.8">
+            <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
+         </circle>
+      );
+    }
+  };
+
+  if (isTop) {
+    return (
+      <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 w-full h-full max-h-64">
+        <svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-lg">
+          <path d="M60 20 L40 50 L60 60 L60 180 L140 180 L140 60 L160 50 L140 20 Q100 40 60 20" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />
+          {renderTopZones()}
+        </svg>
+        <p className="text-xs font-bold text-gray-500 uppercase mt-2 text-center">
+            {logoSize === 'large' ? "Center / Full Front" : "Left Chest / Pocket"}
+        </p>
+      </div>
+    );
+  } else {
+    return (
+      <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 w-full h-full max-h-64">
+        <svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-lg">
+          <path d="M70 20 L130 20 L140 60 L130 180 L110 180 L100 80 L90 180 L70 180 L60 60 Z" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />
+          {renderBottomZones()}
+        </svg>
+        <p className="text-xs font-bold text-gray-500 uppercase mt-2 text-center">
+            {logoSize === 'large' ? "Leg Print" : "Thigh / Pocket"}
+        </p>
+      </div>
+    );
+  }
+};
