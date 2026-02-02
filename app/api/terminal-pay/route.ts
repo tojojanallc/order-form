@@ -1,29 +1,34 @@
 import { NextResponse } from 'next/server';
 
 export async function POST(request) {
-  // 1. SAFETY CHECK
+  // 1. SAFETY CHECK (Access Token Only)
   if (!process.env.SQUARE_ACCESS_TOKEN) {
       console.error("❌ CRITICAL: SQUARE_ACCESS_TOKEN is missing.");
       return NextResponse.json({ error: "Server Error: Missing Square Token" }, { status: 500 });
   }
-  if (!process.env.SQUARE_TERMINAL_ID) {
-      console.error("❌ CRITICAL: SQUARE_TERMINAL_ID is missing.");
-      return NextResponse.json({ error: "Server Error: Missing Terminal ID" }, { status: 500 });
-  }
 
   try {
     const body = await request.json();
-    const { orderId, amount, currency = 'USD' } = body;
+    const { orderId, amount, currency = 'USD', deviceId } = body;
 
-    // 2. VALIDATION
+    // 2. DETERMINE TERMINAL ID
+    // Priority: 1. ID sent from iPad (Multi-Kiosk) -> 2. ID in .env (Single Kiosk Backup)
+    const targetDevice = deviceId || process.env.SQUARE_TERMINAL_ID;
+
+    if (!targetDevice) {
+        console.error("❌ No Terminal ID found in request or environment variables.");
+        return NextResponse.json({ error: "Setup Error: No Terminal ID linked. Please run setup on the iPad." }, { status: 400 });
+    }
+
+    // 3. VALIDATION
     const finalAmount = Math.round(Number(amount) * 100); // Cents
     if (!orderId || isNaN(finalAmount) || finalAmount <= 0) {
         return NextResponse.json({ error: "Invalid Data" }, { status: 400 });
     }
 
-    console.log(`🚀 Sending ${finalAmount} cents to Terminal via Raw Fetch...`);
+    console.log(`🚀 Sending ${finalAmount} cents to Terminal ${targetDevice}...`);
 
-    // 3. RAW FETCH REQUEST (Bypasses SDK Issues)
+    // 4. RAW FETCH REQUEST
     const response = await fetch('https://connect.squareup.com/v2/terminals/checkouts', {
       method: 'POST',
       headers: {
@@ -38,7 +43,7 @@ export async function POST(request) {
             currency: currency,
           },
           device_options: {
-            device_id: process.env.SQUARE_TERMINAL_ID,
+            device_id: targetDevice, // <--- USES THE DYNAMIC ID
           },
           reference_id: String(orderId),
           note: `Order #${orderId}`,
@@ -46,7 +51,7 @@ export async function POST(request) {
       }),
     });
 
-    // 4. HANDLE RESPONSE
+    // 5. HANDLE RESPONSE
     const data = await response.json();
 
     if (!response.ok) {
