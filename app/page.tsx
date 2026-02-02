@@ -167,8 +167,20 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
+  // --- LOGIC: FILTER VISIBLE PRODUCTS ---
+  // Updated: In Hosted Mode, products only show if they have at least 1 item in stock.
   const visibleProducts = products.filter(p => {
-      return Object.keys(activeItems).some(k => k.startsWith(p.id) && activeItems[k] === true);
+      const productKeys = Object.keys(activeItems).filter(k => k.startsWith(p.id));
+      
+      return productKeys.some(key => {
+          const isActive = activeItems[key] === true;
+          // IF HOSTED: Must be Active AND have Stock > 0
+          if (paymentMode === 'hosted') {
+              return isActive && (inventory[key] || 0) > 0;
+          }
+          // IF RETAIL: Just needs to be Active (allows backorders)
+          return isActive;
+      });
   });
 
   useEffect(() => {
@@ -189,7 +201,20 @@ export default function OrderForm() {
 
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    const unsorted = Object.keys(activeItems).filter(key => key.startsWith(selectedProduct.id + '_') && activeItems[key] === true).map(key => key.replace(`${selectedProduct.id}_`, ''));
+    
+    const unsorted = Object.keys(activeItems).filter(key => {
+        const isMatch = key.startsWith(selectedProduct.id + '_');
+        const isActive = activeItems[key] === true;
+
+        // NEW LOGIC: In Hosted Mode, filter out sizes with 0 stock
+        if (paymentMode === 'hosted') {
+            const hasStock = (inventory[key] || 0) > 0;
+            return isMatch && isActive && hasStock;
+        }
+
+        return isMatch && isActive;
+    }).map(key => key.replace(`${selectedProduct.id}_`, ''));
+
     return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
   const visibleSizes = getVisibleSizes();
