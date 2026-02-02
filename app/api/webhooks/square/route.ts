@@ -1,50 +1,46 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Setup Admin Supabase (Needs Service Role Key to bypass RLS if necessary, or Anon is fine if policies allow update)
+// Separate Supabase client for this webhook
 const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY // Use Service Key for backend updates
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
 export async function POST(req) {
   try {
-    const text = await req.text(); // Get raw body
-    // ideally validate signature here using process.env.SQUARE_WEBHOOK_SIGNATURE_KEY
+    // 1. Grab the data
+    const body = await req.json();
     
-    const event = JSON.parse(text);
+    // 2. Check if it is a Terminal Checkout Update
+    if (body.type === 'terminal.checkout.updated') {
+      const checkout = body.data.object.checkout;
+      const orderId = checkout.reference_id; // Retrieve our Supabase Order ID
 
-    // We care about "terminal.checkout.updated" or "payment.updated"
-    if (event.type === 'terminal.checkout.updated') {
-        const checkout = event.data.object.checkout;
-        const orderId = checkout.reference_id; // We sent this earlier
-        const status = checkout.status;
+      console.log(`🔔 Square Event: Order #${orderId} status is ${checkout.status}`);
 
-        console.log(`🔔 Webhook: Order ${orderId} is ${status}`);
+      // 3. If COMPLETED, mark as PAID
+      if (checkout.status === 'COMPLETED') {
+        const { error } = await supabase
+          .from('orders')
+          .update({ 
+            payment_status: 'paid', 
+            status: 'pending', // Ready to print/ship
+            payment_intent_id: checkout.id // Save Square Checkout ID here
+          })
+          .eq('id', orderId);
 
-        if (status === 'COMPLETED') {
-            // 1. Update Order in Supabase
-            const { error } = await supabase
-                .from('orders')
-                .update({ 
-                    payment_status: 'paid',
-                    status: 'pending_shipping', // or 'ready' depending on your flow
-                    payment_intent_id: checkout.payment_ids ? checkout.payment_ids[0] : 'terminal_txn'
-                })
-                .eq('id', orderId);
-
-            if (error) console.error("Supabase Update Error:", error);
-            else console.log("✅ Order marked as PAID.");
+        if (error) {
+            console.error("❌ DB Update Failed:", error);
+            return NextResponse.json({ error: error.message }, { status: 500 });
         }
-        
-        if (status === 'CANCELED') {
-             await supabase.from('orders').update({ status: 'canceled' }).eq('id', orderId);
-        }
+        console.log(`✅ Order #${orderId} marked as PAID.`);
+      }
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Webhook Error:", error);
-    return NextResponse.json({ success: false }, { status: 500 });
+  } catch (err) {
+    console.error("Webhook Error:", err);
+    return NextResponse.json({ error: err.message }, { status: 400 });
   }
 }
