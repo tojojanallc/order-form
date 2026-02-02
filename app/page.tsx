@@ -672,23 +672,5 @@ export default function OrderForm() {
         )}
       </div>
     </div>
-
-    {/* DYNAMIC VISUALIZER */}
-<div className="col-span-1">
-    {(() => {
-        // Find the full logo object for the currently selected design
-        const currentLogoObj = mainOptions.find(o => o.label === selectedMainDesign);
-        
-        // Use the database value (default to 'large' if missing)
-        const sizeFromDB = currentLogoObj?.placement || 'large';
-        
-        return (
-            <PlacementVisualizer 
-                garmentType={selectedProduct.type || 'top'} 
-                logoSize={sizeFromDB} // <--- REAL DATA
-            />
-        );
-    })()}
-</div>
   );
 }
