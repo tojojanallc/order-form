@@ -1,49 +1,43 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// ⚠️ CRITICAL FIX: Use SERVICE_ROLE_KEY to bypass RLS.
-// The "Anon" key will likely be blocked from updating orders by the database policies.
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY 
-);
+// SAFETY: Use Service Role to ensure we can write to the DB
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function POST(req) {
   try {
-    // 1. Grab the data
-    const text = await req.text(); // Get raw text first (safer for parsing)
+    const text = await req.text();
     const body = JSON.parse(text);
     
-    // 2. Filter for Terminal Checkout Updates
     if (body.type === 'terminal.checkout.updated') {
       const checkout = body.data.object.checkout;
-      const orderId = checkout.reference_id; // This links back to your Supabase Order ID
+      const orderId = checkout.reference_id;
       const status = checkout.status;
 
       console.log(`🔔 Square Webhook: Order #${orderId} is ${status}`);
 
-      // 3. If COMPLETED, update the database
       if (status === 'COMPLETED') {
+        // --- FIX: GRAB THE REAL PAYMENT ID ---
+        // Terminal Checkouts generate a list of payment_ids. We need the first one for refunds.
+        const paymentId = checkout.payment_ids ? checkout.payment_ids[0] : null;
+
         const { error } = await supabase
           .from('orders')
           .update({ 
             payment_status: 'paid', 
-            status: 'pending', // Order is now active/paid
-            payment_intent_id: checkout.id // Saves the Square Transaction ID for refunds
+            status: 'pending', 
+            payment_intent_id: paymentId // <--- NOW SAVING THE CORRECT ID FOR REFUNDS
           })
           .eq('id', orderId);
 
-        if (error) {
-            console.error("❌ Supabase Update Failed:", error);
-            return NextResponse.json({ error: error.message }, { status: 500 });
-        }
-        console.log(`✅ Order #${orderId} marked as PAID.`);
+        if (error) console.error("❌ Supabase Update Failed:", error.message);
+        else console.log(`✅ Order #${orderId} marked as PAID (ID: ${paymentId})`);
       }
-
-      // 4. (Optional) Handle Canceled
+      
       if (status === 'CANCELED') {
-          console.log(`🚫 Order #${orderId} was canceled at the terminal.`);
-          // Optional: Mark as canceled in DB if you want
+          await supabase.from('orders').update({ status: 'canceled' }).eq('id', orderId);
       }
     }
 

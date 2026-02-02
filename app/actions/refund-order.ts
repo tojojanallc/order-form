@@ -1,61 +1,68 @@
-'use server'
+'use server';
 
-import Stripe from 'stripe'
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { revalidatePath } from 'next/cache'
+import { createClient } from '@supabase/supabase-js';
+import Stripe from 'stripe';
+import { Client, Environment } from 'square';
 
-// Helper to get Supabase Client
-function createClient() {
-  const cookieStore = cookies()
+// 1. Setup Clients
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) { return cookieStore.get(name)?.value },
-        set(name: string, value: string, options: CookieOptions) { try { cookieStore.set({ name, value, ...options }) } catch (error) {} },
-        remove(name: string, options: CookieOptions) { try { cookieStore.set({ name, value: '', ...options }) } catch (error) {} },
-      },
-    }
-  )
-}
+const square = new Client({
+  accessToken: process.env.SQUARE_ACCESS_TOKEN,
+  environment: process.env.SQUARE_ENVIRONMENT === 'production' ? Environment.Production : Environment.Sandbox,
+});
 
-export async function refundOrder(orderId: string, paymentIntentId: string) {
-  // 1. SAFETY CHECK: Initialize Stripe INSIDE the function
-  if (!process.env.STRIPE_SECRET_KEY) {
-    return { success: false, message: 'Server Error: Missing Stripe Key' }
-  }
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+export async function refundOrder(orderId, paymentId) {
+  console.log(`💸 Attempting Refund for Order #${orderId} (Payment ID: ${paymentId})`);
 
   try {
-    if (!paymentIntentId) {
-      return { success: false, message: 'No payment ID found for this order.' }
+    // 2. FETCH ORDER TOTAL (Required for Square Refunds)
+    const { data: order } = await supabase.from('orders').select('total_price').eq('id', orderId).single();
+    const amountInCents = Math.round((order?.total_price || 0) * 100);
+
+    let refundId = '';
+
+    // 3. DECIDE: STRIPE OR SQUARE?
+    if (paymentId.startsWith('pi_')) {
+      // --- STRIPE REFUND ---
+      console.log("👉 Detected Stripe Payment");
+      const refund = await stripe.refunds.create({
+        payment_intent: paymentId,
+      });
+      refundId = refund.id;
+
+    } else {
+      // --- SQUARE REFUND ---
+      console.log("👉 Detected Square Payment");
+      
+      if (!amountInCents) throw new Error("Could not determine refund amount from order.");
+
+      const response = await square.refundsApi.refundPayment({
+        idempotencyKey: `refund_${orderId}_${Date.now()}`,
+        amountMoney: {
+          amount: BigInt(amountInCents),
+          currency: 'USD'
+        },
+        paymentId: paymentId // Requires the Payment ID (from payment_ids[0])
+      });
+
+      refundId = response.result.refund.id;
     }
 
-    console.log(`Processing refund for ${orderId}...`)
-
-    // 2. Process Refund
-    await stripe.refunds.create({
-      payment_intent: paymentIntentId,
-    })
-
-    // 3. Update Database
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('orders')
-      .update({ status: 'refunded' })
-      .eq('id', orderId)
-
-    if (error) throw error
-
-    // 4. Refresh Page
-    revalidatePath('/admin')
+    // 4. UPDATE DATABASE
+    await supabase.from('orders').update({ status: 'refunded' }).eq('id', orderId);
     
-    return { success: true, message: 'Refund successful' }
-  } catch (error: any) {
-    console.error('Refund Error:', error)
-    return { success: false, message: error.message || 'Refund failed' }
+    return { success: true, message: `Refunded successfully (ID: ${refundId})` };
+
+  } catch (error) {
+    console.error("❌ Refund Error:", error);
+    // Handle Square's complex error objects
+    const msg = error.result ? JSON.stringify(error.result.errors) : error.message;
+    return { success: false, message: msg };
   }
 }
