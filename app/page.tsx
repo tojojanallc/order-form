@@ -510,7 +510,7 @@ export default function OrderForm() {
                     {/* --- 2. MAIN DESIGN --- */}
                     {selectedProduct && mainOptions.length > 0 && (
                         <section>
-                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
+                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                                 {mainOptions.map((opt) => (
                                     <button 
@@ -526,11 +526,31 @@ export default function OrderForm() {
                             </div>
                         </section>
                     )}
+{/* DYNAMIC VISUALIZER */}
+<div className="col-span-1">
+    {(() => {
+        // Find the full logo object for the currently selected design
+        const currentLogoObj = mainOptions.find(o => o.label === selectedMainDesign);
+        
+        // Use the database value (default to 'large' if missing)
+        const sizeFromDB = currentLogoObj?.placement || 'large';
+        
+        return (
+            <PlacementVisualizer 
+                garmentType={selectedProduct.type || 'top'} 
+                logoSize={sizeFromDB} // <--- REAL DATA
+            />
+        );
+    })()}
+</div>
+
+
+
 
                     {/* --- 3. ACCENTS --- */}
                     {selectedProduct && accentOptions.length > 0 && (
                         <section>
-                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
+                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                             <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
                                 {accentOptions.map((opt) => (
                                     <button key={opt.label} onClick={() => addLogo(opt.label)} className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95">
