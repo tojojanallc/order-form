@@ -508,10 +508,16 @@ export default function OrderForm() {
                     </section>
 
                     {/* --- 2. MAIN DESIGN --- */}
-                    {selectedProduct && mainOptions.length > 0 && (
-                        <section>
-                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
-                            <div className="grid grid-cols-3 gap-4 mb-4">
+                    {/* --- 2. MAIN DESIGN (Updated with Visualizer) --- */}
+{selectedProduct && mainOptions.length > 0 && (
+    <section>
+        <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
+            <h2 className="font-bold text-black">2. Choose Design</h2>
+            <span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span>
+        </div>
+        
+        {/* GRID LAYOUT: Buttons on Left, Visualizer on Right */}
+        <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="col-span-2 grid grid-cols-2 gap-3">
                 {mainOptions.map((opt) => (
                     <button 
@@ -525,7 +531,8 @@ export default function OrderForm() {
                     </button>
                 ))}
             </div>
-                        {/* VISUALIZER BOX */}
+            
+            {/* VISUALIZER BOX */}
             <div className="col-span-1">
                 {(() => {
                     const currentLogoObj = mainOptions.find(o => o.label === selectedMainDesign);
@@ -542,9 +549,7 @@ export default function OrderForm() {
             </div>
         </div>
     </section>
-)}    
-                        </section>
-                    )}
+)}
 
 
 
