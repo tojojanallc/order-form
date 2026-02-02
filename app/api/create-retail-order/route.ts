@@ -3,54 +3,65 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY // Service Role needed for inventory updates
 );
 
-export async function POST(request) {
+export async function POST(req) {
   try {
-    const { cart, customerName, total } = await request.json();
+    const { cart, customerName, total } = await req.json();
 
-    // 1. Decrement Inventory & Validate
-    for (const item of cart) {
-        if (!item.productId || !item.size) continue;
-        const { data: current } = await supabase
-            .from('inventory')
-            .select('count')
-            .eq('product_id', item.productId)
-            .eq('size', item.size)
-            .single();
-
-        if (!current || current.count < 1) {
-            return NextResponse.json({ error: `Out of stock: ${item.productName} (${item.size})` }, { status: 400 });
-        }
-
-        await supabase
-            .from('inventory')
-            .update({ count: current.count - 1 })
-            .eq('product_id', item.productId)
-            .eq('size', item.size);
+    if (!cart || cart.length === 0) {
+      return NextResponse.json({ success: false, error: "Cart is empty" }, { status: 400 });
     }
 
-    // 2. Create the "Unpaid" Order Row
-    const { data: order, error } = await supabase
-        .from('orders')
-        .insert({
-            customer_name: customerName || 'Walk-in Retail',
-            cart_data: cart,
-            total_price: total,
-            status: 'pending', // Order exists...
-            payment_status: 'unpaid', // ...but waiting for Terminal
-            event_name: 'Retail Kiosk', // Optional: Tag these orders
-        })
-        .select()
+    // 1. Process Inventory (Allow Backorders)
+    for (const item of cart) {
+      const { productId, size } = item;
+
+      // Check current stock
+      const { data: invItem } = await supabase
+        .from('inventory')
+        .select('count, active')
+        .eq('product_id', productId)
+        .eq('size', size)
         .single();
 
-    if (error) throw error;
+      if (invItem) {
+        if (invItem.count > 0) {
+          // In Stock: Decrement it
+          await supabase.from('inventory').update({ count: invItem.count - 1 }).eq('product_id', productId).eq('size', size);
+        } else {
+          // Out of Stock: Just log it, DO NOT BLOCK (Allow "Ship to Home")
+          console.log(`⚠️ Backorder placed for: ${item.productName} (${size})`);
+        }
+      }
+    }
 
-    return NextResponse.json({ success: true, orderId: order.id });
+    // 2. Determine Shipping Status
+    const hasBackorder = cart.some(item => item.needsShipping); // Frontend flag
+
+    // 3. Create Order
+    const { data, error } = await supabase
+      .from('orders')
+      .insert([
+        {
+          customer_name: customerName,
+          cart_data: cart,
+          total_price: total,
+          payment_status: 'pending', // Will be updated by Terminal
+          status: hasBackorder ? 'pending_shipping' : 'pending', // Flag for shipping if needed
+          created_at: new Date(),
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    return NextResponse.json({ success: true, orderId: data.id });
 
   } catch (error) {
-    console.error("Create Order Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Order Creation Error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
