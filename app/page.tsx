@@ -511,19 +511,38 @@ export default function OrderForm() {
                     {selectedProduct && mainOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-                                {mainOptions.map((opt) => (
-                                    <button 
-                                        key={opt.label} 
-                                        onClick={() => setSelectedMainDesign(opt.label)} 
-                                        className={`border-2 rounded-lg p-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${selectedMainDesign === opt.label ? 'border-green-600 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 bg-white hover:border-gray-400'}`}
-                                    >
-                                        {opt.image_url ? (<img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />) : (<div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>)}
-                                        <span className={`text-xs font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
-                                        {selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
-                                    </button>
-                                ))}
-                            </div>
+                            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="col-span-2 grid grid-cols-2 gap-3">
+                {mainOptions.map((opt) => (
+                    <button 
+                        key={opt.label} 
+                        onClick={() => setSelectedMainDesign(opt.label)} 
+                        className={`border-2 rounded-lg p-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${selectedMainDesign === opt.label ? 'border-green-600 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 bg-white hover:border-gray-400'}`}
+                    >
+                        {opt.image_url ? (<img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />) : (<div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>)}
+                        <span className={`text-xs font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
+                        {selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
+                    </button>
+                ))}
+            </div>
+                        {/* VISUALIZER BOX */}
+            <div className="col-span-1">
+                {(() => {
+                    const currentLogoObj = mainOptions.find(o => o.label === selectedMainDesign);
+                    // Default to 'large' if you haven't set it in Admin yet
+                    const sizeFromDB = currentLogoObj?.placement || 'large';
+                    
+                    return (
+                        <PlacementVisualizer 
+                            garmentType={selectedProduct.type || 'top'} 
+                            logoSize={sizeFromDB} 
+                        />
+                    );
+                })()}
+            </div>
+        </div>
+    </section>
+)}    
                         </section>
                     )}
 
