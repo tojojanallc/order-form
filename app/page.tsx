@@ -414,8 +414,7 @@ export default function OrderForm() {
         setTerminalStatus('');
     }
   };
-
-  // --- CASH CHECKOUT HANDLER ---
+// --- CASH CHECKOUT HANDLER (Updated) ---
   const handleCashCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
@@ -431,7 +430,10 @@ export default function OrderForm() {
 
     setIsSubmitting(true);
     
-    // Insert Order as 'unpaid' / 'cash'
+    // 1. GET THE EVENT SLUG FROM URL
+    const currentSlug = new URLSearchParams(window.location.search).get('event') || 'default';
+
+    // 2. SAVE ORDER WITH SLUG
     const { error } = await supabase.from('orders').insert([{ 
       customer_name: customerName, 
       phone: customerPhone || 'N/A', 
@@ -442,9 +444,10 @@ export default function OrderForm() {
       shipping_state: cartRequiresShipping ? shippingState : null,
       shipping_zip: cartRequiresShipping ? shippingZip : null,
       status: 'pending', 
-      payment_status: 'unpaid', // <--- Key for Cash
+      payment_status: 'unpaid', 
       payment_method: 'cash', 
       event_name: eventName,
+      event_slug: currentSlug, // <--- SAVES 'event2' HERE
       created_at: new Date()
     }]);
 
@@ -456,6 +459,7 @@ export default function OrderForm() {
     setIsSubmitting(false);
   };
   
+  // --- REGULAR CHECKOUT HANDLER (Updated) ---
   const handleCheckout = async () => {
     if (paymentMode === 'hosted') {
         if (!selectedGuest) { alert("Please verify your name first."); return; }
@@ -470,16 +474,21 @@ export default function OrderForm() {
     
     setIsSubmitting(true);
     
+    // 1. GET THE EVENT SLUG FROM URL
+    const currentSlug = new URLSearchParams(window.location.search).get('event') || 'default';
+
     const { error } = await supabase.from('orders').insert([{ 
       customer_name: paymentMode === 'hosted' ? selectedGuest.name : customerName, 
       phone: customerPhone || 'N/A', 
-      cart_data: cart, total_price: calculateGrandTotal(),
+      cart_data: cart, 
+      total_price: calculateGrandTotal(),
       shipping_address: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingAddress : null,
       shipping_city: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingCity : null,
       shipping_state: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingState : null,
       shipping_zip: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingZip : null,
       status: cartRequiresShipping ? 'pending_shipping' : 'pending',
-      event_name: eventName 
+      event_name: eventName,
+      event_slug: currentSlug // <--- SAVES 'event2' HERE
     }]);
 
     if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
