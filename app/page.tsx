@@ -479,18 +479,12 @@ export default function OrderForm() {
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 px-4 font-sans text-gray-900 flex justify-center items-start">
+      {/* 1. mx-auto: Centers the app
+          2. zoom: 1.25: Makes everything 25% bigger for the iPad
+      */}
       <div 
-        className="w-full max-w-5xl mx-auto grid md:grid-cols-3 gap-8" 
-        style={{ 
-            // SAFARI FIX:
-            // 1. Scale up by 15%
-            transform: 'scale(1.15)', 
-            // 2. Pin it to the top center so it expands evenly
-            transformOrigin: 'top center',
-            // 3. Compensate width: 100% / 1.15 = ~87%. 
-            // This prevents it from being wider than the screen.
-            width: '86.9%' 
-        }}
+        className="w-full max-w-6xl mx-auto grid md:grid-cols-3 gap-8" 
+        style={{ zoom: '1.25' }}
       >
         
         {/* LEFT COLUMN: PRODUCT BUILDER */}
@@ -598,11 +592,7 @@ export default function OrderForm() {
                                             <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
                                                 <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
                                                 <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
-                                                <select 
-                                                    className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} 
-                                                    value={logo.position} 
-                                                    onChange={(e) => updateLogo(index, 'position', e.target.value)}
-                                                >
+                                                <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
                                                     <option value="">Position...</option>
                                                     {getPositionOptions('logo', true).map(pos => (
                                                         <option key={pos.id} value={pos.label}>{pos.label}</option>
@@ -732,6 +722,7 @@ export default function OrderForm() {
       </div>
     </div>
   );
+}
 
 const PlacementVisualizer = ({ garmentType, logoSize }) => {
   const isTop = !garmentType || garmentType === 'top';
