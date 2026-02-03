@@ -436,7 +436,7 @@ export default function OrderForm() {
   // --- SETUP SCREEN ---
   if (showSetup) {
       return (
-          <div className="max-w-4xl mx-auto w-full p-6 bg-gray-50 min-h-screen font-sans text-gray-900">
+          <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
               <h1 className="text-3xl font-bold mb-8">🛠️ Kiosk Setup Mode</h1>
               <div className="space-y-4 w-full max-w-md">
                   <p className="text-gray-400 text-center mb-4">Select which Terminal this iPad should trigger:</p>
@@ -478,8 +478,14 @@ export default function OrderForm() {
   const showPrice = paymentMode === 'retail';
 
   return (
-    <div className="min-h-screen bg-gray-100 py-10 px-4 font-sans text-gray-900 flex justify-center items-start">
-      <div className="w-full max-w-7xl grid md:grid-cols-3 gap-8">
+    <div className="min-h-screen bg-gray-100 py-6 px-4 font-sans text-gray-900 flex justify-center items-start">
+      {/* 1. mx-auto: Centers the app
+          2. zoom: 1.25: Makes everything 25% bigger for the iPad
+      */}
+      <div 
+        className="w-full max-w-6xl mx-auto grid md:grid-cols-3 gap-8" 
+        style={{ zoom: '1.25' }}
+      >
         
         {/* LEFT COLUMN: PRODUCT BUILDER */}
         <div className="md:col-span-2 space-y-6">
@@ -527,53 +533,43 @@ export default function OrderForm() {
                         )}
                     </section>
 
-                    {/* --- 2. MAIN DESIGN --- */}
-                    {/* --- 2. MAIN DESIGN (Updated with Visualizer) --- */}
-{selectedProduct && mainOptions.length > 0 && (
-    <section>
-        <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
-            <h2 className="font-bold text-black">2. Choose Design</h2>
-            <span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span>
-        </div>
-        
-        {/* GRID LAYOUT: Buttons on Left, Visualizer on Right */}
-        <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="col-span-2 grid grid-cols-2 gap-3">
-                {mainOptions.map((opt) => (
-                    <button 
-                        key={opt.label} 
-                        onClick={() => setSelectedMainDesign(opt.label)} 
-                        className={`border-2 rounded-lg p-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${selectedMainDesign === opt.label ? 'border-green-600 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 bg-white hover:border-gray-400'}`}
-                    >
-                        {opt.image_url ? (<img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />) : (<div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>)}
-                        <span className={`text-xs font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
-                        {selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
-                    </button>
-                ))}
-            </div>
-            
-            {/* VISUALIZER BOX */}
-            <div className="col-span-1">
-                {(() => {
-                    const currentLogoObj = mainOptions.find(o => o.label === selectedMainDesign);
-                    // Default to 'large' if you haven't set it in Admin yet
-                    const sizeFromDB = currentLogoObj?.placement || 'large';
-                    
-                    return (
-                        <PlacementVisualizer 
-                            garmentType={selectedProduct.type || 'top'} 
-                            logoSize={sizeFromDB} 
-                        />
-                    );
-                })()}
-            </div>
-        </div>
-    </section>
-)}
-
-
-
-
+                    {/* --- 2. MAIN DESIGN (With Visualizer) --- */}
+                    {selectedProduct && mainOptions.length > 0 && (
+                        <section>
+                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
+                                <h2 className="font-bold text-black">2. Choose Design</h2>
+                                <span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span>
+                            </div>
+                            
+                            <div className="grid grid-cols-3 gap-4 mb-4">
+                                <div className="col-span-2 grid grid-cols-2 gap-3">
+                                    {mainOptions.map((opt) => (
+                                        <button 
+                                            key={opt.label} 
+                                            onClick={() => setSelectedMainDesign(opt.label)} 
+                                            className={`border-2 rounded-lg p-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${selectedMainDesign === opt.label ? 'border-green-600 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 bg-white hover:border-gray-400'}`}
+                                        >
+                                            {opt.image_url ? (<img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />) : (<div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>)}
+                                            <span className={`text-xs font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
+                                            {selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="col-span-1">
+                                    {(() => {
+                                        const currentLogoObj = mainOptions.find(o => o.label === selectedMainDesign);
+                                        const sizeFromDB = currentLogoObj?.placement || 'large';
+                                        return (
+                                            <PlacementVisualizer 
+                                                garmentType={selectedProduct.type || 'top'} 
+                                                logoSize={sizeFromDB} 
+                                            />
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        </section>
+                    )}
 
                     {/* --- 3. ACCENTS --- */}
                     {selectedProduct && accentOptions.length > 0 && (
@@ -596,18 +592,13 @@ export default function OrderForm() {
                                             <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
                                                 <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
                                                 <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
-                                                {/* --- REPLACED DROPDOWN --- */}
-                            <select 
-                                className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} 
-                                value={logo.position} 
-                                onChange={(e) => updateLogo(index, 'position', e.target.value)}
-                            >
-                                <option value="">Position...</option>
-                                {/* We pass 'true' here to trigger the filter we just added */}
-                                {getPositionOptions('logo', true).map(pos => (
-                                    <option key={pos.id} value={pos.label}>{pos.label}</option>
-                                ))}
-                            </select><button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
+                                                <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
+                                                    <option value="">Position...</option>
+                                                    {getPositionOptions('logo', true).map(pos => (
+                                                        <option key={pos.id} value={pos.label}>{pos.label}</option>
+                                                    ))}
+                                                </select>
+                                                <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
                                             </div>
                                         );
                                     })}
@@ -616,7 +607,7 @@ export default function OrderForm() {
                         </section>
                     )}
 
-                    {/* --- 4. PERSONALIZATION (CONDITIONAL) --- */}
+                    {/* --- 4. PERSONALIZATION --- */}
                     {selectedProduct && showPersonalization && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
@@ -731,7 +722,6 @@ export default function OrderForm() {
       </div>
     </div>
   );
-  
 }
 
 const PlacementVisualizer = ({ garmentType, logoSize }) => {
