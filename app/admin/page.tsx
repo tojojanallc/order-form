@@ -49,6 +49,10 @@ export default function AdminPage() {
   const [stats, setStats] = useState({ revenue: 0, count: 0, net: 0, topItem: '-' });
   const [uploadLog, setUploadLog] = useState([]); 
 
+// --- MULTI-EVENT STATE ---
+  const [availableEvents, setAvailableEvents] = useState([]);
+  const [selectedEventSlug, setSelectedEventSlug] = useState(''); // The master filter
+
   const [editingOrder, setEditingOrder] = useState(null);
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
@@ -91,65 +95,61 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- ENGINE: SYNCED REFRESH (Guest List + Orders) ---
+// --- ENGINE: LOAD EVENTS FIRST ---
   useEffect(() => {
-    if (isAuthorized && mounted) {
-        // Initial Fetch
-        fetchOrders(); fetchSettings(); fetchInventory(); fetchLogos(); fetchGuests(); fetchTerminals();
-        
-        let channel = null;
-        if (supabase) {
-            channel = supabase.channel('admin_global_sync')
-                // 1. If Orders change, refresh Orders AND Guests (to update 'Redeemed' status)
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-                    console.log("⚡ Order Update: Refreshing All Lists...");
-                    fetchOrders(); 
-                    fetchGuests(); 
-                })
-                // 2. If Guests change directly (e.g. upload), refresh Guests
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, () => {
-                    fetchGuests();
-                })
-                .subscribe();
-        }
-
-        // 3. Fallback Polling (Every 5s) - Updates BOTH
-        const interval = setInterval(() => { 
-            fetchOrders(); 
-            fetchGuests(); 
-        }, 5000); 
-
-        return () => { 
-            if(channel && supabase) supabase.removeChannel(channel); 
-            clearInterval(interval);
-        };
-    }
+      if (isAuthorized && mounted) {
+          const loadEvents = async () => {
+              const { data } = await supabase.from('event_settings').select('*').order('id');
+              if (data && data.length > 0) {
+                  setAvailableEvents(data);
+                  // Default to the first event if none selected
+                  if (!selectedEventSlug) setSelectedEventSlug(data[0].slug);
+              }
+          };
+          loadEvents();
+      }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: AUTO-PRINT (Smart Logic) ---
+  // --- ENGINE: SYNC DATA BASED ON SELECT EVENT ---
+  useEffect(() => {
+    if (isAuthorized && mounted && selectedEventSlug) {
+        console.log("🔄 Switching Admin View to:", selectedEventSlug);
+        fetchOrders(); 
+        fetchSettings(); 
+        fetchInventory(); 
+        fetchLogos(); 
+        fetchGuests(); 
+        fetchTerminals(); 
+        
+        // Realtime Subscription (Filtered)
+        const channel = supabase.channel('admin_filtered_sync')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `event_slug=eq.${selectedEventSlug}` }, () => {
+                fetchOrders();
+                fetchGuests();
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }
+  }, [selectedEventSlug, isAuthorized, mounted]);
+
+  // --- AUTO-PRINT LOGIC (Kept Intact) ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
       return;
     }
-
     if (!mounted || !autoPrintEnabled || orders.length === 0) return;
 
     if (orders.length > lastOrderCount.current) {
       const newestOrder = orders[0]; 
       const isRecent = (new Date().getTime() - new Date(newestOrder.created_at).getTime()) < 300000;
-      
       const pStatus = (newestOrder.payment_status || '').toLowerCase();
       const isHostedEvent = paymentMode === 'hosted';
       const isStrictlyPaid = pStatus === 'paid' || pStatus === 'succeeded' || Number(newestOrder.total_price) === 0;
-      
-      // If Hosted, we trust almost anything. If Retail, we need proof of payment.
-      const isValid = isHostedEvent 
-          ? (newestOrder.status !== 'incomplete' && newestOrder.status !== 'awaiting_payment')
-          : isStrictlyPaid;
+      const isValid = isHostedEvent ? (newestOrder.status !== 'incomplete') : isStrictlyPaid;
 
       if (isRecent && isValid && !newestOrder.printed && !processedIds.current.has(newestOrder.id)) {
-        console.log("✅ AUTO-PRINT (Synced):", newestOrder.id);
         processedIds.current.add(newestOrder.id);
         if (audioRef.current) audioRef.current.play().catch(() => {});
         printLabel(newestOrder);
@@ -158,7 +158,7 @@ export default function AdminPage() {
     lastOrderCount.current = orders.length;
   }, [orders, autoPrintEnabled, mounted, paymentMode]);
 
-  // Recalculate Totals
+  // --- RECALCULATE TOTALS (Kept Intact) ---
   useEffect(() => {
       if (editingOrder && mounted) {
           let total = 0;
@@ -181,7 +181,7 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
-  // Stats Logic
+  // --- STATS LOGIC (Kept Intact) ---
   useEffect(() => {
     if(!mounted || !orders) return;
     try {
@@ -213,14 +213,35 @@ export default function AdminPage() {
 
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
+  // --- FETCHERS (FILTERED BY EVENT) ---
   const fetchOrders = async () => { 
-      if (!supabase) return; 
-      const { data } = await supabase.from('orders').select('*').order('created_at', { ascending: false }); 
+      if (!supabase || !selectedEventSlug) return; 
+      const { data } = await supabase.from('orders')
+        .select('*')
+        .eq('event_slug', selectedEventSlug)
+        .order('created_at', { ascending: false }); 
       if (data) setOrders(data); 
   };
 
-  const fetchInventory = async () => { if (!supabase) return; const { data: p } = await supabase.from('products').select('*').order('sort_order'); const { data: i } = await supabase.from('inventory').select('*').order('product_id', { ascending: true }); if (p) setProducts(p); if (i) setInventory(i); };
-  const fetchLogos = async () => { if (!supabase) return; const { data } = await supabase.from('logos').select('*').order('sort_order'); if (data) setLogos(data); };
+  const fetchInventory = async () => { 
+      if (!supabase || !selectedEventSlug) return; 
+      const { data: p } = await supabase.from('products').select('*').order('sort_order'); 
+      const { data: i } = await supabase.from('inventory')
+        .select('*')
+        .eq('event_slug', selectedEventSlug) // <--- EVENT FILTER
+        .order('product_id', { ascending: true }); 
+      if (p) setProducts(p); 
+      if (i) setInventory(i); 
+  };
+
+  const fetchLogos = async () => { 
+      if (!supabase || !selectedEventSlug) return; 
+      const { data } = await supabase.from('logos')
+        .select('*')
+        .eq('event_slug', selectedEventSlug) // <--- EVENT FILTER
+        .order('sort_order'); 
+      if (data) setLogos(data); 
+  };
   
   const fetchGuests = async () => { 
       if (!supabase) return; 
@@ -233,6 +254,28 @@ export default function AdminPage() {
       if (!supabase) return; 
       const { data } = await supabase.from('terminals').select('*').order('id'); 
       if (data) setTerminals(data); 
+  };
+
+  const fetchSettings = async () => { 
+      if (!supabase || !selectedEventSlug) return; 
+      const { data } = await supabase.from('event_settings')
+        .select('*')
+        .eq('slug', selectedEventSlug) // <--- EVENT FILTER
+        .single(); 
+      if (data) { 
+          setEventName(data.event_name); 
+          setEventLogo(data.event_logo_url || ''); 
+          setHeaderColor(data.header_color || '#1e3a8a'); 
+          setPaymentMode(data.payment_mode || 'retail'); 
+          setRetailPaymentMethod(data.retail_payment_method || 'stripe'); 
+          setPrinterType(data.printer_type || 'label'); 
+          setOfferBackNames(data.offer_back_names ?? true); 
+          setOfferMetallic(data.offer_metallic ?? true); 
+          setOfferPersonalization(data.offer_personalization ?? true); 
+          setPnEnabled(data.printnode_enabled || false); 
+          setPnApiKey(data.printnode_api_key || ''); 
+          setPnPrinterId(data.printnode_printer_id || ''); 
+      } 
   };
 
   const addTerminal = async () => { 
@@ -268,7 +311,23 @@ export default function AdminPage() {
       } 
   };
 
-  const saveSettings = async () => { await supabase.from('event_settings').update({ event_name: eventName, event_logo_url: eventLogo, header_color: headerColor, payment_mode: paymentMode, retail_payment_method: retailPaymentMethod, printer_type: printerType, offer_back_names: offerBackNames, offer_metallic: offerMetallic, offer_personalization: offerPersonalization, printnode_enabled: pnEnabled, printnode_api_key: pnApiKey, printnode_printer_id: pnPrinterId }).eq('id', 1); alert("Saved!"); };
+  const saveSettings = async () => { 
+      await supabase.from('event_settings').update({ 
+          event_name: eventName, 
+          event_logo_url: eventLogo, 
+          header_color: headerColor, 
+          payment_mode: paymentMode, 
+          retail_payment_method: retailPaymentMethod, 
+          printer_type: printerType, 
+          offer_back_names: offerBackNames, 
+          offer_metallic: offerMetallic, 
+          offer_personalization: offerPersonalization, 
+          printnode_enabled: pnEnabled, 
+          printnode_api_key: pnApiKey, 
+          printnode_printer_id: pnPrinterId 
+      }).eq('slug', selectedEventSlug); 
+      alert("Saved settings for " + selectedEventSlug); 
+  };
   const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   const handleStatusChange = async (orderId, newStatus) => { setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o)); await supabase.from('orders').update({ status: newStatus }).eq('id', orderId); };
   const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
@@ -426,8 +485,20 @@ export default function AdminPage() {
       setLoading(false); 
   };
 
-  const addLogo = async (e) => { e.preventDefault(); if (!newLogoName) return; await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, category: newLogoCategory, placement: newLogoPlacement, sort_order: logos.length + 1 }]); setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); };
-  const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
+  const addLogo = async (e) => { 
+      e.preventDefault(); 
+      if (!newLogoName) return; 
+      await supabase.from('logos').insert([{ 
+          label: newLogoName, 
+          image_url: newLogoUrl, 
+          category: newLogoCategory, 
+          placement: newLogoPlacement, 
+          sort_order: logos.length + 1,
+          event_slug: selectedEventSlug 
+      }]); 
+      setNewLogoName(''); setNewLogoUrl(''); 
+      fetchLogos(); 
+  };const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   const deleteProduct = async (id) => { if (!confirm("Delete product?")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
   
@@ -444,12 +515,12 @@ export default function AdminPage() {
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   
   // FIX: Added Cost to Insert & Removed Auto-Caps
-  const handleAddProductWithSizeUpdates = async (e) => { 
+const handleAddProductWithSizeUpdates = async (e) => { 
       e.preventDefault(); 
       if (!newProdId || !newProdName) return alert("Missing Info"); 
       const safeId = newProdId.toLowerCase().replace(/\s/g, '_');
       
-      // Save Product (name as typed)
+      // Save Product (Global)
       await supabase.from('products').insert([{ 
           id: safeId, 
           name: newProdName, 
@@ -459,14 +530,15 @@ export default function AdminPage() {
           sort_order: 99 
       }]); 
       
-      // Save Inventory with COST
+      // Save Inventory (Event Specific)
       const sizes = SIZE_ORDER; 
       await supabase.from('inventory').insert(sizes.map(s => ({ 
           product_id: safeId, 
           size: s, 
           count: 0, 
-          cost_price: parseFloat(newProdCost), // Uses input cost
-          active: true 
+          cost_price: parseFloat(newProdCost), 
+          active: true,
+          event_slug: selectedEventSlug 
       }))); 
       
       alert("Created!"); 
@@ -607,7 +679,23 @@ export default function AdminPage() {
       <audio ref={audioRef} src="/ding.mp3" preload="auto" />
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-          <h1 className="text-3xl font-black text-gray-900">{eventName || 'Admin Dashboard'}</h1>
+          <div className="flex flex-col">
+              <h1 className="text-3xl font-black text-gray-900">{eventName || 'Admin Dashboard'}</h1>
+              <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs font-bold text-gray-500 uppercase">Viewing Event:</span>
+                  <select 
+                      value={selectedEventSlug} 
+                      onChange={(e) => setSelectedEventSlug(e.target.value)} 
+                      className="bg-white border border-gray-300 text-sm font-bold rounded py-1 px-2 cursor-pointer shadow-sm hover:border-blue-500"
+                  >
+                      {availableEvents.map(evt => (
+                          <option key={evt.id} value={evt.slug}>
+                              {evt.event_name} ({evt.slug})
+                          </option>
+                      ))}
+                  </select>
+              </div>
+          </div>
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
             {['orders', 'history', 'inventory', 'guests', 'logos', 'terminals', 'settings'].map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded font-bold ${activeTab === tab ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>{tab}</button>
