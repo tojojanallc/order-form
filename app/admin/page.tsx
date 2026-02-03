@@ -222,18 +222,22 @@ export default function AdminPage() {
         .order('created_at', { ascending: false }); 
       if (data) setOrders(data); 
   };
-
-  const fetchInventory = async () => { 
+const fetchInventory = async () => { 
       if (!supabase || !selectedEventSlug) return; 
+      
+      // 1. Get Global Products (Shared info like Name/Image)
       const { data: p } = await supabase.from('products').select('*').order('sort_order'); 
+      
+      // 2. Get Inventory (Specific to THIS Event)
       const { data: i } = await supabase.from('inventory')
         .select('*')
-        .eq('event_slug', selectedEventSlug) // <--- EVENT FILTER
+        .eq('event_slug', selectedEventSlug) // <--- THIS SEPARATES THE STOCK
         .order('product_id', { ascending: true }); 
+      
       if (p) setProducts(p); 
       if (i) setInventory(i); 
   };
-
+  
   const fetchLogos = async () => { 
       if (!supabase || !selectedEventSlug) return; 
       const { data } = await supabase.from('logos')
