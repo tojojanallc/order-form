@@ -390,6 +390,47 @@ export default function OrderForm() {
     }
   };
 
+  // --- CASH CHECKOUT HANDLER ---
+  const handleCashCheckout = async () => {
+    if (cart.length === 0) return alert("Cart is empty");
+    if (!customerName) return alert("Please enter Name");
+    
+    // Check shipping if needed
+    if (cartRequiresShipping) { 
+        if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { 
+            alert("Shipping Address Required!"); return; 
+        } 
+    }
+    
+    if(!confirm("Confirm Pay with Cash?\n\nPlease proceed to the counter to pay.")) return;
+
+    setIsSubmitting(true);
+    
+    // Insert Order as 'unpaid' / 'cash'
+    const { error } = await supabase.from('orders').insert([{ 
+      customer_name: customerName, 
+      phone: customerPhone || 'N/A', 
+      cart_data: cart, 
+      total_price: calculateGrandTotal(),
+      shipping_address: cartRequiresShipping ? shippingAddress : null,
+      shipping_city: cartRequiresShipping ? shippingCity : null,
+      shipping_state: cartRequiresShipping ? shippingState : null,
+      shipping_zip: cartRequiresShipping ? shippingZip : null,
+      status: 'pending', 
+      payment_status: 'unpaid', // <--- Key for Cash
+      payment_method: 'cash', 
+      event_name: eventName,
+      created_at: new Date()
+    }]);
+
+    if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
+
+    setOrderComplete(true);
+    setCart([]);
+    setCustomerName('');
+    setIsSubmitting(false);
+  };
+  
   const handleCheckout = async () => {
     if (paymentMode === 'hosted') {
         if (!selectedGuest) { alert("Please verify your name first."); return; }
@@ -682,7 +723,9 @@ export default function OrderForm() {
                         </div>
                     )}
                     
+                    {/* --- BUTTONS SECTION --- */}
                     <div className="space-y-3">
+                        {/* 1. SQUARE TERMINAL BUTTON */}
                         {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && (
                             <button 
                                 onClick={handleTerminalCheckout}
@@ -693,14 +736,11 @@ export default function OrderForm() {
                                     : 'bg-purple-700 hover:bg-purple-800'
                                 }`}
                             >
-                                {isTerminalProcessing ? (
-                                    <span>📟 {terminalStatus}</span>
-                                ) : (
-                                    <span>📟 Pay with Terminal</span>
-                                )}
+                                {isTerminalProcessing ? <span>📟 {terminalStatus}</span> : <span>📟 Pay with Card (Terminal)</span>}
                             </button>
                         )}
 
+                        {/* 2. STRIPE LINK / HOSTED BUTTON */}
                         {((paymentMode === 'retail' && retailPaymentMethod !== 'terminal') || paymentMode === 'hosted') && (
                             <button 
                                 onClick={handleCheckout} 
@@ -711,6 +751,17 @@ export default function OrderForm() {
                                 style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}
                             >
                                 {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link (Email/SMS)")}
+                            </button>
+                        )}
+
+                        {/* 3. NEW CASH BUTTON (Retail Only) */}
+                        {paymentMode === 'retail' && (
+                            <button 
+                                onClick={handleCashCheckout}
+                                disabled={isSubmitting || isTerminalProcessing}
+                                className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                            >
+                                💵 Pay with Cash (at Counter)
                             </button>
                         )}
                     </div>
