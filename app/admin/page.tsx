@@ -237,7 +237,7 @@ const fetchInventory = async () => {
       if (p) setProducts(p); 
       if (i) setInventory(i); 
   };
-  
+
   const fetchLogos = async () => { 
       if (!supabase || !selectedEventSlug) return; 
       const { data } = await supabase.from('logos')
@@ -490,8 +490,38 @@ const fetchInventory = async () => {
       }]); 
       setNewLogoName(''); setNewLogoUrl(''); 
       fetchLogos(); 
-  };const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
-  const deleteProduct = async (id) => { if (!confirm("Delete product?")) return; await supabase.from('inventory').delete().eq('product_id', id); await supabase.from('products').delete().eq('id', id); fetchInventory(); };
+  };
+  
+  const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
+// --- SMART DELETE (Protects other events) ---
+  const deleteProduct = async (id) => { 
+      // 1. Check if other events are using this product
+      const { data: usage } = await supabase.from('inventory')
+        .select('event_slug')
+        .eq('product_id', id)
+        .neq('event_slug', selectedEventSlug); // Look for OTHER events
+
+      const isUsedElsewhere = usage && usage.length > 0;
+
+      if (isUsedElsewhere) {
+          // SAFE MODE: Only remove from THIS event
+          if (!confirm(`Remove "${id}" from ${selectedEventSlug}?\n\n(It will remain in the Global Catalog because other events use it.)`)) return;
+          
+          await supabase.from('inventory')
+            .delete()
+            .eq('product_id', id)
+            .eq('event_slug', selectedEventSlug);
+            
+      } else {
+          // DESTRUCTIVE MODE: Delete completely
+          if (!confirm(`Delete "${id}" PERMANENTLY?\n\n(No other events are using this, so it will be gone forever.)`)) return;
+          
+          await supabase.from('inventory').delete().eq('product_id', id); // Delete all stock
+          await supabase.from('products').delete().eq('id', id); // Delete master record
+      }
+      
+      fetchInventory(); 
+  };  
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
   
   // FIX: Update Product Info (Name, Image, Price)
