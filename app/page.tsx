@@ -156,7 +156,7 @@ export default function OrderForm() {
       }
 
       // E. GET GUESTS
-      const { data: guestData } = await supabase.from('guests').select('*');
+      const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', currentSlug); // <--- CRITICAL FILTER;
       if (guestData) setGuests(guestData);
     };
 

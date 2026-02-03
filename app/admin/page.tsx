@@ -244,8 +244,11 @@ export default function AdminPage() {
   };
   
   const fetchGuests = async () => { 
-      if (!supabase) return; 
-      const { data } = await supabase.from('guests').select('*').order('name'); 
+      if (!supabase || !selectedEventSlug) return; 
+      const { data } = await supabase.from('guests')
+        .select('*')
+        .eq('event_slug', selectedEventSlug) // <--- FILTER BY EVENT
+        .order('name'); 
       if (data) setGuests(data); 
       else setGuests([]);
   };
@@ -529,7 +532,7 @@ const handleAddProductWithSizeUpdates = async (e) => {
       alert("Created!"); 
       setNewProdId(''); setNewProdName(''); fetchInventory(); 
   };
-  
+  // --- UPDATED GUEST UPLOAD (SAVES TO CURRENT EVENT) ---
   const handleGuestUpload = (e) => { 
       const f = e.target.files[0]; 
       if (!f) return; 
@@ -541,7 +544,12 @@ const handleAddProductWithSizeUpdates = async (e) => {
               for (const row of d) { 
                   const n = row['Name'] || row['name'] || row['Guest']; 
                   const s = row['Size'] || row['size']; 
-                  if (n) await supabase.from('guests').insert([{ name: String(n).trim(), size: s ? String(s).trim() : null, has_ordered: false }]); 
+                  if (n) await supabase.from('guests').insert([{ 
+                      name: String(n).trim(), 
+                      size: s ? String(s).trim() : null, 
+                      has_ordered: false,
+                      event_slug: selectedEventSlug // <--- CRITICAL FIX
+                  }]); 
               } 
               alert(`Imported!`); 
               fetchGuests(); 
