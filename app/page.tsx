@@ -84,31 +84,65 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
 
+  // --- MASTER DATA FETCHER (Multi-Event) ---
   useEffect(() => {
-    // 1. Check for Terminal ID in Storage
+    // 1. IDENTIFY THE EVENT FROM URL
+    const params = new URLSearchParams(window.location.search);
+    const currentSlug = params.get('event') || 'default'; 
+    console.log("🔒 LOCKING APP TO EVENT:", currentSlug);
+
+    // Terminal & Setup Logic
     const savedId = localStorage.getItem('square_terminal_id');
     if (savedId) setAssignedTerminalId(savedId);
-
-    // 2. Check URL for Setup Mode (?setup=true)
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('setup') === 'true') {
-        setShowSetup(true);
-        fetchTerminals();
-    }
+    if (params.get('setup') === 'true') { setShowSetup(true); fetchTerminals(); }
 
     const fetchData = async () => {
       if (!supabase) return;
+
+      // A. GET SETTINGS (Specific to this event)
+      const { data: settings } = await supabase
+        .from('event_settings')
+        .select('*')
+        .eq('slug', currentSlug)
+        .single();
+      
+      if (settings) {
+        setEventName(settings.event_name);
+        setEventLogo(settings.event_logo_url);
+        setHeaderColor(settings.header_color || '#1e3a8a'); 
+        setPaymentMode(settings.payment_mode || 'retail');
+        setRetailPaymentMethod(settings.retail_payment_method || 'stripe'); 
+        setShowBackNames(settings.offer_back_names ?? true);
+        setShowMetallic(settings.offer_metallic ?? true);
+        setShowPersonalization(settings.offer_personalization ?? true);
+      } else {
+        if (currentSlug !== 'default') console.warn(`Event "${currentSlug}" not found. Loading defaults.`);
+      }
+
+      // B. GET PRODUCTS (Global Catalog)
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
 
-      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).order('sort_order');
+      // C. GET LOGOS (Filtered by Event)
+      const { data: logoData } = await supabase
+        .from('logos')
+        .select('label, image_url, category, placement')
+        .eq('active', true)
+        .eq('event_slug', currentSlug) // <--- CRITICAL: Loads only this event's logos
+        .order('sort_order');
+
       if (logoData) {
           setLogoOptions(logoData);
           setMainOptions(logoData.filter(l => l.category === 'main'));
           setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
       }
 
-      const { data: invData } = await supabase.from('inventory').select('*');
+      // D. GET INVENTORY (Filtered by Event)
+      const { data: invData } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('event_slug', currentSlug); // <--- CRITICAL: Loads only this event's stock
+        
       if (invData) {
         const stockMap = {};
         const activeMap = {};
@@ -120,21 +154,12 @@ export default function OrderForm() {
         setInventory(stockMap);
         setActiveItems(activeMap);
       }
-      const { data: settings } = await supabase.from('event_settings').select('*').single();
-      if (settings) {
-        setEventName(settings.event_name);
-        setEventLogo(settings.event_logo_url);
-        setHeaderColor(settings.header_color || '#1e3a8a'); 
-        setPaymentMode(settings.payment_mode || 'retail');
-        setRetailPaymentMethod(settings.retail_payment_method || 'stripe'); 
-        setShowBackNames(settings.offer_back_names ?? true);
-        setShowMetallic(settings.offer_metallic ?? true);
-        setShowPersonalization(settings.offer_personalization ?? true);
-      }
 
+      // E. GET GUESTS
       const { data: guestData } = await supabase.from('guests').select('*');
       if (guestData) setGuests(guestData);
     };
+
     fetchData();
   }, []);
 
