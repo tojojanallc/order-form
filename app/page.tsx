@@ -436,7 +436,7 @@ export default function OrderForm() {
   // --- SETUP SCREEN ---
   if (showSetup) {
       return (
-          <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
+          <div className="max-w-4xl mx-auto w-full p-6 bg-gray-50 min-h-screen font-sans text-gray-900">
               <h1 className="text-3xl font-bold mb-8">🛠️ Kiosk Setup Mode</h1>
               <div className="space-y-4 w-full max-w-md">
                   <p className="text-gray-400 text-center mb-4">Select which Terminal this iPad should trigger:</p>
