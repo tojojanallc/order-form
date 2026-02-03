@@ -292,24 +292,9 @@ export default function AdminPage() {
       } 
   };
 
-  const fetchSettings = async () => { 
-      if (!supabase) return; 
-      const { data } = await supabase.from('event_settings').select('*').single(); 
-      if (data) { 
-          setEventName(data.event_name); 
-          setEventLogo(data.event_logo_url || ''); 
-          setHeaderColor(data.header_color || '#1e3a8a'); 
-          setPaymentMode(data.payment_mode || 'retail'); 
-          setRetailPaymentMethod(data.retail_payment_method || 'stripe'); 
-          setPrinterType(data.printer_type || 'label'); 
-          setOfferBackNames(data.offer_back_names ?? true); 
-          setOfferMetallic(data.offer_metallic ?? true); 
-          setOfferPersonalization(data.offer_personalization ?? true); 
-          setPnEnabled(data.printnode_enabled || false); 
-          setPnApiKey(data.printnode_api_key || ''); 
-          setPnPrinterId(data.printnode_printer_id || ''); 
-      } 
-  };
+
+
+  
 
   const saveSettings = async () => { 
       await supabase.from('event_settings').update({ 
