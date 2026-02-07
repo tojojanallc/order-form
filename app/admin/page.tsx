@@ -110,10 +110,11 @@ export default function AdminPage() {
       }
   }, [isAuthorized, mounted]);
 
-// --- ENGINE: SYNC DATA BASED ON SELECT EVENT (ROBUST VERSION) ---
+// --- ENGINE: SYNC DATA BASED ON SELECT EVENT (GLOBAL LISTENER) ---
   useEffect(() => {
     if (isAuthorized && mounted && selectedEventSlug) {
         console.log("🔄 Switching Admin View to:", selectedEventSlug);
+        
         // 1. Initial Load
         fetchOrders(); 
         fetchSettings(); 
@@ -121,18 +122,23 @@ export default function AdminPage() {
         fetchLogos(); 
         fetchGuests(); 
         fetchTerminals(); 
-        
-        // 2. Realtime Subscription (Global Listener -> Local Filter)
-        // We listen to ALL order changes, but only refresh if it matches our event.
-        const channel = supabase.channel('admin_any_change') 
+
+        // 2. Realtime Subscription (The "Nuclear" Fix)
+        // We listen to ALL public changes. No filters. We check the event manually.
+        const channel = supabase.channel('admin_global_v3') 
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                const incomingSlug = payload.new.event_slug || 'default'; // Handle missing slugs
+                console.log("⚡ REALTIME SIGNAL RECEIVED:", payload);
+
+                // Manual Filter: Does this order belong to us?
+                const incomingSlug = payload.new.event_slug || 'default';
                 
-                // ONLY Refresh if the order belongs to the event we are looking at
+                // Refresh if it matches OR if we are on the default view
                 if(incomingSlug === selectedEventSlug) {
-                    console.log("⚡ New Order detected for this event!");
+                    console.log("✅ MATCH! Refreshing...");
                     fetchOrders(); // This triggers the Auto-Print
                     fetchGuests();
+                } else {
+                    console.log("❌ IGNORED (Different Event):", incomingSlug);
                 }
             })
             .subscribe();
