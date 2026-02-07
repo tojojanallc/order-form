@@ -110,10 +110,11 @@ export default function AdminPage() {
       }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: SYNC DATA BASED ON SELECT EVENT ---
+// --- ENGINE: SYNC DATA BASED ON SELECT EVENT (ROBUST VERSION) ---
   useEffect(() => {
     if (isAuthorized && mounted && selectedEventSlug) {
         console.log("🔄 Switching Admin View to:", selectedEventSlug);
+        // 1. Initial Load
         fetchOrders(); 
         fetchSettings(); 
         fetchInventory(); 
@@ -121,18 +122,25 @@ export default function AdminPage() {
         fetchGuests(); 
         fetchTerminals(); 
         
-        // Realtime Subscription (Filtered)
-        const channel = supabase.channel('admin_filtered_sync')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `event_slug=eq.${selectedEventSlug}` }, () => {
-                fetchOrders();
-                fetchGuests();
+        // 2. Realtime Subscription (Global Listener -> Local Filter)
+        // We listen to ALL order changes, but only refresh if it matches our event.
+        const channel = supabase.channel('admin_any_change') 
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+                const incomingSlug = payload.new.event_slug || 'default'; // Handle missing slugs
+                
+                // ONLY Refresh if the order belongs to the event we are looking at
+                if(incomingSlug === selectedEventSlug) {
+                    console.log("⚡ New Order detected for this event!");
+                    fetchOrders(); // This triggers the Auto-Print
+                    fetchGuests();
+                }
             })
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
     }
   }, [selectedEventSlug, isAuthorized, mounted]);
-
+  
   // --- AUTO-PRINT LOGIC (Kept Intact) ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
