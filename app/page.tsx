@@ -742,9 +742,18 @@ export default function OrderForm() {
                         <>
                             <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
                             <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
-                            <input className="w-full p-2 border border-gray-400 rounded mb-4 text-sm text-black" placeholder="Phone Number" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
-                        </>
-                    )}
+                            {/* --- PHONE INPUT WITH LEGAL DISCLAIMER --- */}
+                            <input 
+                                className="w-full p-2 border border-gray-400 rounded mb-1 text-sm text-black" 
+                                placeholder="Phone Number" 
+                                type="tel"
+                                value={customerPhone} 
+                                onChange={(e) => setCustomerPhone(e.target.value)} 
+                            />
+                            <p className="text-[10px] text-gray-500 leading-tight mb-4">
+                                By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help.
+                            </p>
+                    }
 
                     {cartRequiresShipping && paymentMode !== 'hosted' && (
                     <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once"><h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} /><div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div><input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} /></div>
