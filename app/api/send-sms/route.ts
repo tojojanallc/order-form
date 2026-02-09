@@ -1,39 +1,29 @@
 import { NextResponse } from 'next/server';
 import twilio from 'twilio';
 
-export async function POST(req) {
+export async function POST(req: any) {
   try {
     // 1. Read the data sent from the Admin Panel
     const body = await req.json();
-    const { to, message } = body;
+    const { phone, message } = body;
 
-    if (!to || !message) {
-      return NextResponse.json({ success: false, error: 'Missing phone or message' }, { status: 400 });
+    if (!phone || !message) {
+      return NextResponse.json({ error: 'Missing phone or message' }, { status: 400 });
     }
 
-    // 2. Connect to Twilio (using your Vercel Environment Variables)
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const fromPhone = process.env.TWILIO_PHONE_NUMBER;
-
-    if (!accountSid || !authToken || !fromPhone) {
-      console.error("Missing Twilio Keys");
-      return NextResponse.json({ success: false, error: 'Server missing Twilio keys' }, { status: 500 });
-    }
-
-    const client = twilio(accountSid, authToken);
+    // 2. Initialize Twilio
+    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
     // 3. Send the Text
-    const result = await client.messages.create({
+    const messageResponse = await client.messages.create({
       body: message,
-      from: fromPhone,
-      to: to,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phone,
     });
 
-    return NextResponse.json({ success: true, sid: result.sid });
-
-  } catch (error) {
-    console.error('SMS Error:', error);
+    return NextResponse.json({ success: true, sid: messageResponse.sid });
+  } catch (error: any) {
+    console.error('Twilio Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
