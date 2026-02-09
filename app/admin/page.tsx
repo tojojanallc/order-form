@@ -113,7 +113,7 @@ export default function AdminPage() {
 // --- ENGINE: SYNC DATA BASED ON SELECT EVENT (GLOBAL LISTENER) ---
   useEffect(() => {
     if (isAuthorized && mounted && selectedEventSlug) {
-        console.log("🔄 Live Connection Active for:", selectedEventSlug);
+        console.log("🔄 Connecting to Live Order Feed...");
 
         // 1. Initial Load
         fetchOrders();
@@ -123,30 +123,24 @@ export default function AdminPage() {
         fetchGuests();
         fetchTerminals();
 
-        // 2. Realtime Subscription (v5 - Forced Refresh)
-        const channel = supabase.channel('admin_live_v5') // <--- New Channel Name resets connection
+        // 2. Realtime Subscription - UNIVERSAL LISTENER
+        // We removed the filters. If ANY order changes, we refresh the list.
+        // This ensures we never miss an update due to a mismatched slug.
+        const channel = supabase.channel('master_order_watch')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                console.log("⚡ REALTIME UPDATE:", payload);
+                console.log("⚡ CHANGE DETECTED:", payload.eventType);
+                
+                // Just reload everything. It's safer.
+                fetchOrders(); 
+                fetchGuests();
 
-                // SAFE GUARD: Handle Delete (where .new is null) vs Insert/Update
-                const record = payload.new || payload.old;
-                const incomingSlug = record?.event_slug || 'default';
-
-                // Only refresh if the update belongs to the event we are viewing
-                if(incomingSlug === selectedEventSlug) {
-                    console.log("✅ Refreshing Data...");
-                    fetchOrders(); // Updates the Table
-                    fetchGuests(); // Updates the Guest List (if someone redeemed)
-                    
-                    // Explicitly Play Sound on New Orders
-                    if (payload.eventType === 'INSERT' && audioRef.current) {
-                        audioRef.current.play().catch(e => console.log("Audio blocked:", e));
-                    }
+                // Play Sound on NEW orders
+                if (payload.eventType === 'INSERT' && audioRef.current) {
+                    audioRef.current.play().catch(e => console.error("Audio error:", e));
                 }
             })
             .subscribe();
 
-        // Cleanup: Cut the connection when we leave or switch events
         return () => { supabase.removeChannel(channel); };
     }
   }, [selectedEventSlug, isAuthorized, mounted]);
