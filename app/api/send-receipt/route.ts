@@ -6,8 +6,8 @@ const baseUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
   : 'http://localhost:3000';
 
-// FIX: Added ": Request" to satisfy strict mode
-export async function POST(req: Request) {
+// CHANGE HERE: We use "any" to shut up the strict mode error
+export async function POST(req: any) {
   try {
     const body = await req.json();
     const { email, name, cart, total, orderId, eventName, eventLogo } = body;
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     // 2. Static Company Logo
     const companyLogoUrl = `${baseUrl}/company-logo.png`;
 
-    // FIX: Added ": any" to item so TypeScript stops complaining
+    // CHANGE HERE: We use "any" for the item too
     const cartRows = cart.map((item: any) => {
         const customizations = [];
         if(item.customizations?.mainDesign) customizations.push(`Design: ${item.customizations.mainDesign}`);
