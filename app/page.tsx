@@ -332,17 +332,17 @@ const calculateGrandTotal = () => cart.reduce((sum, item) => sum + item.finalPri
   // 1. PASTE THIS HELPER FUNCTION HERE
   // ==========================================================
   const sendConfirmationSMS = async (name, phone) => {
-      // Basic Validation: Don't send if no phone number
+      // Basic Validation
       if (!phone || phone.length < 10) return;
       
       console.log("📨 Sending Confirmation Text to:", phone);
 
-      // Fire and Forget (don't await response)
+      // FIX: Changed 'to' to 'phone' to match the API
       fetch('/api/send-sms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-              to: phone, 
+              phone: phone, 
               message: `Hi ${name}! Thanks for your order from Lev Custom Merch at ${eventName}. We will text you again when it's ready for pickup!` 
           })
       }).catch(err => console.error("SMS Failed:", err));
