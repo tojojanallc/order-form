@@ -110,10 +110,10 @@ export default function AdminPage() {
       }
   }, [isAuthorized, mounted]);
 
-// --- ENGINE: SYNC DATA BASED ON SELECT EVENT (GLOBAL LISTENER) ---
+// --- ENGINE: SYNC DATA (REALTIME + HEARTBEAT) ---
   useEffect(() => {
     if (isAuthorized && mounted && selectedEventSlug) {
-        console.log("🔄 Connecting to Live Order Feed...");
+        console.log("🔄 Starting Live Engine for:", selectedEventSlug);
 
         // 1. Initial Load
         fetchOrders();
@@ -123,25 +123,33 @@ export default function AdminPage() {
         fetchGuests();
         fetchTerminals();
 
-        // 2. Realtime Subscription - UNIVERSAL LISTENER
-        // We removed the filters. If ANY order changes, we refresh the list.
-        // This ensures we never miss an update due to a mismatched slug.
-        const channel = supabase.channel('master_order_watch')
+        // 2. REALTIME LISTENER (Immediate updates)
+        const channel = supabase.channel('admin_live_updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                console.log("⚡ CHANGE DETECTED:", payload.eventType);
-                
-                // Just reload everything. It's safer.
-                fetchOrders(); 
+                console.log("⚡ REALTIME TRIGGER:", payload.eventType);
+                fetchOrders();
                 fetchGuests();
-
                 // Play Sound on NEW orders
                 if (payload.eventType === 'INSERT' && audioRef.current) {
-                    audioRef.current.play().catch(e => console.error("Audio error:", e));
+                    audioRef.current.play().catch(e => console.error("Audio Blocked:", e));
                 }
             })
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') console.log("✅ Connected to Realtime");
+            });
 
-        return () => { supabase.removeChannel(channel); };
+        // 3. HEARTBEAT (Backup Polling - Checks every 5 seconds)
+        // This guarantees the list updates even if Realtime disconnects.
+        const heartbeat = setInterval(() => {
+            // console.log("💓 Heartbeat Check..."); // Uncomment to debug
+            fetchOrders();
+        }, 5000);
+
+        // Cleanup
+        return () => {
+            supabase.removeChannel(channel);
+            clearInterval(heartbeat);
+        };
     }
   }, [selectedEventSlug, isAuthorized, mounted]);
   
