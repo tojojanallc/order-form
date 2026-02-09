@@ -336,13 +336,13 @@ const fetchInventory = async () => {
   };
   const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   // --- UPDATED STATUS CHANGE WITH SMS ---
+  // --- UPDATED STATUS CHANGE WITH SMS ---
   const handleStatusChange = async (orderId, newStatus) => {
       // 1. Update UI and Database immediately
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
 
       // 2. CHECK IF READY FOR PICKUP
-      // Note: Your statuses object uses the key 'ready' for "Ready for Pickup"
       if (newStatus === 'ready') {
           try {
               // 3. Get Customer Details
@@ -360,7 +360,7 @@ const fetchInventory = async () => {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ 
-                          to: orderData.phone, 
+                          phone: orderData.phone, // <--- FIXED HERE (Was "to")
                           message: message 
                       })
                   });
