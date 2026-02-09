@@ -6,25 +6,26 @@ const baseUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
   : 'http://localhost:3000';
 
-export async function POST(req) {
+// FIX: Added ": Request" to satisfy strict mode
+export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { email, name, cart, total, orderId, eventName, eventLogo } = body;
 
     if (!email) return NextResponse.json({ error: 'No email provided' }, { status: 400 });
 
-    // 1. Dynamic Event Logo (Top)
-    // Uses the filename passed from the cart (e.g. "volleyball.png")
+    // 1. Dynamic Event Logo
     let eventLogoHtml = '';
     if (eventLogo) {
         const src = eventLogo.startsWith('http') ? eventLogo : `${baseUrl}/${eventLogo}`;
         eventLogoHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${src}" alt="${eventName}" style="max-width: 150px; height: auto;" /></div>`;
     }
 
-    // 2. Static Company Logo (Bottom)
+    // 2. Static Company Logo
     const companyLogoUrl = `${baseUrl}/company-logo.png`;
 
-    const cartRows = cart.map(item => {
+    // FIX: Added ": any" to item so TypeScript stops complaining
+    const cartRows = cart.map((item: any) => {
         const customizations = [];
         if(item.customizations?.mainDesign) customizations.push(`Design: ${item.customizations.mainDesign}`);
         if(item.customizations?.metallic) customizations.push(`Metallic: ${item.customizations.metallicName || 'Yes'}`);
@@ -57,7 +58,7 @@ export async function POST(req) {
         </div>`,
     });
     return NextResponse.json({ success: true, data });
-  } catch (error) {
+  } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
