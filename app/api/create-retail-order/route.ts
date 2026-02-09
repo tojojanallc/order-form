@@ -1,67 +1,49 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+// Initialize Supabase with the "!" to force it to trust the keys exist
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function POST(req: Request) {
+export async function POST(req: any) {
   try {
-    const { cart, customerName, total } = await req.json();
+    const body = await req.json();
+    const { cart, customerName, total } = body;
 
+    // 1. Validate Input
     if (!cart || cart.length === 0) {
-      return NextResponse.json({ success: false, error: "Cart is empty" }, { status: 400 });
+      return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
     }
 
-    // 1. Process Inventory (Allow Backorders)
-    for (const item of cart) {
-      const { productId, size } = item;
+    // 2. Determine Shipping Status (Fixing the "item" error here by using any)
+    const hasBackorder = cart.some((item: any) => item.needsShipping);
 
-      // Check current stock
-      const { data: invItem } = await supabase
-        .from('inventory')
-        .select('count, active')
-        .eq('product_id', productId)
-        .eq('size', size)
-        .single();
-
-      if (invItem) {
-        if (invItem.count > 0) {
-          // In Stock: Decrement it
-          await supabase.from('inventory').update({ count: invItem.count - 1 }).eq('product_id', productId).eq('size', size);
-        } else {
-          // Out of Stock: Just log it, DO NOT BLOCK (Allow "Ship to Home")
-          console.log(`⚠️ Backorder placed for: ${item.productName} (${size})`);
-        }
-      }
-    }
-
-    // 2. Determine Shipping Status
-    const hasBackorder = cart.some(item => item.needsShipping); // Frontend flag
-
-    // 3. Create Order
+    // 3. Create Order in Supabase
     const { data, error } = await supabase
       .from('orders')
       .insert([
         {
-          customer_name: customerName,
-          cart_data: cart,
-          total_price: total,
-          payment_status: 'pending', // Will be updated by Terminal
-          status: hasBackorder ? 'pending_shipping' : 'pending', // Flag for shipping if needed
-          created_at: new Date(),
+          customer_name: customerName || 'Retail Customer',
+          total_amount: parseFloat(total),
+          status: hasBackorder ? 'pending_shipping' : 'completed',
+          items: cart, // Storing the full cart JSON
+          order_type: 'retail',
+          payment_status: 'paid', // Retail is always paid instantly
         },
       ])
       .select()
       .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error('Supabase Error:', error);
+      throw error;
+    }
 
     return NextResponse.json({ success: true, orderId: data.id });
-
-  } catch (error) {
-    console.error("Order Creation Error:", error);
+  } catch (error: any) {
+    console.error('Retail Order Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
