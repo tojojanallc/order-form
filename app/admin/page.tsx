@@ -110,48 +110,52 @@ export default function AdminPage() {
       }
   }, [isAuthorized, mounted]);
 
-// --- ENGINE: SYNC DATA (REALTIME + HEARTBEAT) ---
+// --- ENGINE: SYNC DATA (The "Simple" Fix) ---
   useEffect(() => {
-    if (isAuthorized && mounted && selectedEventSlug) {
-        console.log("🔄 Starting Live Engine for:", selectedEventSlug);
+    // Only run if we are logged in and mounted
+    if (!isAuthorized || !mounted) return;
 
-        // 1. Initial Load
+    console.log("🔌 Connecting to Realtime...");
+
+    // 1. Initial Data Load
+    fetchOrders();
+    fetchSettings();
+    fetchInventory();
+    fetchLogos();
+    fetchGuests();
+    fetchTerminals();
+
+    // 2. THE SIMPLEST POSSIBLE LISTENER
+    // We listen to the entire 'orders' table. No filters. No logic.
+    // This connects to EVERYTHING so it cannot "miss" an event.
+    const channel = supabase.channel('global_orders_simple')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+            console.log("🔔 REALTIME UPDATE:", payload.eventType);
+            
+            // Just refresh the data. Don't think about it.
+            fetchOrders(); 
+            fetchGuests();
+
+            // Play Sound (Only on new orders)
+            if (payload.eventType === 'INSERT' && audioRef.current) {
+                audioRef.current.play().catch(e => console.error("Audio error:", e));
+            }
+        })
+        .subscribe((status) => {
+            console.log("📡 Connection Status:", status);
+        });
+
+    // 3. Backup Timer (Poll every 5 seconds just in case Realtime drops)
+    const timer = setInterval(() => {
         fetchOrders();
-        fetchSettings();
-        fetchInventory();
-        fetchLogos();
-        fetchGuests();
-        fetchTerminals();
+    }, 5000);
 
-        // 2. REALTIME LISTENER (Immediate updates)
-        const channel = supabase.channel('admin_live_updates')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                console.log("⚡ REALTIME TRIGGER:", payload.eventType);
-                fetchOrders();
-                fetchGuests();
-                // Play Sound on NEW orders
-                if (payload.eventType === 'INSERT' && audioRef.current) {
-                    audioRef.current.play().catch(e => console.error("Audio Blocked:", e));
-                }
-            })
-            .subscribe((status) => {
-                if (status === 'SUBSCRIBED') console.log("✅ Connected to Realtime");
-            });
-
-        // 3. HEARTBEAT (Backup Polling - Checks every 5 seconds)
-        // This guarantees the list updates even if Realtime disconnects.
-        const heartbeat = setInterval(() => {
-            // console.log("💓 Heartbeat Check..."); // Uncomment to debug
-            fetchOrders();
-        }, 5000);
-
-        // Cleanup
-        return () => {
-            supabase.removeChannel(channel);
-            clearInterval(heartbeat);
-        };
-    }
-  }, [selectedEventSlug, isAuthorized, mounted]);
+    // Cleanup
+    return () => {
+        supabase.removeChannel(channel);
+        clearInterval(timer);
+    };
+  }, [isAuthorized, mounted, selectedEventSlug]);
   
   // --- AUTO-PRINT LOGIC (Kept Intact) ---
   useEffect(() => {
