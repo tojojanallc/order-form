@@ -1,22 +1,47 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 
+// Initialize Resend with the key stored in Vercel Settings
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// dynamic base URL that works on Vercel or Localhost
+const baseUrl = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : 'http://localhost:3000';
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { email, name, cart, total, orderId, eventName } = body;
+    
+    // Destructure the new eventLogo field along with the rest
+    const { email, name, cart, total, orderId, eventName, eventLogo } = body;
 
-    // 1. Basic Validation
+    // Validation
     if (!email) return NextResponse.json({ error: 'No email provided' }, { status: 400 });
 
-    // 2. Build the Email HTML
+    // --- LOGO LOGIC ---
+    // 1. Event Logo (Dynamic): Uses the URL provided, or builds one from the filename
+    let eventLogoHtml = '';
+    if (eventLogo) {
+        const src = eventLogo.startsWith('http') ? eventLogo : `${baseUrl}/${eventLogo}`;
+        eventLogoHtml = `
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="${src}" alt="${eventName}" style="max-width: 150px; height: auto;" />
+            </div>
+        `;
+    }
+
+    // 2. Company Logo (Static): Always points to /public/company-logo.png
+    // Make sure 'company-logo.png' exists in your public folder!
+    const companyLogoUrl = `${baseUrl}/company-logo.png`;
+
+
+    // --- BUILD CART ROWS ---
     const cartRows = cart.map(item => {
         const customizations = [];
-        if(item.customizations.mainDesign) customizations.push(`Design: ${item.customizations.mainDesign}`);
-        if(item.customizations.metallic) customizations.push(`Metallic: ${item.customizations.metallicName || 'Yes'}`);
-        // Add names/logos to list...
+        if(item.customizations?.mainDesign) customizations.push(`Design: ${item.customizations.mainDesign}`);
+        if(item.customizations?.metallic) customizations.push(`Metallic: ${item.customizations.metallicName || 'Yes'}`);
+        
         return `
         <tr>
             <td style="padding: 8px; border-bottom: 1px solid #ddd;">
@@ -32,14 +57,17 @@ export async function POST(req) {
         </tr>`;
     }).join('');
 
-    // 3. Send the Email
+    // --- SEND EMAIL ---
     const data = await resend.emails.send({
-      from: 'Lev Custom Merch <orders@receipts.levcustom.com>', // <--- CHANGE THIS TO YOUR VERIFIED DOMAIN
+      from: 'Lev Custom Merch <orders@receipts.levcustom.com>',
       to: [email],
       subject: `Receipt: ${eventName} - Order #${String(orderId).slice(0, 8)}`,
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #1e3a8a;">Order Confirmed!</h1>
+            
+            ${eventLogoHtml}
+
+            <h1 style="color: #1e3a8a; text-align: center;">Order Confirmed!</h1>
             <p>Hi ${name},</p>
             <p>Thanks for ordering at <strong>${eventName}</strong>. We'll text you when it's ready.</p>
             
@@ -59,6 +87,11 @@ export async function POST(req) {
                     </tr>
                 </tfoot>
             </table>
+
+            <div style="text-align: center; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">
+                <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Powered by</p>
+                <img src="${companyLogoUrl}" alt="Lev Custom Merch" style="max-width: 120px; height: auto;" />
+            </div>
         </div>
       `,
     });
