@@ -113,36 +113,40 @@ export default function AdminPage() {
 // --- ENGINE: SYNC DATA BASED ON SELECT EVENT (GLOBAL LISTENER) ---
   useEffect(() => {
     if (isAuthorized && mounted && selectedEventSlug) {
-        console.log("🔄 Switching Admin View to:", selectedEventSlug);
-        
+        console.log("🔄 Live Connection Active for:", selectedEventSlug);
+
         // 1. Initial Load
-        fetchOrders(); 
-        fetchSettings(); 
-        fetchInventory(); 
-        fetchLogos(); 
-        fetchGuests(); 
-        fetchTerminals(); 
+        fetchOrders();
+        fetchSettings();
+        fetchInventory();
+        fetchLogos();
+        fetchGuests();
+        fetchTerminals();
 
-        // 2. Realtime Subscription (The "Nuclear" Fix)
-        // We listen to ALL public changes. No filters. We check the event manually.
-        const channel = supabase.channel('admin_global_v3') 
+        // 2. Realtime Subscription (v5 - Forced Refresh)
+        const channel = supabase.channel('admin_live_v5') // <--- New Channel Name resets connection
             .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-                console.log("⚡ REALTIME SIGNAL RECEIVED:", payload);
+                console.log("⚡ REALTIME UPDATE:", payload);
 
-                // Manual Filter: Does this order belong to us?
-                const incomingSlug = payload.new.event_slug || 'default';
-                
-                // Refresh if it matches OR if we are on the default view
+                // SAFE GUARD: Handle Delete (where .new is null) vs Insert/Update
+                const record = payload.new || payload.old;
+                const incomingSlug = record?.event_slug || 'default';
+
+                // Only refresh if the update belongs to the event we are viewing
                 if(incomingSlug === selectedEventSlug) {
-                    console.log("✅ MATCH! Refreshing...");
-                    fetchOrders(); // This triggers the Auto-Print
-                    fetchGuests();
-                } else {
-                    console.log("❌ IGNORED (Different Event):", incomingSlug);
+                    console.log("✅ Refreshing Data...");
+                    fetchOrders(); // Updates the Table
+                    fetchGuests(); // Updates the Guest List (if someone redeemed)
+                    
+                    // Explicitly Play Sound on New Orders
+                    if (payload.eventType === 'INSERT' && audioRef.current) {
+                        audioRef.current.play().catch(e => console.log("Audio blocked:", e));
+                    }
                 }
             })
             .subscribe();
 
+        // Cleanup: Cut the connection when we leave or switch events
         return () => { supabase.removeChannel(channel); };
     }
   }, [selectedEventSlug, isAuthorized, mounted]);
