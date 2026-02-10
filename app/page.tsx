@@ -85,17 +85,34 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
 
-  // --- MASTER DATA FETCHER (Multi-Event) ---
+  // --- MASTER DATA FETCHER (Sticky Event Fix) ---
   useEffect(() => {
-    // 1. IDENTIFY THE EVENT FROM URL
+    // 1. IDENTIFY THE EVENT
     const params = new URLSearchParams(window.location.search);
-    const currentSlug = params.get('event') || 'default'; 
-    console.log("🔒 LOCKING APP TO EVENT:", currentSlug);
+    let currentSlug = params.get('event');
 
-    // Terminal & Setup Logic
+    // STICKY LOGIC:
+    // If the URL has an event, SAVE it to the iPad's memory.
+    if (currentSlug) {
+        localStorage.setItem('saved_event_slug', currentSlug);
+    } 
+    // If the URL has NO event (because iOS stripped it), LOAD it from memory.
+    else {
+        currentSlug = localStorage.getItem('saved_event_slug') || 'default';
+    }
+
+    console.log("🔒 LOCKING APP TO EVENT:", currentSlug);
+    
+    // Force the URL to look correct visually (Optional cosmetic fix)
+    if (!params.get('event')) {
+        window.history.replaceState({}, '', `/?event=${currentSlug}`);
+    }
+
     const savedId = localStorage.getItem('square_terminal_id');
     if (savedId) setAssignedTerminalId(savedId);
     if (params.get('setup') === 'true') { setShowSetup(true); fetchTerminals(); }
+
+   
 
     const fetchData = async () => {
       if (!supabase) return;
