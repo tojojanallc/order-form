@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-// Initialize Supabase with the "!" to force it to trust the keys exist
+// Initialize Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -17,20 +17,21 @@ export async function POST(req: any) {
       return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
     }
 
-    // 2. Determine Shipping Status (Fixing the "item" error here by using any)
+    // 2. Determine Shipping Status
     const hasBackorder = cart.some((item: any) => item.needsShipping);
 
-    // 3. Create Order in Supabase
+    // 3. Create Order in Supabase (FIXED COLUMN NAMES)
     const { data, error } = await supabase
       .from('orders')
       .insert([
         {
           customer_name: customerName || 'Retail Customer',
-          total_amount: parseFloat(total),
+          total_price: parseFloat(total), // Fixed: was total_amount
           status: hasBackorder ? 'pending_shipping' : 'completed',
-          items: cart, // Storing the full cart JSON
-          order_type: 'retail',
-          payment_status: 'paid', // Retail is always paid instantly
+          cart_data: cart, // Fixed: was items
+          payment_status: 'paid', 
+          payment_method: 'terminal', // Added for clarity
+          created_at: new Date()
         },
       ])
       .select()
