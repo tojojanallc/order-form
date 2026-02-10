@@ -659,6 +659,25 @@ if (backNameList && !backListConfirmed) {
   if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
 
+  // --- FIX: Reset Logic (No Page Reload) ---
+  const resetApp = () => {
+      setCart([]);
+      setCustomerName('');
+      setCustomerEmail('');
+      setCustomerPhone('');
+      setShippingAddress('');
+      setShippingCity('');
+      setShippingState('');
+      setShippingZip('');
+      setOrderComplete(false);
+      setLogos([]);
+      setNames([]);
+      setSelectedProduct(null);
+      setSize('');
+      // Force scroll to top
+      window.scrollTo(0, 0);
+  };
+
   if (orderComplete) {
       return (
           <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center p-8 text-center">
@@ -666,7 +685,16 @@ if (backNameList && !backListConfirmed) {
                   <div className="text-6xl mb-4">🎉</div>
                   <h1 className="text-3xl font-black text-green-800 mb-2">Order Received!</h1>
                   <p className="text-gray-600 mb-6">Your gear is being prepared.</p>
-                  <button onClick={() => { setOrderComplete(false); setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); window.location.reload(); }} className="text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:opacity-90" style={{ backgroundColor: headerColor }}>Done</button>
+                  <p className="text-sm text-gray-400 mb-6">Order #{cart[0]?.id || '---'}</p>
+                  
+                  {/* FIX: Use resetApp instead of reload */}
+                  <button 
+                      onClick={resetApp} 
+                      className="text-white font-bold py-4 px-8 rounded-lg shadow-lg hover:opacity-90 w-full text-xl" 
+                      style={{ backgroundColor: headerColor }}
+                  >
+                      Next Order ➡️
+                  </button>
               </div>
           </div>
       );
