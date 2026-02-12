@@ -94,7 +94,14 @@ export default function AdminPage() {
   const [availablePrinters, setAvailablePrinters] = useState([]);
 
   useEffect(() => { setMounted(true); }, []);
-
+// --- AUTH PERSISTENCE ---
+  useEffect(() => {
+      // Check if we are already logged in from before
+      const sessionAuth = sessionStorage.getItem('admin_auth');
+      if (sessionAuth === 'true') {
+          setIsAuthorized(true);
+      }
+  }, []);
 
 // --- ENGINE: LOAD EVENTS FIRST ---
   useEffect(() => {
@@ -283,8 +290,28 @@ export default function AdminPage() {
         }
     } catch (e) { console.error("Stats Error:", e); }
   }, [orders, inventory, mounted, paymentMode, products]);
-  const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
-  
+ // Update the login function to SAVE the session
+  const handleLogin = async (e) => { 
+      e.preventDefault(); 
+      setLoading(true); 
+      try { 
+          const res = await fetch('/api/auth', { 
+              method: 'POST', 
+              headers: { 'Content-Type': 'application/json' }, 
+              body: JSON.stringify({ password: passcode }) 
+          }); 
+          const data = await res.json(); 
+          if (data.success) { 
+              setIsAuthorized(true); 
+              sessionStorage.setItem('admin_auth', 'true'); // <--- SAVES LOGIN
+          } else { 
+              alert("Wrong password"); 
+          } 
+      } catch (err) { 
+          alert("Login failed"); 
+      } 
+      setLoading(false); 
+  };
   // --- FETCHERS (FILTERED BY EVENT) ---
   const fetchOrders = async () => { 
       if (!supabase || !selectedEventSlug) return; 
