@@ -38,6 +38,7 @@ export default function OrderForm() {
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [shippingAddress, setShippingAddress] = useState('');
+  const [lastOrderId, setLastOrderId] = useState(''); // <--- ADD THIS LINE
   const [shippingCity, setShippingCity] = useState('');
   const [shippingState, setShippingState] = useState('');
   const [shippingZip, setShippingZip] = useState('');
