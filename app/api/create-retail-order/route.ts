@@ -11,7 +11,8 @@ export async function POST(req: any) {
     const body = await req.json();
     const { cart, customerName, total, eventSlug } = body; 
 
-    const safeSlug = eventSlug || 'default';
+    // Normalize slug (handle nulls)
+    const currentEvent = eventSlug || 'default';
 
     if (!cart || cart.length === 0) {
       return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
@@ -30,7 +31,7 @@ export async function POST(req: any) {
           cart_data: cart,
           payment_status: 'paid',
           payment_method: 'terminal',
-          event_slug: safeSlug,
+          event_slug: currentEvent,
           created_at: new Date()
         },
       ])
@@ -39,72 +40,44 @@ export async function POST(req: any) {
 
     if (orderError) throw orderError;
 
-    // 2. DECREMENT INVENTORY (Smart Finder)
+    // 2. DECREMENT INVENTORY (ID-Based Update)
     for (const item of cart) {
         if (item.productId && item.size) {
-            let targetSlug = safeSlug;
-
-            // ATTEMPT 1: Look in the specific event
-            let { data: currentStock } = await supabase
+            
+            // A. Get ALL possible inventory rows for this Product+Size
+            // We do not filter by slug yet, so we don't miss anything.
+            const { data: candidates } = await supabase
                 .from('inventory')
                 .select('*')
                 .eq('product_id', item.productId)
-                .eq('size', item.size)
-                .eq('event_slug', safeSlug)
-                .maybeSingle();
+                .eq('size', item.size);
 
-            // ATTEMPT 2: If not found, look in 'default'
-            if (!currentStock && safeSlug !== 'default') {
-                const { data: fallbackStock } = await supabase
-                    .from('inventory')
-                    .select('*')
-                    .eq('product_id', item.productId)
-                    .eq('size', item.size)
-                    .eq('event_slug', 'default')
-                    .maybeSingle();
-                if (fallbackStock) {
-                    currentStock = fallbackStock;
-                    targetSlug = 'default';
+            if (candidates && candidates.length > 0) {
+                // B. Find the Best Match in Javascript (More reliable than SQL for this)
+                // Priority 1: Exact Event Match
+                let targetRow = candidates.find(c => c.event_slug === currentEvent);
+                
+                // Priority 2: 'default' Event (if we aren't already on default)
+                if (!targetRow && currentEvent !== 'default') {
+                    targetRow = candidates.find(c => c.event_slug === 'default');
                 }
-            }
 
-            // ATTEMPT 3: If still not found, look for legacy (null slug)
-            if (!currentStock) {
-                 const { data: legacyStock } = await supabase
-                    .from('inventory')
-                    .select('*')
-                    .eq('product_id', item.productId)
-                    .eq('size', item.size)
-                    .is('event_slug', null)
-                    .maybeSingle();
-                 if (legacyStock) {
-                    currentStock = legacyStock;
-                    targetSlug = null;
-                 }
-            }
+                // Priority 3: Legacy Items (Null or Empty Slug)
+                if (!targetRow) {
+                    targetRow = candidates.find(c => !c.event_slug || c.event_slug === '');
+                }
 
-            // 3. IF FOUND, SUBTRACT 1
-            if (currentStock) {
-                console.log(`📉 Decrementing: ${item.productId} (${item.size}) in [${targetSlug}]`);
-                
-                const newCount = Math.max(0, parseInt(currentStock.count) - 1);
-                
-                // Construct query based on whether slug is null or a string
-                let updateQuery = supabase
-                    .from('inventory')
-                    .update({ count: newCount })
-                    .eq('product_id', item.productId)
-                    .eq('size', item.size);
-
-                if (targetSlug === null) {
-                    updateQuery = updateQuery.is('event_slug', null);
+                // C. Update the SPECIFIC ROW by ID
+                if (targetRow) {
+                    console.log(`📉 Reducing Stock for ID: ${targetRow.id} (Event: ${targetRow.event_slug})`);
+                    
+                    await supabase
+                        .from('inventory')
+                        .update({ count: Math.max(0, targetRow.count - 1) })
+                        .eq('id', targetRow.id); // <--- UPDATING BY ID IS BULLETPROOF
                 } else {
-                    updateQuery = updateQuery.eq('event_slug', targetSlug);
+                    console.log(`⚠️ Item exists in Catalog but not in Inventory for this Event: ${item.productId}`);
                 }
-
-                await updateQuery;
-            } else {
-                console.log(`⚠️ Inventory Item Not Found: ${item.productId} ${item.size}`);
             }
         }
     }
