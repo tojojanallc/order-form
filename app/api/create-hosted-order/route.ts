@@ -9,12 +9,10 @@ const supabase = createClient(
 export async function POST(req: any) {
   try {
     const body = await req.json();
-    const { cart, guestName, guestId, eventName, eventSlug, customerPhone, customerEmail } = body;
+    const { cart, guestName, guestId, eventName, eventSlug, customerPhone } = body;
 
-    // Normalize slug
-    const currentEvent = eventSlug || 'default';
-
-    const hasBackorder = cart.some((item: any) => item.needsShipping);
+    // FORCE DEFAULT if missing
+    const currentEvent = (eventSlug && eventSlug !== '') ? eventSlug : 'default';
 
     // 1. Create the Order
     const { data: order, error: orderError } = await supabase
@@ -23,10 +21,10 @@ export async function POST(req: any) {
         {
           customer_name: guestName,
           phone: customerPhone || 'N/A',
-          total_price: 0, // Hosted is free for the guest
-          status: hasBackorder ? 'pending_shipping' : 'pending',
+          total_price: 0, 
+          status: 'pending',
           cart_data: cart,
-          payment_status: 'paid', // Marked paid because the host covers it
+          payment_status: 'paid',
           payment_method: 'hosted',
           event_name: eventName,
           event_slug: currentEvent,
@@ -38,12 +36,55 @@ export async function POST(req: any) {
 
     if (orderError) throw orderError;
 
-    // 2. Mark Guest as "Redeemed"
+    // 2. Mark Guest Redeemed
     if (guestId) {
-        await supabase
-            .from('guests')
-            .update({ has_ordered: true })
-            .eq('id', guestId);
+        await supabase.from('guests').update({ has_ordered: true }).eq('id', guestId);
+    }
+
+    // 3. INVENTORY UPDATE (BRUTE FORCE)
+    for (const item of cart) {
+        if (item.productId && item.size) {
+            
+            // A. Get ALL rows for this product/size (Ignore slug for a moment)
+            const { data: candidates } = await supabase
+                .from('inventory')
+                .select('*')
+                .eq('product_id', item.productId)
+                .eq('size', item.size);
+
+            if (candidates && candidates.length > 0) {
+                // B. Manual Filter in Javascript (More reliable)
+                // Look for Exact Slug Match
+                let targetRow = candidates.find(c => c.event_slug === currentEvent);
+
+                // If not found, look for 'default'
+                if (!targetRow) {
+                    targetRow = candidates.find(c => c.event_slug === 'default');
+                }
+
+                // If still not found, look for NULL (Legacy)
+                if (!targetRow) {
+                    targetRow = candidates.find(c => !c.event_slug);
+                }
+
+                // C. Update the specific ID
+                if (targetRow) {
+                    console.log(`📉 FOUND IT! Updating Inventory ID: ${targetRow.id} (Current: ${targetRow.count})`);
+                    
+                    const newCount = Math.max(0, targetRow.count - 1);
+                    
+                    await supabase
+                        .from('inventory')
+                        .update({ count: newCount })
+                        .eq('id', targetRow.id); // Update by ID is guaranteed
+                        
+                } else {
+                    console.log(`⚠️ CRITICAL: Item exists in products but NOT in inventory for this event: ${item.productId}`);
+                }
+            } else {
+                console.log(`⚠️ Item not found in ANY inventory: ${item.productId}`);
+            }
+        }
     }
 
     return NextResponse.json({ success: true, orderId: order.id });
