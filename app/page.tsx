@@ -867,8 +867,32 @@ if (backNameList && !backListConfirmed) {
                   <>
                     <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                         <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
-                        {selectedGuest && <div className="mb-4 bg-green-100 text-green-800 p-2 rounded text-sm text-center font-bold">Hi {selectedGuest.name}! We've pre-selected size {selectedGuest.size || 'Standard'} for you.</div>}
+{/* --- GUEST WELCOME MESSAGE --- */}
+                {selectedGuest && (
+                    <div className="bg-green-50 border border-green-200 p-4 rounded-lg mb-6 text-center shadow-sm">
+                        <h2 className="text-xl font-bold text-green-900 mb-1">
+                            Hi {selectedGuest.name}! 👋
+                        </h2>
                         
+                        {/* CONDITIONAL MESSAGE */}
+                        {selectedGuest.size ? (
+                            <p className="text-green-700 text-sm">
+                                We've pre-selected size <span className="font-bold bg-white px-2 py-0.5 rounded border border-green-300">{selectedGuest.size}</span> for you.
+                            </p>
+                        ) : (
+                            <p className="text-green-700 text-sm">
+                                Please select your apparel below.
+                            </p>
+                        )}
+                        
+                        <button 
+                            onClick={() => { setSelectedGuest(null); setGuestSearch(''); setCart([]); }}
+                            className="text-xs text-green-600 underline mt-2 hover:text-green-800"
+                        >
+                            Not you? Change Guest
+                        </button>
+                    </div>
+                )}                        
                         {!selectedProduct ? (
                             <div className="text-center py-8 text-red-600 font-bold">Sorry, no products available.</div>
                         ) : (
