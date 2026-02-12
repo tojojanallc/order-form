@@ -660,7 +660,7 @@ const handleAddProductWithSizeUpdates = async (e) => {
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
-  // *** FIXED: BULK UPLOAD WITH PARENT CREATION ***
+  // *** FIXED: BULK UPLOAD WITH OVERRIDE PRICES ***
   const handleBulkUpload = (e) => { 
       const f = e.target.files[0]; 
       if (!f) return; 
@@ -677,10 +677,17 @@ const handleAddProductWithSizeUpdates = async (e) => {
               for (const row of d) { 
                   const clean = {}; 
                   Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); 
+                  
                   const pid = String(clean['product_id']).trim(); 
                   const sz = String(clean['size']).trim(); 
                   const cnt = parseInt(clean['count']); 
                   const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; 
+                  
+                  // NEW: Capture Override Price (looks for 'override_price' or 'price')
+                  // If cell is empty, we send null (which clears the override)
+                  let ovr = null;
+                  if (clean['override_price']) ovr = parseFloat(clean['override_price']);
+                  else if (clean['price']) ovr = parseFloat(clean['price']);
                   
                   // 1. ENSURE PARENT PRODUCT EXISTS
                   if (!productIdsSeen.has(pid)) {
@@ -690,8 +697,8 @@ const handleAddProductWithSizeUpdates = async (e) => {
                           await supabase.from('products').insert([{
                               id: pid,
                               name: clean['_reference_name'] || pid.replace(/_/g, ' ').toUpperCase(),
-                              base_price: 30, // Default price
-                              type: 'top', // Default type
+                              base_price: 30, 
+                              type: 'top', 
                               sort_order: 99
                           }]);
                           logs.push(`✅ Created Parent: ${pid}`);
@@ -699,14 +706,40 @@ const handleAddProductWithSizeUpdates = async (e) => {
                   }
 
                   // 2. UPDATE INVENTORY
-                  const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).maybeSingle(); 
+                  const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).eq('event_slug', selectedEventSlug).maybeSingle(); 
+                  
                   if (ex) { 
-                      await supabase.from('inventory').update({ count: cnt, cost_price: cst }).eq('product_id', pid).eq('size', sz); 
-                      logs.push(`Updated Stock: ${pid} ${sz}`); 
+                      // Update existing stock + price
+                      await supabase.from('inventory').update({ 
+                          count: cnt, 
+                          cost_price: cst,
+                          override_price: ovr // <--- SAVING PRICE
+                      }).eq('product_id', pid).eq('size', sz).eq('event_slug', selectedEventSlug); 
+                      
+                      logs.push(`Updated: ${pid} ${sz} (Stock: ${cnt}, Price: ${ovr || 'Default'})`); 
                   } else { 
-                      await supabase.from('inventory').insert([{ product_id: pid, size: sz, count: cnt, cost_price: cst, active: true }]); 
-                      logs.push(`Created Stock: ${pid} ${sz}`); 
+                      // Create new stock + price
+                      await supabase.from('inventory').insert([{ 
+                          product_id: pid, 
+                          size: sz, 
+                          count: cnt, 
+                          cost_price: cst, 
+                          override_price: ovr, // <--- SAVING PRICE
+                          active: true,
+                          event_slug: selectedEventSlug
+                      }]); 
+                      logs.push(`Created: ${pid} ${sz}`); 
                   } 
+              } 
+              setUploadLog(logs); 
+              fetchInventory(); 
+          } catch (e) { 
+              setUploadLog([e.message]); 
+          } 
+          setLoading(false); 
+      }; 
+      r.readAsBinaryString(f); 
+  };
               } 
               setUploadLog(logs); 
               fetchInventory(); 
