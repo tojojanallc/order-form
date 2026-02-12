@@ -41,7 +41,7 @@ export default function OrderForm() {
   const [shippingCity, setShippingCity] = useState('');
   const [shippingState, setShippingState] = useState('');
   const [shippingZip, setShippingZip] = useState('');
-  
+  const [priceOverrides, setPriceOverrides] = useState({}); // <--- ADD THIS with your other useStates
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   
