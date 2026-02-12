@@ -917,31 +917,84 @@ const handleAddProductWithSizeUpdates = async (e) => {
                             </table>
                         </div>
                     </div>
-                    {/* Stock Table with Scrollbars */}
-                   const calculateTotal = () => {
-    if (!selectedProduct) return 0;
-    
-    // 1. Determine Base Price (Event Specific vs Global)
-    let basePrice = selectedProduct.base_price;
-    
-    // Check if the currently selected size has an override
-    if (size) {
-        const key = `${selectedProduct.id}_${size}`;
-        if (priceOverrides[key]) {
-            basePrice = priceOverrides[key];
-        }
-    }
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
+    <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
+        Manage Stock & Prices ({selectedEventSlug})
+    </div>
+    <div className="overflow-y-auto flex-1">
+        <table className="w-full text-left">
+            <thead className="bg-gray-100 border-b sticky top-0">
+                <tr>
+                    <th className="p-4">Product</th>
+                    <th className="p-4">Size</th>
+                    <th className="p-4 text-center">Cost ($)</th>
+                    <th className="p-4 text-center">Event Price ($)</th>
+                    <th className="p-4 text-center">Stock</th>
+                    <th className="p-4 text-center">Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {inventory.map((item) => {
+                    // Find Global Price for reference
+                    const globalProd = products.find(p => p.id === item.product_id);
+                    const globalPrice = globalProd ? globalProd.base_price : 0;
 
-    // 2. Add Upcharges
-    let total = basePrice; 
-    total += logos.length * 5;      
-    total += names.length * 5;      
-    if (backNameList) total += 5;   
-    if (metallicHighlight) total += 5; 
-    return total;
-  };
-                </div>
-            </div>
+                    return (
+                        <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
+                            <td className="p-4 font-bold text-sm">
+                                {getProductName(item.product_id)}
+                                <div className="text-[10px] text-gray-400">Global: ${globalPrice}</div>
+                            </td>
+                            <td className="p-4 text-sm">{item.size}</td>
+                            
+                            {/* Cost Input */}
+                            <td className="p-4">
+                                <input 
+                                    type="number" 
+                                    className="mx-auto block w-16 border rounded text-center text-sm" 
+                                    value={item.cost_price || ''} 
+                                    placeholder="8.50"
+                                    onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} 
+                                />
+                            </td>
+
+                            {/* NEW: Event Price Input */}
+                            <td className="p-4">
+                                <input 
+                                    type="number" 
+                                    className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`}
+                                    value={item.override_price || ''} 
+                                    placeholder={globalPrice} // Shows global price as ghost text
+                                    onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} 
+                                />
+                            </td>
+
+                            {/* Stock Input */}
+                            <td className="p-4">
+                                <input 
+                                    type="number" 
+                                    className="mx-auto block w-16 border text-center font-bold" 
+                                    value={item.count} 
+                                    onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} 
+                                />
+                            </td>
+
+                            {/* Active Toggle */}
+                            <td className="p-4 text-center">
+                                <input 
+                                    type="checkbox" 
+                                    checked={item.active ?? true} 
+                                    onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} 
+                                    className="w-5 h-5 cursor-pointer" 
+                                />
+                            </td>
+                        </tr>
+                    );
+                })}
+            </tbody>
+        </table>
+    </div>
+</div>
         )}
 
         {/* ... (GUESTS, LOGOS, SETTINGS, EDIT MODAL remain exactly as before) ... */}
