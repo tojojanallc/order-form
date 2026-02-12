@@ -341,7 +341,20 @@ export default function OrderForm() {
 
   const calculateTotal = () => {
     if (!selectedProduct) return 0;
-    let total = selectedProduct.base_price; 
+    
+    // 1. Determine Base Price (Event Specific vs Global)
+    let basePrice = selectedProduct.base_price;
+    
+    // Check if the currently selected size has an override
+    if (size) {
+        const key = `${selectedProduct.id}_${size}`;
+        if (priceOverrides[key]) {
+            basePrice = priceOverrides[key];
+        }
+    }
+
+    // 2. Add Upcharges
+    let total = basePrice; 
     total += logos.length * 5;      
     total += names.length * 5;      
     if (backNameList) total += 5;   
