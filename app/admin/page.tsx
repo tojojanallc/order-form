@@ -38,7 +38,7 @@ export default function AdminPage() {
   const [passcode, setPasscode] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
-  
+  const [newGuestName, setNewGuestName] = useState(''); // <--- NEW STATE
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [products, setProducts] = useState([]);
@@ -751,7 +751,29 @@ const handleAddProductWithSizeUpdates = async (e) => {
       }; 
       r.readAsBinaryString(f); 
   };
+  // --- NEW: QUICK ADD SINGLE GUEST ---
+  const addSingleGuest = async (e) => {
+      e.preventDefault();
+      if (!newGuestName.trim()) return;
 
+      setLoading(true);
+      try {
+          const { error } = await supabase.from('guests').insert([{
+              name: newGuestName.trim(),
+              event_slug: selectedEventSlug,
+              has_ordered: false
+          }]);
+
+          if (error) throw error;
+
+          setNewGuestName(''); // Clear input
+          fetchGuests(); // Refresh list immediately
+          alert("Guest Added!");
+      } catch (err) {
+          alert("Error adding guest: " + err.message);
+      }
+      setLoading(false);
+  };
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
@@ -1121,8 +1143,74 @@ const handleAddProductWithSizeUpdates = async (e) => {
         )}
 
         {/* ... (GUESTS, LOGOS, SETTINGS, EDIT MODAL remain exactly as before) ... */}
-        {activeTab === 'guests' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Guest List Management</h2><p className="text-sm text-gray-500 mb-2">Upload Excel with columns: <strong>Name</strong> and <strong>Size</strong> (optional)</p><div className="flex gap-4"><input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /><button onClick={clearGuestList} className="text-red-600 font-bold text-sm whitespace-nowrap">🗑️ Clear All</button></div></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-100 border-b"><tr><th className="p-4">Guest Name</th><th className="p-4">Pre-Size</th><th className="p-4 text-center">Status</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{Array.isArray(guests) && guests.length === 0 ? <tr><td colSpan="4" className="p-8 text-center text-gray-500">No guests.</td></tr> : Array.isArray(guests) && guests.map((guest) => (<tr key={guest.id} className="border-b hover:bg-gray-50"><td className="p-4 font-bold">{guest.name}</td><td className="p-4 font-mono text-sm text-blue-800">{guest.size || '-'}</td><td className="p-4 text-center">{guest.has_ordered ? <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">REDEEMED</span> : <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Waiting</span>}</td><td className="p-4 text-right"><button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline">Reset</button></td></tr>))}</tbody></table></div></div>)}
-        {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><div className="col-span-2 flex items-center gap-6 bg-gray-50 p-2 rounded border border-gray-200"><span className="font-bold text-gray-700 text-sm">Type:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'main'} onChange={() => setNewLogoCategory('main')} className="w-4 h-4" /><span className="text-sm">Main Design (Free)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'accent'} onChange={() => setNewLogoCategory('accent')} className="w-4 h-4" /><span className="text-sm">Accent (+$5.00)</span></label></div><div className="col-span-2 flex items-center gap-6 bg-blue-50 p-2 rounded border border-blue-100">
+{activeTab === 'guests' && (
+            <div className="max-w-4xl mx-auto">
+                
+                {/* --- NEW: QUICK ADD & BULK UPLOAD --- */}
+                <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
+                    <h2 className="font-bold text-xl mb-4">Manage Guest List</h2>
+                    
+                    {/* Option 1: Quick Add Single Guest */}
+                    <form onSubmit={addSingleGuest} className="flex gap-4 mb-6 pb-6 border-b border-gray-100">
+                        <input 
+                            className="flex-1 border p-2 rounded text-lg" 
+                            placeholder="Type Name (e.g. John Doe)" 
+                            value={newGuestName} 
+                            onChange={e => setNewGuestName(e.target.value)} 
+                        />
+                        <button className="bg-green-600 text-white font-bold px-6 py-2 rounded hover:bg-green-700">
+                            ➕ Add Guest
+                        </button>
+                    </form>
+
+                    {/* Option 2: Bulk Upload */}
+                    <div className="flex gap-4 items-center">
+                        <div className="flex-1">
+                            <p className="text-xs font-bold text-gray-500 uppercase mb-1">Bulk Upload (Excel)</p>
+                            <input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                        </div>
+                        <button onClick={clearGuestList} className="text-red-600 font-bold text-sm whitespace-nowrap border border-red-200 px-3 py-2 rounded hover:bg-red-50">
+                            🗑️ Clear All Guests
+                        </button>
+                    </div>
+                </div>
+
+                {/* --- GUEST LIST TABLE (Unchanged) --- */}
+                <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
+                    <table className="w-full text-left">
+                        <thead className="bg-gray-100 border-b">
+                            <tr>
+                                <th className="p-4">Guest Name</th>
+                                <th className="p-4">Pre-Size</th>
+                                <th className="p-4 text-center">Status</th>
+                                <th className="p-4 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {Array.isArray(guests) && guests.length === 0 ? (
+                                <tr><td colSpan="4" className="p-8 text-center text-gray-500">No guests found.</td></tr>
+                            ) : (
+                                Array.isArray(guests) && guests.map((guest) => (
+                                    <tr key={guest.id} className="border-b hover:bg-gray-50">
+                                        <td className="p-4 font-bold">{guest.name}</td>
+                                        <td className="p-4 font-mono text-sm text-blue-800">{guest.size || '-'}</td>
+                                        <td className="p-4 text-center">
+                                            {guest.has_ordered ? 
+                                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">REDEEMED</span> : 
+                                                <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Waiting</span>
+                                            }
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline">Reset</button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        )}        {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><div className="col-span-2 flex items-center gap-6 bg-gray-50 p-2 rounded border border-gray-200"><span className="font-bold text-gray-700 text-sm">Type:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'main'} onChange={() => setNewLogoCategory('main')} className="w-4 h-4" /><span className="text-sm">Main Design (Free)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'accent'} onChange={() => setNewLogoCategory('accent')} className="w-4 h-4" /><span className="text-sm">Accent (+$5.00)</span></label></div><div className="col-span-2 flex items-center gap-6 bg-blue-50 p-2 rounded border border-blue-100">
     <span className="font-bold text-blue-900 text-sm">Visual Size:</span>
     <label className="flex items-center gap-2 cursor-pointer">
         <input type="radio" name="place" checked={newLogoPlacement === 'large'} onChange={() => setNewLogoPlacement('large')} className="w-4 h-4" />
