@@ -918,7 +918,28 @@ const handleAddProductWithSizeUpdates = async (e) => {
                         </div>
                     </div>
                     {/* Stock Table with Scrollbars */}
-                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]"><div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Stock & Costs</div><div className="overflow-y-auto flex-1"><table className="w-full text-left"><thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4 text-center">Unit Cost ($)</th><th className="p-4">Stock</th><th className="p-4">Active</th></tr></thead><tbody>{inventory.map((item) => (<tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}><td className="p-4 font-bold">{getProductName(item.product_id)}</td><td className="p-4">{item.size}</td><td className="p-4"><input type="number" className="mx-auto block w-16 border rounded text-center" value={item.cost_price || ''} onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} /></td><td className="p-4"><input type="number" className="w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} /></td><td className="p-4"><input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5" /></td></tr>))}</tbody></table></div></div>
+                   const calculateTotal = () => {
+    if (!selectedProduct) return 0;
+    
+    // 1. Determine Base Price (Event Specific vs Global)
+    let basePrice = selectedProduct.base_price;
+    
+    // Check if the currently selected size has an override
+    if (size) {
+        const key = `${selectedProduct.id}_${size}`;
+        if (priceOverrides[key]) {
+            basePrice = priceOverrides[key];
+        }
+    }
+
+    // 2. Add Upcharges
+    let total = basePrice; 
+    total += logos.length * 5;      
+    total += names.length * 5;      
+    if (backNameList) total += 5;   
+    if (metallicHighlight) total += 5; 
+    return total;
+  };
                 </div>
             </div>
         )}
