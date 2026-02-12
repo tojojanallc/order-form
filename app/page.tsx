@@ -532,8 +532,9 @@ if (backNameList && !backListConfirmed) {
   const handleCashCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
+    if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
     
-    // Check shipping if needed
+    // Validate Shipping
     if (cartRequiresShipping) { 
         if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { 
             alert("Shipping Address Required!"); return; 
@@ -544,34 +545,45 @@ if (backNameList && !backListConfirmed) {
 
     setIsSubmitting(true);
     
-    // 1. GET THE EVENT SLUG FROM URL
     const currentSlug = new URLSearchParams(window.location.search).get('event') || 'default';
 
-    // 2. SAVE ORDER WITH SLUG
-    const { error } = await supabase.from('orders').insert([{ 
-      customer_name: customerName, 
-      phone: customerPhone || 'N/A', 
-      cart_data: cart, 
-      total_price: calculateGrandTotal(),
-      shipping_address: cartRequiresShipping ? shippingAddress : null,
-      shipping_city: cartRequiresShipping ? shippingCity : null,
-      shipping_state: cartRequiresShipping ? shippingState : null,
-      shipping_zip: cartRequiresShipping ? shippingZip : null,
-      status: 'pending', 
-      payment_status: 'unpaid', 
-      payment_method: 'cash', 
-      event_name: eventName,
-      event_slug: currentSlug, // <--- SAVES 'event2' HERE
-      created_at: new Date()
-    }]);
-  
-    if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
-    sendConfirmationSMS(customerName, customerPhone);
-    sendReceiptEmail("CashOrder", customerName, customerEmail, cart, calculateGrandTotal());
-    setOrderComplete(true);
-    setCart([]);
-    setCustomerName('');
-    setIsSubmitting(false);
+    // FIX: Use the new API Route (Server-Side) instead of direct Insert
+    try {
+        const res = await fetch('/api/create-cash-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cart,
+                customerName,
+                customerPhone,
+                total: calculateGrandTotal(),
+                eventName,
+                eventSlug: currentSlug,
+                shippingInfo: cartRequiresShipping ? { 
+                    address: shippingAddress, 
+                    city: shippingCity, 
+                    state: shippingState, 
+                    zip: shippingZip 
+                } : null
+            })
+        });
+
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Success!
+        sendConfirmationSMS(customerName, customerPhone);
+        sendReceiptEmail("CashOrder", customerName, customerEmail, cart, calculateGrandTotal());
+        
+        setOrderComplete(true);
+        // Do NOT clear cart here, the resetApp function handles it when they click Done
+        setIsSubmitting(false);
+
+    } catch (err) {
+        console.error("Cash Checkout Error:", err);
+        alert("Error saving order: " + err.message);
+        setIsSubmitting(false);
+    }
   };
   //
   // --- REGULAR CHECKOUT HANDLER (Fixed) ---
