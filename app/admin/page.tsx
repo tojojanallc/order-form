@@ -597,22 +597,8 @@ const fetchInventory = async () => {
   const updatePrice = async (pid, v) => { setProducts(products.map(p => p.id === pid ? { ...p, base_price: v } : p)); await supabase.from('products').update({ base_price: v }).eq('id', pid); };
   const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
-const downloadTemplate = () => { 
-      try { 
-          const data = inventory.map(item => ({ 
-              product_id: item.product_id, 
-              size: item.size, 
-              count: item.count, 
-              cost_price: item.cost_price || 8.50, 
-              override_price: item.override_price || '', // <--- ADDED COLUMN
-              _Reference_Name: getProductName(item.product_id) || item.product_id 
-          })); 
-          const ws = XLSX.utils.json_to_sheet(data); 
-          const wb = XLSX.utils.book_new(); 
-          XLSX.utils.book_append_sheet(wb, ws, "Inventory"); 
-          XLSX.writeFile(wb, `${selectedEventSlug}_Inventory.xlsx`); 
-      } catch (e) { console.error(e); } 
-  };  const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
+  const downloadTemplate = () => { try { const data = inventory.map(item => ({ product_id: item.product_id, size: item.size, count: item.count, cost_price: item.cost_price || 8.50, _Reference_Name: getProductName(item.product_id) || item.product_id })); const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory"); XLSX.writeFile(wb, "Inventory.xlsx"); } catch (e) {} };
+  const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   
   // FIX: Added Cost to Insert & Removed Auto-Caps
 const handleAddProductWithSizeUpdates = async (e) => { 
@@ -674,7 +660,7 @@ const handleAddProductWithSizeUpdates = async (e) => {
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
-  // *** FIXED: BULK UPLOAD WITH OVERRIDE PRICES ***
+  // *** FIXED: BULK UPLOAD WITH PARENT CREATION ***
   const handleBulkUpload = (e) => { 
       const f = e.target.files[0]; 
       if (!f) return; 
@@ -691,17 +677,10 @@ const handleAddProductWithSizeUpdates = async (e) => {
               for (const row of d) { 
                   const clean = {}; 
                   Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); 
-                  
                   const pid = String(clean['product_id']).trim(); 
                   const sz = String(clean['size']).trim(); 
                   const cnt = parseInt(clean['count']); 
                   const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; 
-                  
-                  // NEW: Capture Override Price (looks for 'override_price' or 'price')
-                  // If cell is empty, we send null (which clears the override)
-                  let ovr = null;
-                  if (clean['override_price']) ovr = parseFloat(clean['override_price']);
-                  else if (clean['price']) ovr = parseFloat(clean['price']);
                   
                   // 1. ENSURE PARENT PRODUCT EXISTS
                   if (!productIdsSeen.has(pid)) {
@@ -711,8 +690,8 @@ const handleAddProductWithSizeUpdates = async (e) => {
                           await supabase.from('products').insert([{
                               id: pid,
                               name: clean['_reference_name'] || pid.replace(/_/g, ' ').toUpperCase(),
-                              base_price: 30, 
-                              type: 'top', 
+                              base_price: 30, // Default price
+                              type: 'top', // Default type
                               sort_order: 99
                           }]);
                           logs.push(`✅ Created Parent: ${pid}`);
@@ -720,40 +699,14 @@ const handleAddProductWithSizeUpdates = async (e) => {
                   }
 
                   // 2. UPDATE INVENTORY
-                  const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).eq('event_slug', selectedEventSlug).maybeSingle(); 
-                  
+                  const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).maybeSingle(); 
                   if (ex) { 
-                      // Update existing stock + price
-                      await supabase.from('inventory').update({ 
-                          count: cnt, 
-                          cost_price: cst,
-                          override_price: ovr // <--- SAVING PRICE
-                      }).eq('product_id', pid).eq('size', sz).eq('event_slug', selectedEventSlug); 
-                      
-                      logs.push(`Updated: ${pid} ${sz} (Stock: ${cnt}, Price: ${ovr || 'Default'})`); 
+                      await supabase.from('inventory').update({ count: cnt, cost_price: cst }).eq('product_id', pid).eq('size', sz); 
+                      logs.push(`Updated Stock: ${pid} ${sz}`); 
                   } else { 
-                      // Create new stock + price
-                      await supabase.from('inventory').insert([{ 
-                          product_id: pid, 
-                          size: sz, 
-                          count: cnt, 
-                          cost_price: cst, 
-                          override_price: ovr, // <--- SAVING PRICE
-                          active: true,
-                          event_slug: selectedEventSlug
-                      }]); 
-                      logs.push(`Created: ${pid} ${sz}`); 
+                      await supabase.from('inventory').insert([{ product_id: pid, size: sz, count: cnt, cost_price: cst, active: true }]); 
+                      logs.push(`Created Stock: ${pid} ${sz}`); 
                   } 
-              } 
-              setUploadLog(logs); 
-              fetchInventory(); 
-          } catch (e) { 
-              setUploadLog([e.message]); 
-          } 
-          setLoading(false); 
-      }; 
-      r.readAsBinaryString(f); 
-  };
               } 
               setUploadLog(logs); 
               fetchInventory(); 
