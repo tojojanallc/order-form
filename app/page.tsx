@@ -449,10 +449,25 @@ if (backNameList && !backListConfirmed) {
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
   // --- UPDATED: ROBUST TERMINAL CHECKOUT ---
-  const handleTerminalCheckout = async () => {
+ const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
     if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.\nAsk Admin to run Setup.");
+    if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
+
+    // --- SMART SLUG DETECTION (The Fix) ---
+    const searchParams = new URLSearchParams(window.location.search);
+    let currentSlug = searchParams.get('event');
+
+    // If URL is empty (Clean Link style), use the pathname (e.g., /event1)
+    if (!currentSlug) {
+        const path = window.location.pathname.replace(/^\//, ''); // Remove slash
+        if (path && path !== '') currentSlug = path;
+    }
+    
+    // Safety Fallback
+    if (!currentSlug) currentSlug = 'default';
+    // --------------------------------------
 
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
@@ -461,48 +476,40 @@ if (backNameList && !backListConfirmed) {
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, total: calculateGrandTotal() })
+            body: JSON.stringify({ 
+                cart, 
+                customerName, 
+                total: calculateGrandTotal(),
+                eventSlug: currentSlug // <--- Sending the correctly detected slug
+            })
         });
 
-        if (!createRes.ok) {
-            const errText = await createRes.text();
-            throw new Error(`Order Creation Failed (${createRes.status}): ${errText.substring(0, 100)}`);
-        }
+        if (!createRes.ok) throw new Error("Order creation failed");
 
         const orderData = await createRes.json();
-        if (!orderData.success) throw new Error(orderData.error);
-        
         const orderId = orderData.orderId;
         setTerminalStatus("Sent to Terminal... Please Tap Card.");
 
-        // 2. Wake up the Terminal (Using Assigned ID)
         const payRes = await fetch('/api/terminal-pay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 orderId: orderId, 
                 amount: calculateGrandTotal(),
-                deviceId: assignedTerminalId // <--- SEND SPECIFIC ID
+                deviceId: assignedTerminalId 
             })
         });
 
-        if (!payRes.ok) {
-            const errText = await payRes.text();
-            throw new Error(`Terminal Request Failed (${payRes.status}): ${errText.substring(0, 100)}`);
-        }
+        if (!payRes.ok) throw new Error("Terminal connection failed");
 
-        const payData = await payRes.json();
-        if (!payData.success) throw new Error(payData.error);
-
-        // --- SUCCESS HANDLER ---
         const handleSuccess = () => {
             if (window.pollingRef) clearInterval(window.pollingRef);
             if (channel) supabase.removeChannel(channel);
+            // SEND SMS & EMAIL HERE
             sendConfirmationSMS(customerName, customerPhone);
             sendReceiptEmail(orderId, customerName, customerEmail, cart, calculateGrandTotal());
             setOrderComplete(true);
-            setCart([]);
-            setCustomerName('');
+            // Don't clear cart here; resetApp handles it
             setIsTerminalProcessing(false);
         };
 
