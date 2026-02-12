@@ -118,7 +118,7 @@ export default function AdminPage() {
       }
   }, [isAuthorized, mounted]);
 
-// --- ENGINE: SYNC DATA (Live Inventory Fix) ---
+// --- ENGINE: SYNC DATA (Live Guests + Orders + Inventory) ---
   useEffect(() => {
     if (!isAuthorized || !mounted) return;
 
@@ -132,32 +132,38 @@ export default function AdminPage() {
     fetchGuests();
     fetchTerminals();
 
-    // 2. THE DOUBLE LISTENER
+    // 2. THE TRIPLE LISTENER
     const channel = supabase.channel('global_updates')
-        // A. Listen for ORDERS (Play sound, update list, update guests)
+        // A. Listen for ORDERS
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
             console.log("🔔 ORDER UPDATE:", payload.eventType);
             fetchOrders(); 
-            fetchGuests();
-            fetchInventory(); // <--- CRITICAL: Refresh stock when order comes in
+            fetchGuests(); // Refresh guests too (in case an order redeemed a guest)
+            fetchInventory(); 
             
             if (payload.eventType === 'INSERT' && audioRef.current) {
                 audioRef.current.play().catch(e => console.error("Audio error:", e));
             }
         })
-        // B. Listen for INVENTORY (Update stock immediately if changed manually or by order)
+        // B. Listen for INVENTORY
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
             console.log("📦 INVENTORY UPDATE:", payload.eventType);
             fetchInventory();
+        })
+        // C. Listen for GUESTS (New!)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, (payload) => {
+            console.log("👥 GUEST UPDATE:", payload.eventType);
+            fetchGuests();
         })
         .subscribe((status) => {
             console.log("📡 Connection Status:", status);
         });
 
-    // 3. Backup Timer (Poll every 5 seconds just in case)
+    // 3. Backup Timer (Poll every 5 seconds)
     const timer = setInterval(() => {
         fetchOrders();
-        fetchInventory(); // <--- Added polling for safety
+        fetchInventory();
+        fetchGuests(); // <--- Added polling for safety
     }, 5000);
 
     return () => {
@@ -165,7 +171,6 @@ export default function AdminPage() {
         clearInterval(timer);
     };
   }, [isAuthorized, mounted, selectedEventSlug]);
-  
   // --- AUTO-PRINT LOGIC (Kept Intact) ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
