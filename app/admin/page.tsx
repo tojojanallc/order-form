@@ -110,9 +110,8 @@ export default function AdminPage() {
       }
   }, [isAuthorized, mounted]);
 
-// --- ENGINE: SYNC DATA (The "Simple" Fix) ---
+// --- ENGINE: SYNC DATA (Live Inventory Fix) ---
   useEffect(() => {
-    // Only run if we are logged in and mounted
     if (!isAuthorized || !mounted) return;
 
     console.log("🔌 Connecting to Realtime...");
@@ -125,32 +124,34 @@ export default function AdminPage() {
     fetchGuests();
     fetchTerminals();
 
-    // 2. THE SIMPLEST POSSIBLE LISTENER
-    // We listen to the entire 'orders' table. No filters. No logic.
-    // This connects to EVERYTHING so it cannot "miss" an event.
-    const channel = supabase.channel('global_orders_simple')
+    // 2. THE DOUBLE LISTENER
+    const channel = supabase.channel('global_updates')
+        // A. Listen for ORDERS (Play sound, update list, update guests)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-            console.log("🔔 REALTIME UPDATE:", payload.eventType);
-            
-            // Just refresh the data. Don't think about it.
+            console.log("🔔 ORDER UPDATE:", payload.eventType);
             fetchOrders(); 
             fetchGuests();
-
-            // Play Sound (Only on new orders)
+            fetchInventory(); // <--- CRITICAL: Refresh stock when order comes in
+            
             if (payload.eventType === 'INSERT' && audioRef.current) {
                 audioRef.current.play().catch(e => console.error("Audio error:", e));
             }
+        })
+        // B. Listen for INVENTORY (Update stock immediately if changed manually or by order)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
+            console.log("📦 INVENTORY UPDATE:", payload.eventType);
+            fetchInventory();
         })
         .subscribe((status) => {
             console.log("📡 Connection Status:", status);
         });
 
-    // 3. Backup Timer (Poll every 5 seconds just in case Realtime drops)
+    // 3. Backup Timer (Poll every 5 seconds just in case)
     const timer = setInterval(() => {
         fetchOrders();
+        fetchInventory(); // <--- Added polling for safety
     }, 5000);
 
-    // Cleanup
     return () => {
         supabase.removeChannel(channel);
         clearInterval(timer);
