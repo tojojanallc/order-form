@@ -205,35 +205,67 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
-  // --- STATS LOGIC (Kept Intact) ---
+  // --- STATS LOGIC (Fixed for Hosted Events) ---
   useEffect(() => {
     if(!mounted || !orders) return;
     try {
         const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'refunded');
+        
         if (activeOrders.length > 0) {
-            const revenue = activeOrders.reduce((sum, o) => sum + (o.total_price || 0), 0);
-            const count = activeOrders.length;
+            let totalRevenue = 0;
             let totalCOGS = 0;
             const itemCounts = {};
+
             activeOrders.forEach(order => {
+                // 1. Calculate Real Revenue (Invoice Value)
+                // If it's a hosted order (price is 0), we calculate what the items are WORTH.
+                let orderValue = order.total_price || 0;
+                
+                if (paymentMode === 'hosted' || orderValue === 0) {
+                    const safeCart = Array.isArray(order.cart_data) ? order.cart_data : [];
+                    orderValue = safeCart.reduce((sum, item) => {
+                        // Find the product price to calculate "Implied Revenue"
+                        const prod = products.find(p => p.id === item.productId);
+                        const base = prod ? (prod.base_price || 30) : 30;
+                        return sum + base; // Add customizations if you want strictly accurate billing
+                    }, 0);
+                }
+                
+                totalRevenue += orderValue;
+
+                // 2. Calculate Costs (COGS)
                 const items = Array.isArray(order.cart_data) ? order.cart_data : [];
                 items.forEach(item => {
                     if (!item) return;
+                    // Find the cost of this specific item
                     const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                    const unitCost = Number(invItem?.cost_price || 8.00);
-                    totalCOGS += (unitCost + 1.50);
+                    const unitCost = Number(invItem?.cost_price || 8.00); // Default to $8 if missing
+                    totalCOGS += (unitCost + 1.50); // Cost + $1.50 overhead
+
                     const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
                     itemCounts[key] = (itemCounts[key] || 0) + 1;
                 });
             });
-            const stripeFees = (revenue * 0.029) + (count * 0.30);
-            const net = revenue - stripeFees - totalCOGS;
+
+            // 3. Net Profit = (Invoice Value - Fees - Cost)
+            // Hosted events don't have Stripe fees (2.9%), so we skip that if mode is hosted.
+            const stripeFees = paymentMode === 'hosted' ? 0 : (totalRevenue * 0.029) + (activeOrders.length * 0.30);
+            const net = totalRevenue - stripeFees - totalCOGS;
+
             const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
             const topItem = sortedItems.length > 0 ? sortedItems[0] : null;
-            setStats({ revenue, count, net, topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' });
-        } else { setStats({ revenue: 0, count: 0, net: 0, topItem: '-' }); }
-    } catch (e) {}
-  }, [orders, inventory, mounted]);
+
+            setStats({ 
+                revenue: totalRevenue, 
+                count: activeOrders.length, 
+                net, 
+                topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' 
+            });
+        } else { 
+            setStats({ revenue: 0, count: 0, net: 0, topItem: '-' }); 
+        }
+    } catch (e) { console.error("Stats Error:", e); }
+  }, [orders, inventory, mounted, paymentMode, products]); // Added products dependency
 
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
