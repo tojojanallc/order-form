@@ -613,18 +613,18 @@ if (backNameList && !backListConfirmed) {
   };
   //
   // --- REGULAR CHECKOUT HANDLER (Fixed) ---
+// --- UPDATED CHECKOUT (Handles Hosted & Stripe) ---
   const handleCheckout = async () => {
-    // 1. GET SLUG IMMEDIATELY (Before doing anything else)
+    // 1. SMART SLUG DETECTION
     const searchParams = new URLSearchParams(window.location.search);
     let currentSlug = searchParams.get('event');
-
-    // 🚨 EMERGENCY FIX: If URL is not working, remove the "//" below to force it.
-    // currentSlug = 'event2';  // <--- UNCOMMENT THIS TO FORCE EVENT 2
-
-    // Fallback if both URL and Hardcode fail
+    if (!currentSlug) {
+        const path = window.location.pathname.replace(/^\//, '');
+        if (path && path !== '') currentSlug = path;
+    }
     if (!currentSlug) currentSlug = 'default';
 
-    console.log("🔒 CHECKOUT STARTING FOR EVENT:", currentSlug);
+    console.log("🔒 CHECKOUT EVENT:", currentSlug);
 
     // 2. VALIDATION
     if (paymentMode === 'hosted') {
@@ -640,48 +640,81 @@ if (backNameList && !backListConfirmed) {
     
     setIsSubmitting(true);
 
-    // 3. CREATE ORDER IN SUPABASE
-    const { error } = await supabase.from('orders').insert([{ 
-      customer_name: paymentMode === 'hosted' ? selectedGuest.name : customerName, phone: customerPhone || 'N/A', 
-      cart_data: cart, 
-      total_price: calculateGrandTotal(),
-      shipping_address: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingAddress : null,
-      shipping_city: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingCity : null,
-      shipping_state: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingState : null,
-      shipping_zip: (paymentMode !== 'hosted' && cartRequiresShipping) ? shippingZip : null,
-      status: cartRequiresShipping ? 'pending_shipping' : 'pending',
-      event_name: eventName,
-      event_slug: currentSlug // <--- USES THE DETECTED SLUG
-    }]);
-
-    if (error) { console.error(error); alert('Error saving order.'); setIsSubmitting(false); return; }
-
-    // 4. HANDLE REDIRECT / STRIPE
+    // --- BRANCH: HOSTED ORDER (Use new API) ---
     if (paymentMode === 'hosted' && selectedGuest) {
-        await supabase.from('guests').update({ has_ordered: true }).eq('id', selectedGuest.id);
-        if (customerEmail) {
-             sendReceiptEmail("HostedOrder", selectedGuest.name, customerEmail, cart, 0);
-        }
-        sendConfirmationSMS(selectedGuest.name, customerPhone || 'N/A');
-        setOrderComplete(true);
-        setCart([]);
-        setSelectedGuest(null);
-        setGuestSearch('');
-    } else {
         try {
-            // UPDATED: Now passing eventSlug to the API too, just in case
-            const response = await fetch('/api/checkout', { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
+            const res = await fetch('/api/create-hosted-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     cart, 
-                    customerName,
-                    eventSlug: currentSlug // <--- ADDED THIS SAFETY
+                    guestName: selectedGuest.name,
+                    guestId: selectedGuest.id,
+                    eventName,
+                    eventSlug: currentSlug,
+                    customerPhone: customerPhone,
+                    customerEmail: customerEmail
                 }) 
             });
-            const data = await response.json();
-            if (data.url) window.location.href = data.url; else alert("Payment Error");
-        } catch (err) { alert("Checkout failed."); setIsSubmitting(false); }
+
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            // Success Actions
+            setLastOrderId(data.orderId);
+            if (customerEmail) sendReceiptEmail(data.orderId, selectedGuest.name, customerEmail, cart, 0);
+            sendConfirmationSMS(selectedGuest.name, customerPhone || 'N/A');
+            
+            setOrderComplete(true);
+            setCart([]);
+            setSelectedGuest(null);
+            setGuestSearch('');
+            setIsSubmitting(false);
+
+        } catch (err) {
+            console.error("Hosted Checkout Error:", err);
+            alert("Error: " + err.message);
+            setIsSubmitting(false);
+        }
+        return; 
+    }
+
+    // --- BRANCH: STRIPE RETAIL ORDER (Standard) ---
+    // (This part is unchanged, it handles the Redirect)
+    try {
+        // Create pending order first
+        const { data: orderData, error } = await supabase.from('orders').insert([{ 
+          customer_name: customerName, 
+          phone: customerPhone || 'N/A', 
+          cart_data: cart, 
+          total_price: calculateGrandTotal(),
+          shipping_address: cartRequiresShipping ? shippingAddress : null,
+          shipping_city: cartRequiresShipping ? shippingCity : null,
+          shipping_state: cartRequiresShipping ? shippingState : null,
+          shipping_zip: cartRequiresShipping ? shippingZip : null,
+          status: cartRequiresShipping ? 'pending_shipping' : 'pending',
+          event_name: eventName,
+          event_slug: currentSlug 
+        }]).select().single();
+
+        if (error) throw error;
+
+        // Redirect to Stripe
+        const response = await fetch('/api/checkout', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ 
+                cart, 
+                customerName,
+                eventSlug: currentSlug 
+            }) 
+        });
+        const data = await response.json();
+        if (data.url) window.location.href = data.url; else alert("Payment Error");
+        
+    } catch (err) { 
+        alert("Checkout failed."); 
+        setIsSubmitting(false); 
     }
   };
 
