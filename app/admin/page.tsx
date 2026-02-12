@@ -775,7 +775,22 @@ const handleAddProductWithSizeUpdates = async (e) => {
       setLoading(false);
   };
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
-  const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
+ // --- NEW: DELETE SINGLE GUEST ---
+  const deleteGuest = async (id, name) => {
+      if (!confirm(`Permanently remove "${name}" from the list?`)) return;
+      
+      setLoading(true);
+      try {
+          const { error } = await supabase.from('guests').delete().eq('id', id);
+          if (error) throw error;
+          
+          fetchGuests(); // Refresh list immediately
+      } catch (err) {
+          alert("Error deleting guest: " + err.message);
+      }
+      setLoading(false);
+  }; 
+ const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
   // *** FIXED: BULK UPLOAD WITH PARENT CREATION ***
   // *** FIXED: BULK UPLOAD WITH OVERRIDE PRICES ***
@@ -1201,7 +1216,22 @@ const handleAddProductWithSizeUpdates = async (e) => {
                                             }
                                         </td>
                                         <td className="p-4 text-right">
-                                            <button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline">Reset</button>
+                                            <div className="flex justify-end gap-3">
+                                                <button 
+                                                    onClick={() => resetGuest(guest.id)} 
+                                                    className="text-blue-600 hover:text-blue-800 font-bold text-xs underline"
+                                                    title="Reset status to 'Waiting'"
+                                                >
+                                                    Reset
+                                                </button>
+                                                <button 
+                                                    onClick={() => deleteGuest(guest.id, guest.name)} 
+                                                    className="text-red-500 hover:text-red-700 font-bold text-lg leading-none"
+                                                    title="Remove Guest"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
