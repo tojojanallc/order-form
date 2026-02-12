@@ -205,7 +205,7 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
-  // --- STATS LOGIC (Fixed for Hosted Events) ---
+  // --- STATS LOGIC (Fixed: Uses Override Price) ---
   useEffect(() => {
     if(!mounted || !orders) return;
     try {
@@ -217,38 +217,53 @@ export default function AdminPage() {
             const itemCounts = {};
 
             activeOrders.forEach(order => {
-                // 1. Calculate Real Revenue (Invoice Value)
-                // If it's a hosted order (price is 0), we calculate what the items are WORTH.
-                let orderValue = order.total_price || 0;
+                const items = Array.isArray(order.cart_data) ? order.cart_data : [];
                 
-                if (paymentMode === 'hosted' || orderValue === 0) {
-                    const safeCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-                    orderValue = safeCart.reduce((sum, item) => {
-                        // Find the product price to calculate "Implied Revenue"
-                        const prod = products.find(p => p.id === item.productId);
-                        const base = prod ? (prod.base_price || 30) : 30;
-                        return sum + base; // Add customizations if you want strictly accurate billing
-                    }, 0);
+                // 1. Calculate Real Value (Revenue)
+                let orderValue = 0;
+                
+                // If it's a hosted order (Guest pays $0), we calculate the "Implied Value"
+                if (paymentMode === 'hosted' || order.total_price === 0) {
+                    items.forEach(item => {
+                        // Find the specific inventory item to get the REAL price
+                        const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                        
+                        // PRIORITY: Override Price -> Global Price -> Default $30
+                        let itemPrice = 30;
+                        if (invItem && invItem.override_price) {
+                            itemPrice = Number(invItem.override_price);
+                        } else {
+                            const prod = products.find(p => p.id === item.productId);
+                            if (prod) itemPrice = Number(prod.base_price);
+                        }
+                        
+                        // Add Customizations ($5 each)
+                        if (item.customizations) {
+                            itemPrice += (item.customizations.logos?.length || 0) * 5;
+                            itemPrice += (item.customizations.names?.length || 0) * 5;
+                            if (item.customizations.metallic) itemPrice += 5;
+                        }
+                        orderValue += itemPrice;
+                    });
+                } else {
+                    orderValue = order.total_price || 0;
                 }
                 
                 totalRevenue += orderValue;
 
                 // 2. Calculate Costs (COGS)
-                const items = Array.isArray(order.cart_data) ? order.cart_data : [];
                 items.forEach(item => {
                     if (!item) return;
-                    // Find the cost of this specific item
                     const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                    const unitCost = Number(invItem?.cost_price || 8.00); // Default to $8 if missing
-                    totalCOGS += (unitCost + 1.50); // Cost + $1.50 overhead
+                    const unitCost = Number(invItem?.cost_price || 8.00); 
+                    totalCOGS += (unitCost + 1.50); // Cost + Overhead
 
                     const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
                     itemCounts[key] = (itemCounts[key] || 0) + 1;
                 });
             });
 
-            // 3. Net Profit = (Invoice Value - Fees - Cost)
-            // Hosted events don't have Stripe fees (2.9%), so we skip that if mode is hosted.
+            // 3. Net Profit
             const stripeFees = paymentMode === 'hosted' ? 0 : (totalRevenue * 0.029) + (activeOrders.length * 0.30);
             const net = totalRevenue - stripeFees - totalCOGS;
 
@@ -265,8 +280,7 @@ export default function AdminPage() {
             setStats({ revenue: 0, count: 0, net: 0, topItem: '-' }); 
         }
     } catch (e) { console.error("Stats Error:", e); }
-  }, [orders, inventory, mounted, paymentMode, products]); // Added products dependency
-
+  }, [orders, inventory, mounted, paymentMode, products]);
   const handleLogin = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) }); const data = await res.json(); if (data.success) { setIsAuthorized(true); } else { alert("Wrong password"); } } catch (err) { alert("Login failed"); } setLoading(false); };
   
   // --- FETCHERS (FILTERED BY EVENT) ---
