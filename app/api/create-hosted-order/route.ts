@@ -46,43 +46,6 @@ export async function POST(req: any) {
             .eq('id', guestId);
     }
 
-    // 3. DECREMENT INVENTORY (Bulletproof Method)
-    for (const item of cart) {
-        if (item.productId && item.size) {
-            
-            // A. Get ALL possible inventory rows
-            const { data: candidates } = await supabase
-                .from('inventory')
-                .select('*')
-                .eq('product_id', item.productId)
-                .eq('size', item.size);
-
-            if (candidates && candidates.length > 0) {
-                // B. Find the Best Match
-                let targetRow = candidates.find(c => c.event_slug === currentEvent);
-                
-                // Fallback: 'default' Event
-                if (!targetRow && currentEvent !== 'default') {
-                    targetRow = candidates.find(c => c.event_slug === 'default');
-                }
-
-                // Fallback: Legacy Items
-                if (!targetRow) {
-                    targetRow = candidates.find(c => !c.event_slug || c.event_slug === '');
-                }
-
-                // C. Update by ID
-                if (targetRow) {
-                    console.log(`📉 Hosted Order: Reducing Stock for ID: ${targetRow.id}`);
-                    await supabase
-                        .from('inventory')
-                        .update({ count: Math.max(0, targetRow.count - 1) })
-                        .eq('id', targetRow.id); 
-                }
-            }
-        }
-    }
-
     return NextResponse.json({ success: true, orderId: order.id });
   } catch (error: any) {
     console.error('Hosted Order Error:', error);
