@@ -628,15 +628,43 @@ if (backNameList && !backListConfirmed) {
     console.log("🔒 CHECKOUT EVENT:", currentSlug);
 
     // 2. VALIDATION
-    if (paymentMode === 'hosted') {
-        if (!selectedGuest) { alert("Please verify your name first."); return; }
-        if (selectedGuest.has_ordered) { alert("Already redeemed."); return; }
-    } else {
-        if (!customerName) { alert("Please enter Name"); return; }
-    }
-    
-    if (cartRequiresShipping && paymentMode !== 'hosted') { 
-        if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { alert("Shipping Address Required!"); return; } 
+    // --- BRANCH: HOSTED ORDER (Use new API) ---
+    if (paymentMode === 'hosted' && selectedGuest) {
+        try {
+            const res = await fetch('/api/create-hosted-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    cart, 
+                    guestName: selectedGuest.name,
+                    guestId: selectedGuest.id,
+                    eventName,
+                    eventSlug: currentSlug,
+                    customerPhone: customerPhone,
+                    customerEmail: customerEmail
+                }) 
+            });
+
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            // Success Actions
+            setLastOrderId(data.orderId); // <--- SAVES THE ID
+            if (customerEmail) sendReceiptEmail(data.orderId, selectedGuest.name, customerEmail, cart, 0);
+            sendConfirmationSMS(selectedGuest.name, customerPhone || 'N/A');
+            
+            setOrderComplete(true);
+            setCart([]);
+            setSelectedGuest(null);
+            setGuestSearch('');
+            setIsSubmitting(false); // <--- UNLOCKS THE BUTTON
+
+        } catch (err) {
+            console.error("Hosted Checkout Error:", err);
+            alert("Error: " + err.message);
+            setIsSubmitting(false); // <--- UNLOCKS ON ERROR TOO
+        }
+        return; 
     }
     
     setIsSubmitting(true);
@@ -749,6 +777,7 @@ if (backNameList && !backListConfirmed) {
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
 
   // --- FIX: Reset Logic (No Page Reload) ---
+  // --- FIX: Reset Logic (Unlocks Buttons) ---
   const resetApp = () => {
       setCart([]);
       setCustomerName('');
@@ -763,20 +792,29 @@ if (backNameList && !backListConfirmed) {
       setNames([]);
       setSelectedProduct(null);
       setSize('');
-      // Force scroll to top
+      
+      // CRITICAL: Unlock the buttons
+      setIsSubmitting(false);
+      setIsTerminalProcessing(false);
+      setLastOrderId(''); // Clear the old ID
+      
       window.scrollTo(0, 0);
   };
 
   if (orderComplete) {
       return (
           <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center p-8 text-center">
-              <div className="bg-white p-8 rounded-xl shadow-lg border border-green-200 max-w-md">
+              <div className="bg-white p-8 rounded-xl shadow-lg border border-green-200 max-w-md w-full">
                   <div className="text-6xl mb-4">🎉</div>
                   <h1 className="text-3xl font-black text-green-800 mb-2">Order Received!</h1>
-                  <p className="text-gray-600 mb-6">Your gear is being prepared.</p>
-                  <p className="text-sm text-gray-400 mb-6">Order #{cart[0]?.id || '---'}</p>
                   
-                  {/* FIX: Use resetApp instead of reload */}
+                  {/* SHOW ORDER ID */}
+                  <p className="text-xl font-mono text-blue-600 mb-6 bg-blue-50 p-2 rounded border border-blue-200">
+                      Order #{lastOrderId || '---'}
+                  </p>
+
+                  <p className="text-gray-600 mb-6">Your gear is being prepared.</p>
+                  
                   <button 
                       onClick={resetApp} 
                       className="text-white font-bold py-4 px-8 rounded-lg shadow-lg hover:opacity-90 w-full text-xl" 
