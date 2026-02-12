@@ -159,18 +159,24 @@ export default function OrderForm() {
       const { data: invData } = await supabase
         .from('inventory')
         .select('*')
-        .eq('event_slug', currentSlug); // <--- CRITICAL: Loads only this event's stock
+        .eq('event_slug', currentSlug); 
         
       if (invData) {
         const stockMap = {};
         const activeMap = {};
+        const priceMap = {}; // <--- NEW MAP
+
         invData.forEach(item => {
             const key = `${item.product_id}_${item.size}`;
             stockMap[key] = item.count;
             activeMap[key] = item.active;
+            // Save the override price if it exists
+            if (item.override_price) priceMap[key] = item.override_price;
         });
         setInventory(stockMap);
         setActiveItems(activeMap);
+        // We need a state for this. Add `const [priceOverrides, setPriceOverrides] = useState({});` at the top of component
+        setPriceOverrides(priceMap);
       }
 
       // E. GET GUESTS
