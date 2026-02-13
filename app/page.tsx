@@ -555,26 +555,26 @@ if (backNameList && !backListConfirmed) {
         setTerminalStatus('');
     }
   };
-// --- CASH CHECKOUT HANDLER (Updated) ---
+// --- FIXED CASH CHECKOUT ---
   const handleCashCheckout = async () => {
+    // 1. Validation
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
-    if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
+    // (Phone is optional for cash, but good for receipt)
     
-    // Validate Shipping
-    if (cartRequiresShipping) { 
-        if (!shippingAddress || !shippingCity || !shippingState || !shippingZip) { 
-            alert("Shipping Address Required!"); return; 
-        } 
+    // 2. Event Slug Detection (Critical for Inventory)
+    const searchParams = new URLSearchParams(window.location.search);
+    let currentSlug = searchParams.get('event');
+    if (!currentSlug) {
+        const path = window.location.pathname.replace(/^\//, '');
+        if (path && path !== '') currentSlug = path;
     }
-    
-    if(!confirm("Confirm Pay with Cash?\n\nPlease proceed to the counter to pay.")) return;
+    if (!currentSlug) currentSlug = 'default';
 
-    setIsSubmitting(true);
-    
-    const currentSlug = new URLSearchParams(window.location.search).get('event') || 'default';
+    if(!confirm("Confirm Pay with Cash?")) return;
 
-    // FIX: Use the new API Route (Server-Side) instead of direct Insert
+    setIsSubmitting(true); // Locks the button
+
     try {
         const res = await fetch('/api/create-cash-order', {
             method: 'POST',
@@ -598,18 +598,21 @@ if (backNameList && !backListConfirmed) {
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
 
-        // Success!
-        sendConfirmationSMS(customerName, customerPhone);
-        sendReceiptEmail("CashOrder", customerName, customerEmail, cart, calculateGrandTotal());
+        // --- SUCCESS ACTIONS ---
+        console.log("✅ Cash Order Created:", data.orderId);
+        
+        setLastOrderId(data.orderId); // <--- FIXES "Order #---"
+        
+        if (customerPhone) sendConfirmationSMS(customerName, customerPhone);
+        if (customerEmail) sendReceiptEmail(data.orderId, customerName, customerEmail, cart, calculateGrandTotal());
         
         setOrderComplete(true);
-        // Do NOT clear cart here, the resetApp function handles it when they click Done
-        setIsSubmitting(false);
+        setIsSubmitting(false); // <--- UNLOCKS THE BUTTON
 
     } catch (err) {
         console.error("Cash Checkout Error:", err);
         alert("Error saving order: " + err.message);
-        setIsSubmitting(false);
+        setIsSubmitting(false); // Unlock on error too
     }
   };
   //
