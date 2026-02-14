@@ -498,9 +498,12 @@ if (backNameList && !backListConfirmed) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 cart, 
-                customerName, 
+                customerName,
+                customerPhone,
+                customerEmail, 
                 total: calculateGrandTotal(),
-                eventSlug: currentSlug // <--- Sending the correctly detected slug
+                eventSlug: currentSlug, // <--- Sending the correctly detected slug
+                eventName: eventName
             })
         });
 
