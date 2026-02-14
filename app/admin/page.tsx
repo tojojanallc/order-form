@@ -407,6 +407,13 @@ export default function AdminPage() {
       }
   };
 
+  // --- NEW: Mark as Paid ---
+  const markOrderPaid = async (orderId) => {
+      if(!confirm("Mark this order as PAID?")) return;
+      setOrders(orders.map(o => o.id === orderId ? { ...o, payment_status: 'paid' } : o));
+      await supabase.from('orders').update({ payment_status: 'paid' }).eq('id', orderId);
+  };
+
   const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
   const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
@@ -965,6 +972,16 @@ export default function AdminPage() {
                         return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> );
                     })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
                     <td className="p-4 align-top text-right">
+                        {/* --- NEW: MARK PAID BUTTON --- */}
+                        {!isPaid && (
+                            <button 
+                                onClick={() => markOrderPaid(order.id)}
+                                className="p-2 rounded mr-2 bg-green-50 text-green-600 hover:bg-green-100 font-bold text-xs uppercase"
+                                title="Mark as Paid"
+                            >
+                                💵 Pay
+                            </button>
+                        )}
                         <button onClick={() => openEditModal(order)} className="p-2 rounded mr-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold">✏️</button>
                         {order.status !== 'refunded' && order.payment_intent_id && ( <button onClick={() => handleRefund(order.id, order.payment_intent_id)} className="p-2 rounded mr-2 bg-red-50 text-red-500 hover:bg-red-100 font-bold">💸</button> )}
                         <button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 font-bold ${order.printed ? 'bg-gray-100 text-gray-400' : 'bg-gray-200 text-black hover:bg-blue-100'}`}>🖨️</button>
