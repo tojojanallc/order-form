@@ -496,8 +496,7 @@ if (backNameList && !backListConfirmed) {
             body: JSON.stringify({ 
                 cart, 
                 customerName,
-                customerPhone,
-                CustomerEmail,
+                customerPhone
                 total: calculateGrandTotal(),
                 eventSlug: currentSlug 
             })
