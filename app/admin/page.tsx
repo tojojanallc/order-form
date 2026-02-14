@@ -17,9 +17,8 @@ const POSITIONS = [
     { id: 'full_front', label: 'Full Front' }, { id: 'left_chest', label: 'Left Chest' },
     { id: 'center_chest', label: 'Center Chest' }, { id: 'left_sleeve', label: 'Left Sleeve' },
     { id: 'right_sleeve', label: 'Right Sleeve' }, { id: 'back_center', label: 'Back Center' },
-
-    { id: 'left_thigh', label: 'Left Thigh' }, { id: 'right_thigh', label: 'Right Thigh' },
-    { id: 'rear', label: 'Rear' }
+    { id: 'back_bottom', label: 'Back Bottom' }, { id: 'left_thigh', label: 'Left Thigh' }, 
+    { id: 'right_thigh', label: 'Right Thigh' }, { id: 'rear', label: 'Rear' }
 ];
 
 const STATUSES = {
@@ -38,24 +37,30 @@ export default function AdminPage() {
   const [passcode, setPasscode] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
-  const [newGuestName, setNewGuestName] = useState(''); // <--- NEW STATE
+  
+  // --- NEW: State for editing Name/Phone/Email only ---
+  const [editingCustomer, setEditingCustomer] = useState(null);
+  const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
+
+  // --- STATE FOR ORDER/CART EDITING ---
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
+  const [newOrderTotal, setNewOrderTotal] = useState(0); 
+
+  const [newGuestName, setNewGuestName] = useState(''); 
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [products, setProducts] = useState([]);
   const [logos, setLogos] = useState([]);
   const [guests, setGuests] = useState([]); 
-  const [terminals, setTerminals] = useState([]); // NEW: Terminals List
+  const [terminals, setTerminals] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ revenue: 0, count: 0, net: 0, topItem: '-' });
   const [uploadLog, setUploadLog] = useState([]); 
 
-// --- MULTI-EVENT STATE ---
+  // --- MULTI-EVENT STATE ---
   const [availableEvents, setAvailableEvents] = useState([]);
-  const [selectedEventSlug, setSelectedEventSlug] = useState(''); // The master filter
-
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
-  const [newOrderTotal, setNewOrderTotal] = useState(0); 
+  const [selectedEventSlug, setSelectedEventSlug] = useState(''); 
 
   // --- AUTO PRINT STATE ---
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
@@ -68,13 +73,13 @@ export default function AdminPage() {
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState(30);
-  const [newProdCost, setNewProdCost] = useState(8.50); // <--- ADDED: Cost State
+  const [newProdCost, setNewProdCost] = useState(8.50); 
   const [newProdImage, setNewProdImage] = useState(''); 
   const [newProdType, setNewProdType] = useState('top'); 
   const [newLogoName, setNewLogoName] = useState('');
   const [newLogoUrl, setNewLogoUrl] = useState('');
   const [newLogoCategory, setNewLogoCategory] = useState('accent'); 
-  const [newLogoPlacement, setNewLogoPlacement] = useState('large'); // 'large' or 'small'
+  const [newLogoPlacement, setNewLogoPlacement] = useState('large'); 
   // Terminal Form
   const [newTermLabel, setNewTermLabel] = useState('');
   const [newTermId, setNewTermId] = useState('');
@@ -94,23 +99,22 @@ export default function AdminPage() {
   const [availablePrinters, setAvailablePrinters] = useState([]);
 
   useEffect(() => { setMounted(true); }, []);
-// --- AUTH PERSISTENCE ---
+
+  // --- AUTH PERSISTENCE ---
   useEffect(() => {
-      // Check if we are already logged in from before
       const sessionAuth = sessionStorage.getItem('admin_auth');
       if (sessionAuth === 'true') {
           setIsAuthorized(true);
       }
   }, []);
 
-// --- ENGINE: LOAD EVENTS FIRST ---
+  // --- ENGINE: LOAD EVENTS ---
   useEffect(() => {
       if (isAuthorized && mounted) {
           const loadEvents = async () => {
               const { data } = await supabase.from('event_settings').select('*').order('id');
               if (data && data.length > 0) {
                   setAvailableEvents(data);
-                  // Default to the first event if none selected
                   if (!selectedEventSlug) setSelectedEventSlug(data[0].slug);
               }
           };
@@ -118,10 +122,9 @@ export default function AdminPage() {
       }
   }, [isAuthorized, mounted]);
 
-// --- ENGINE: SYNC DATA (Live Guests + Orders + Inventory) ---
+  // --- ENGINE: SYNC DATA (Live Guests + Orders + Inventory) ---
   useEffect(() => {
     if (!isAuthorized || !mounted) return;
-
     console.log("🔌 Connecting to Realtime...");
 
     // 1. Initial Data Load
@@ -134,23 +137,19 @@ export default function AdminPage() {
 
     // 2. THE TRIPLE LISTENER
     const channel = supabase.channel('global_updates')
-        // A. Listen for ORDERS
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
             console.log("🔔 ORDER UPDATE:", payload.eventType);
             fetchOrders(); 
-            fetchGuests(); // Refresh guests too (in case an order redeemed a guest)
+            fetchGuests(); 
             fetchInventory(); 
-            
             if (payload.eventType === 'INSERT' && audioRef.current) {
                 audioRef.current.play().catch(e => console.error("Audio error:", e));
             }
         })
-        // B. Listen for INVENTORY
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
             console.log("📦 INVENTORY UPDATE:", payload.eventType);
             fetchInventory();
         })
-        // C. Listen for GUESTS (New!)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, (payload) => {
             console.log("👥 GUEST UPDATE:", payload.eventType);
             fetchGuests();
@@ -159,11 +158,11 @@ export default function AdminPage() {
             console.log("📡 Connection Status:", status);
         });
 
-    // 3. Backup Timer (Poll every 5 seconds)
+    // 3. Backup Timer
     const timer = setInterval(() => {
         fetchOrders();
         fetchInventory();
-        fetchGuests(); // <--- Added polling for safety
+        fetchGuests();
     }, 5000);
 
     return () => {
@@ -171,7 +170,8 @@ export default function AdminPage() {
         clearInterval(timer);
     };
   }, [isAuthorized, mounted, selectedEventSlug]);
-  // --- AUTO-PRINT LOGIC (Kept Intact) ---
+
+  // --- AUTO-PRINT LOGIC ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
@@ -196,7 +196,7 @@ export default function AdminPage() {
     lastOrderCount.current = orders.length;
   }, [orders, autoPrintEnabled, mounted, paymentMode]);
 
-  // --- RECALCULATE TOTALS (Kept Intact) ---
+  // --- RECALCULATE TOTALS ---
   useEffect(() => {
       if (editingOrder && mounted) {
           let total = 0;
@@ -219,12 +219,11 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
-  // --- STATS LOGIC (Fixed: Uses Override Price) ---
+  // --- STATS LOGIC ---
   useEffect(() => {
     if(!mounted || !orders) return;
     try {
         const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'refunded');
-        
         if (activeOrders.length > 0) {
             let totalRevenue = 0;
             let totalCOGS = 0;
@@ -232,17 +231,11 @@ export default function AdminPage() {
 
             activeOrders.forEach(order => {
                 const items = Array.isArray(order.cart_data) ? order.cart_data : [];
-                
-                // 1. Calculate Real Value (Revenue)
                 let orderValue = 0;
                 
-                // If it's a hosted order (Guest pays $0), we calculate the "Implied Value"
                 if (paymentMode === 'hosted' || order.total_price === 0) {
                     items.forEach(item => {
-                        // Find the specific inventory item to get the REAL price
                         const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                        
-                        // PRIORITY: Override Price -> Global Price -> Default $30
                         let itemPrice = 30;
                         if (invItem && invItem.override_price) {
                             itemPrice = Number(invItem.override_price);
@@ -250,8 +243,6 @@ export default function AdminPage() {
                             const prod = products.find(p => p.id === item.productId);
                             if (prod) itemPrice = Number(prod.base_price);
                         }
-                        
-                        // Add Customizations ($5 each)
                         if (item.customizations) {
                             itemPrice += (item.customizations.logos?.length || 0) * 5;
                             itemPrice += (item.customizations.names?.length || 0) * 5;
@@ -262,40 +253,30 @@ export default function AdminPage() {
                 } else {
                     orderValue = order.total_price || 0;
                 }
-                
                 totalRevenue += orderValue;
 
-                // 2. Calculate Costs (COGS)
                 items.forEach(item => {
                     if (!item) return;
                     const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
                     const unitCost = Number(invItem?.cost_price || 8.00); 
-                    totalCOGS += (unitCost + 1.50); // Cost + Overhead
-
+                    totalCOGS += (unitCost + 1.50); 
                     const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
                     itemCounts[key] = (itemCounts[key] || 0) + 1;
                 });
             });
 
-            // 3. Net Profit
             const stripeFees = paymentMode === 'hosted' ? 0 : (totalRevenue * 0.029) + (activeOrders.length * 0.30);
             const net = totalRevenue - stripeFees - totalCOGS;
-
             const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
             const topItem = sortedItems.length > 0 ? sortedItems[0] : null;
 
-            setStats({ 
-                revenue: totalRevenue, 
-                count: activeOrders.length, 
-                net, 
-                topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' 
-            });
+            setStats({ revenue: totalRevenue, count: activeOrders.length, net, topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' });
         } else { 
             setStats({ revenue: 0, count: 0, net: 0, topItem: '-' }); 
         }
     } catch (e) { console.error("Stats Error:", e); }
   }, [orders, inventory, mounted, paymentMode, products]);
- // Update the login function to SAVE the session
+
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
@@ -308,7 +289,7 @@ export default function AdminPage() {
           const data = await res.json(); 
           if (data.success) { 
               setIsAuthorized(true); 
-              sessionStorage.setItem('admin_auth', 'true'); // <--- SAVES LOGIN
+              sessionStorage.setItem('admin_auth', 'true'); 
           } else { 
               alert("Wrong password"); 
           } 
@@ -317,46 +298,30 @@ export default function AdminPage() {
       } 
       setLoading(false); 
   };
-  // --- FETCHERS (FILTERED BY EVENT) ---
+
   const fetchOrders = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      const { data } = await supabase.from('orders')
-        .select('*')
-        .eq('event_slug', selectedEventSlug)
-        .order('created_at', { ascending: false }); 
+      const { data } = await supabase.from('orders').select('*').eq('event_slug', selectedEventSlug).order('created_at', { ascending: false }); 
       if (data) setOrders(data); 
   };
-const fetchInventory = async () => { 
+
+  const fetchInventory = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      
-      // 1. Get Global Products (Shared info like Name/Image)
       const { data: p } = await supabase.from('products').select('*').order('sort_order'); 
-      
-      // 2. Get Inventory (Specific to THIS Event)
-      const { data: i } = await supabase.from('inventory')
-        .select('*')
-        .eq('event_slug', selectedEventSlug) // <--- THIS SEPARATES THE STOCK
-        .order('product_id', { ascending: true }); 
-      
+      const { data: i } = await supabase.from('inventory').select('*').eq('event_slug', selectedEventSlug).order('product_id', { ascending: true }); 
       if (p) setProducts(p); 
       if (i) setInventory(i); 
   };
 
   const fetchLogos = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      const { data } = await supabase.from('logos')
-        .select('*')
-        .eq('event_slug', selectedEventSlug) // <--- EVENT FILTER
-        .order('sort_order'); 
+      const { data } = await supabase.from('logos').select('*').eq('event_slug', selectedEventSlug).order('sort_order'); 
       if (data) setLogos(data); 
   };
   
   const fetchGuests = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      const { data } = await supabase.from('guests')
-        .select('*')
-        .eq('event_slug', selectedEventSlug) // <--- FILTER BY EVENT
-        .order('name'); 
+      const { data } = await supabase.from('guests').select('*').eq('event_slug', selectedEventSlug).order('name'); 
       if (data) setGuests(data); 
       else setGuests([]);
   };
@@ -369,10 +334,7 @@ const fetchInventory = async () => {
 
   const fetchSettings = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      const { data } = await supabase.from('event_settings')
-        .select('*')
-        .eq('slug', selectedEventSlug) // <--- EVENT FILTER
-        .single(); 
+      const { data } = await supabase.from('event_settings').select('*').eq('slug', selectedEventSlug).single(); 
       if (data) { 
           setEventName(data.event_name); 
           setEventLogo(data.event_logo_url || ''); 
@@ -403,10 +365,6 @@ const fetchInventory = async () => {
       } 
   };
 
-
-
-  
-
   const saveSettings = async () => { 
       await supabase.from('event_settings').update({ 
           event_name: eventName, 
@@ -424,53 +382,32 @@ const fetchInventory = async () => {
       }).eq('slug', selectedEventSlug); 
       alert("Saved settings for " + selectedEventSlug); 
   };
+
   const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
-  // --- UPDATED STATUS CHANGE WITH SMS ---
-  // --- UPDATED STATUS CHANGE WITH SMS ---
+
   const handleStatusChange = async (orderId, newStatus) => {
-      // 1. Update UI and Database immediately
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
 
-      // 2. CHECK IF READY FOR PICKUP
       if (newStatus === 'ready') {
           try {
-              // 3. Get Customer Details
-              const { data: orderData } = await supabase
-                  .from('orders')
-                  .select('customer_name, phone')
-                  .eq('id', orderId)
-                  .single();
-
+              const { data: orderData } = await supabase.from('orders').select('customer_name, phone').eq('id', orderId).single();
               if (orderData && orderData.phone) {
                   const message = `Hi ${orderData.customer_name}! Your order is ready for pickup. Please head to the Lev Custom Merch team and start wearing your new gear!`;
-
-                  // 4. Send the SMS
-                  const res = await fetch('/api/send-sms', {
+                  await fetch('/api/send-sms', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ 
-                          phone: orderData.phone, // <--- FIXED HERE (Was "to")
-                          message: message 
-                      })
+                      body: JSON.stringify({ phone: orderData.phone, message: message })
                   });
-                  
-                  if (res.ok) {
-                      alert(`✅ Text sent to ${orderData.customer_name}`);
-                  } else {
-                      console.error("SMS Failed");
-                  }
               }
-          } catch (err) {
-              console.error("Error sending text:", err);
-          }
+          } catch (err) { console.error("Error sending text:", err); }
       }
   };
+
   const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
   const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
   const discoverPrinters = async () => { if(!pnApiKey) return alert("Enter API Key"); setLoading(true); try { const res = await fetch('https://api.printnode.com/printers', { headers: { 'Authorization': 'Basic ' + btoa(pnApiKey + ':') } }); const data = await res.json(); if (Array.isArray(data)) { setAvailablePrinters(data); alert(`Found ${data.length} printers!`); } } catch (e) {} setLoading(false); };
   
-  // *** SAFE PRINT LABEL ***
   const printLabel = async (order) => {
       if (!order) return;
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
@@ -494,6 +431,31 @@ const fetchInventory = async () => {
       } catch (e) { console.error(e); }
   };
 
+  // --- NEW: EDIT CUSTOMER INFO FUNCTIONS ---
+  const saveCustomerInfo = async () => {
+      if (!editingCustomer) return;
+      try {
+          const { error } = await supabase.from('orders').update({
+              customer_name: customerForm.name,
+              phone: customerForm.phone,
+              email: customerForm.email
+          }).eq('id', editingCustomer.id);
+
+          if (error) throw error;
+          setOrders(orders.map(o => o.id === editingCustomer.id ? { 
+              ...o, 
+              customer_name: customerForm.name, 
+              phone: customerForm.phone, 
+              email: customerForm.email 
+          } : o));
+          setEditingCustomer(null); 
+          alert("Customer updated!");
+      } catch (err) {
+          alert("Update failed: " + err.message);
+      }
+  };
+
+  // --- EDIT ORDER/CART FUNCTIONS ---
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
       const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({
@@ -637,38 +599,22 @@ const fetchInventory = async () => {
   };
   
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
-// --- SMART DELETE (Protects other events) ---
+  
   const deleteProduct = async (id) => { 
-      // 1. Check if other events are using this product
-      const { data: usage } = await supabase.from('inventory')
-        .select('event_slug')
-        .eq('product_id', id)
-        .neq('event_slug', selectedEventSlug); // Look for OTHER events
-
+      const { data: usage } = await supabase.from('inventory').select('event_slug').eq('product_id', id).neq('event_slug', selectedEventSlug); 
       const isUsedElsewhere = usage && usage.length > 0;
-
       if (isUsedElsewhere) {
-          // SAFE MODE: Only remove from THIS event
           if (!confirm(`Remove "${id}" from ${selectedEventSlug}?\n\n(It will remain in the Global Catalog because other events use it.)`)) return;
-          
-          await supabase.from('inventory')
-            .delete()
-            .eq('product_id', id)
-            .eq('event_slug', selectedEventSlug);
-            
+          await supabase.from('inventory').delete().eq('product_id', id).eq('event_slug', selectedEventSlug);
       } else {
-          // DESTRUCTIVE MODE: Delete completely
           if (!confirm(`Delete "${id}" PERMANENTLY?\n\n(No other events are using this, so it will be gone forever.)`)) return;
-          
-          await supabase.from('inventory').delete().eq('product_id', id); // Delete all stock
-          await supabase.from('products').delete().eq('id', id); // Delete master record
+          await supabase.from('inventory').delete().eq('product_id', id); 
+          await supabase.from('products').delete().eq('id', id); 
       }
-      
       fetchInventory(); 
   };  
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
   
-  // FIX: Update Product Info (Name, Image, Price)
   const updateProductInfo = async (pid, field, value) => {
       setProducts(products.map(p => p.id === pid ? { ...p, [field]: value } : p));
       await supabase.from('products').update({ [field]: value }).eq('id', pid);
@@ -677,6 +623,7 @@ const fetchInventory = async () => {
   const updatePrice = async (pid, v) => { setProducts(products.map(p => p.id === pid ? { ...p, base_price: v } : p)); await supabase.from('products').update({ base_price: v }).eq('id', pid); };
   const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
+  
   const downloadTemplate = () => { 
       try { 
           const data = inventory.map(item => ({ 
@@ -684,7 +631,7 @@ const fetchInventory = async () => {
               size: item.size, 
               count: item.count, 
               cost_price: item.cost_price || 8.50, 
-              override_price: item.override_price || '', // <--- ADDED COLUMN
+              override_price: item.override_price || '', 
               _Reference_Name: getProductName(item.product_id) || item.product_id 
           })); 
           const ws = XLSX.utils.json_to_sheet(data); 
@@ -695,13 +642,11 @@ const fetchInventory = async () => {
   };
   const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
   
-  // FIX: Added Cost to Insert & Removed Auto-Caps
-const handleAddProductWithSizeUpdates = async (e) => { 
+  const handleAddProductWithSizeUpdates = async (e) => { 
       e.preventDefault(); 
       if (!newProdId || !newProdName) return alert("Missing Info"); 
       const safeId = newProdId.toLowerCase().replace(/\s/g, '_');
       
-      // Save Product (Global)
       await supabase.from('products').insert([{ 
           id: safeId, 
           name: newProdName, 
@@ -711,7 +656,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
           sort_order: 99 
       }]); 
       
-      // Save Inventory (Event Specific)
       const sizes = SIZE_ORDER; 
       await supabase.from('inventory').insert(sizes.map(s => ({ 
           product_id: safeId, 
@@ -725,7 +669,7 @@ const handleAddProductWithSizeUpdates = async (e) => {
       alert("Created!"); 
       setNewProdId(''); setNewProdName(''); fetchInventory(); 
   };
-  // --- UPDATED GUEST UPLOAD (SAVES TO CURRENT EVENT) ---
+
   const handleGuestUpload = (e) => { 
       const f = e.target.files[0]; 
       if (!f) return; 
@@ -741,7 +685,7 @@ const handleAddProductWithSizeUpdates = async (e) => {
                       name: String(n).trim(), 
                       size: s ? String(s).trim() : null, 
                       has_ordered: false,
-                      event_slug: selectedEventSlug // <--- CRITICAL FIX
+                      event_slug: selectedEventSlug 
                   }]); 
               } 
               alert(`Imported!`); 
@@ -751,11 +695,10 @@ const handleAddProductWithSizeUpdates = async (e) => {
       }; 
       r.readAsBinaryString(f); 
   };
-  // --- NEW: QUICK ADD SINGLE GUEST ---
+  
   const addSingleGuest = async (e) => {
       e.preventDefault();
       if (!newGuestName.trim()) return;
-
       setLoading(true);
       try {
           const { error } = await supabase.from('guests').insert([{
@@ -763,37 +706,26 @@ const handleAddProductWithSizeUpdates = async (e) => {
               event_slug: selectedEventSlug,
               has_ordered: false
           }]);
-
           if (error) throw error;
-
-          setNewGuestName(''); // Clear input
-          fetchGuests(); // Refresh list immediately
+          setNewGuestName(''); 
+          fetchGuests(); 
           alert("Guest Added!");
-      } catch (err) {
-          alert("Error adding guest: " + err.message);
-      }
+      } catch (err) { alert("Error adding guest: " + err.message); }
       setLoading(false);
   };
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
- // --- NEW: DELETE SINGLE GUEST ---
   const deleteGuest = async (id, name) => {
       if (!confirm(`Permanently remove "${name}" from the list?`)) return;
-      
       setLoading(true);
       try {
           const { error } = await supabase.from('guests').delete().eq('id', id);
           if (error) throw error;
-          
-          fetchGuests(); // Refresh list immediately
-      } catch (err) {
-          alert("Error deleting guest: " + err.message);
-      }
+          fetchGuests(); 
+      } catch (err) { alert("Error deleting guest: " + err.message); }
       setLoading(false);
   }; 
- const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
+  const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
-  // *** FIXED: BULK UPLOAD WITH PARENT CREATION ***
-  // *** FIXED: BULK UPLOAD WITH OVERRIDE PRICES ***
   const handleBulkUpload = (e) => { 
       const f = e.target.files[0]; 
       if (!f) return; 
@@ -816,13 +748,10 @@ const handleAddProductWithSizeUpdates = async (e) => {
                   const cnt = parseInt(clean['count']); 
                   const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; 
                   
-                  // NEW: Capture Override Price (looks for 'override_price' or 'price')
-                  // If cell is empty, we send null (which clears the override)
                   let ovr = null;
                   if (clean['override_price']) ovr = parseFloat(clean['override_price']);
                   else if (clean['price']) ovr = parseFloat(clean['price']);
                   
-                  // 1. ENSURE PARENT PRODUCT EXISTS
                   if (!productIdsSeen.has(pid)) {
                       productIdsSeen.add(pid);
                       const { data: existingProd } = await supabase.from('products').select('id').eq('id', pid).single();
@@ -838,26 +767,23 @@ const handleAddProductWithSizeUpdates = async (e) => {
                       }
                   }
 
-                  // 2. UPDATE INVENTORY
                   const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).eq('event_slug', selectedEventSlug).maybeSingle(); 
                   
                   if (ex) { 
-                      // Update existing stock + price
                       await supabase.from('inventory').update({ 
                           count: cnt, 
                           cost_price: cst,
-                          override_price: ovr // <--- SAVING PRICE
+                          override_price: ovr 
                       }).eq('product_id', pid).eq('size', sz).eq('event_slug', selectedEventSlug); 
                       
                       logs.push(`Updated: ${pid} ${sz} (Stock: ${cnt}, Price: ${ovr || 'Default'})`); 
                   } else { 
-                      // Create new stock + price
                       await supabase.from('inventory').insert([{ 
                           product_id: pid, 
                           size: sz, 
                           count: cnt, 
                           cost_price: cst, 
-                          override_price: ovr, // <--- SAVING PRICE
+                          override_price: ovr, 
                           active: true,
                           event_slug: selectedEventSlug
                       }]); 
@@ -874,7 +800,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
       r.readAsBinaryString(f); 
   };
 
-  // *** NEW: REPAIR UTILITY ***
   const fixOrphanedProducts = async () => {
       setLoading(true);
       const { data: inv } = await supabase.from('inventory').select('product_id');
@@ -904,14 +829,10 @@ const handleAddProductWithSizeUpdates = async (e) => {
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
-  // *** VISIBLE ORDERS FILTER: CONTROLLABLE ***
   const visibleOrders = orders.filter(o => {
-      // Toggle logic
       if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded';
-
       const pStatus = (o.payment_status || '').toLowerCase();
       const isHostedEvent = paymentMode === 'hosted';
-      // If HOSTED, trust the order exists. If RETAIL, require payment or free.
       const isPaid = isHostedEvent 
           ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') 
           : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0 || (pStatus === '' && o.status === 'pending'));
@@ -956,7 +877,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
             <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
             
-            {/* TOGGLES UI */}
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
                 <div className="flex items-center gap-2 mb-2">
                     <input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4 accent-blue-900 cursor-pointer" />
@@ -972,7 +892,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
                 
-                // *** VISUAL LOGIC: HYBRID ***
                 const pStatus = (order.payment_status || '').toLowerCase();
                 const isHostedEvent = paymentMode === 'hosted';
                 const isPaid = isHostedEvent
@@ -989,7 +908,26 @@ const handleAddProductWithSizeUpdates = async (e) => {
                         <div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div>
                     </td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                    <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div></td>
+                    
+                    <td className="p-4 align-top">
+                        <div className="font-bold">{order.customer_name}</div>
+                        <div className="text-sm">{order.phone}</div>
+                        <div className="text-xs text-gray-400">{order.email}</div>
+                        <button 
+                            onClick={() => {
+                                setEditingCustomer(order);
+                                setCustomerForm({
+                                    name: order.customer_name || '',
+                                    phone: order.phone || '',
+                                    email: order.email || '' 
+                                });
+                            }}
+                            className="text-blue-600 hover:text-blue-800 text-xs font-bold underline mt-1"
+                        >
+                            ✏️ Edit Info
+                        </button>
+                    </td>
+
                     <td className="p-4 align-top text-sm">{safeItems.map((item, i) => {
                         const customs = item?.customizations || {};
                         return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> );
@@ -1024,7 +962,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
                             </div>
                             <div><label className="text-xs font-bold uppercase">Image URL (Optional)</label><input className="w-full border p-2 rounded" placeholder="https://..." value={newProdImage} onChange={e => setNewProdImage(e.target.value)} /></div>
                             
-                            {/* FIX: COST & PRICE INPUTS */}
                             <div className="grid grid-cols-2 gap-2">
                                 <div><label className="text-xs font-bold uppercase">Price ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div>
                                 <div><label className="text-xs font-bold uppercase">Unit Cost ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdCost} onChange={e => setNewProdCost(e.target.value)} /></div>
@@ -1044,7 +981,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
                     </div>
                 </div>
                 <div className="md:col-span-2 space-y-6">
-                    {/* FIX: Editable "Manage Prices" Table with Scrollbars */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
                         <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Product Info</div>
                         <div className="overflow-y-auto flex-1">
@@ -1073,9 +1009,7 @@ const handleAddProductWithSizeUpdates = async (e) => {
                             </table>
                         </div>
                     </div>
-                    {/* Stock Table with Scrollbars */}
-                    {/* Stock Table with Event Pricing */}
-<div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
     <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
         Manage Stock & Prices ({selectedEventSlug})
     </div>
@@ -1093,10 +1027,8 @@ const handleAddProductWithSizeUpdates = async (e) => {
             </thead>
             <tbody>
                 {inventory.map((item) => {
-                    // Find Global Price for reference
                     const globalProd = products.find(p => p.id === item.product_id);
                     const globalPrice = globalProd ? globalProd.base_price : 0;
-
                     return (
                         <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
                             <td className="p-4 font-bold text-sm">
@@ -1104,8 +1036,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
                                 <div className="text-[10px] text-gray-400">Global: ${globalPrice}</div>
                             </td>
                             <td className="p-4 text-sm">{item.size}</td>
-                            
-                            {/* Cost Input */}
                             <td className="p-4">
                                 <input 
                                     type="number" 
@@ -1115,19 +1045,15 @@ const handleAddProductWithSizeUpdates = async (e) => {
                                     onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} 
                                 />
                             </td>
-
-                            {/* NEW: Event Price Input */}
                             <td className="p-4">
                                 <input 
                                     type="number" 
                                     className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`}
                                     value={item.override_price || ''} 
-                                    placeholder={globalPrice} // Shows global price as ghost text
+                                    placeholder={globalPrice}
                                     onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} 
                                 />
                             </td>
-
-                            {/* Stock Input */}
                             <td className="p-4">
                                 <input 
                                     type="number" 
@@ -1136,8 +1062,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
                                     onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} 
                                 />
                             </td>
-
-                            {/* Active Toggle */}
                             <td className="p-4 text-center">
                                 <input 
                                     type="checkbox" 
@@ -1157,15 +1081,10 @@ const handleAddProductWithSizeUpdates = async (e) => {
             </div>
         )}
 
-        {/* ... (GUESTS, LOGOS, SETTINGS, EDIT MODAL remain exactly as before) ... */}
-{activeTab === 'guests' && (
+        {activeTab === 'guests' && (
             <div className="max-w-4xl mx-auto">
-                
-                {/* --- NEW: QUICK ADD & BULK UPLOAD --- */}
                 <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
                     <h2 className="font-bold text-xl mb-4">Manage Guest List</h2>
-                    
-                    {/* Option 1: Quick Add Single Guest */}
                     <form onSubmit={addSingleGuest} className="flex gap-4 mb-6 pb-6 border-b border-gray-100">
                         <input 
                             className="flex-1 border p-2 rounded text-lg" 
@@ -1177,8 +1096,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
                             ➕ Add Guest
                         </button>
                     </form>
-
-                    {/* Option 2: Bulk Upload */}
                     <div className="flex gap-4 items-center">
                         <div className="flex-1">
                             <p className="text-xs font-bold text-gray-500 uppercase mb-1">Bulk Upload (Excel)</p>
@@ -1189,8 +1106,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
                         </button>
                     </div>
                 </div>
-
-                {/* --- GUEST LIST TABLE (Unchanged) --- */}
                 <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                     <table className="w-full text-left">
                         <thead className="bg-gray-100 border-b">
@@ -1217,20 +1132,8 @@ const handleAddProductWithSizeUpdates = async (e) => {
                                         </td>
                                         <td className="p-4 text-right">
                                             <div className="flex justify-end gap-3">
-                                                <button 
-                                                    onClick={() => resetGuest(guest.id)} 
-                                                    className="text-blue-600 hover:text-blue-800 font-bold text-xs underline"
-                                                    title="Reset status to 'Waiting'"
-                                                >
-                                                    Reset
-                                                </button>
-                                                <button 
-                                                    onClick={() => deleteGuest(guest.id, guest.name)} 
-                                                    className="text-red-500 hover:text-red-700 font-bold text-lg leading-none"
-                                                    title="Remove Guest"
-                                                >
-                                                    🗑️
-                                                </button>
+                                                <button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline" title="Reset status to 'Waiting'">Reset</button>
+                                                <button onClick={() => deleteGuest(guest.id, guest.name)} className="text-red-500 hover:text-red-700 font-bold text-lg leading-none" title="Remove Guest">🗑️</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -1288,7 +1191,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
             <div className="mb-6 bg-purple-50 p-4 rounded border border-purple-200"><label className="block text-purple-900 font-bold mb-3 border-b border-purple-200 pb-2">Cloud Printing (PrintNode)</label><div className="flex items-center justify-between mb-3"><span className="text-gray-800">Enable Cloud Print?</span><input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)} className="w-5 h-5" /></div>{pnEnabled && (<div className="space-y-3"><input className="w-full p-2 border rounded text-sm" placeholder="API Key" value={pnApiKey} onChange={e => setPnApiKey(e.target.value)} /><div className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" placeholder="Printer ID" value={pnPrinterId} onChange={e => setPnPrinterId(e.target.value)} /><button onClick={discoverPrinters} className="bg-purple-600 text-white px-3 text-xs rounded font-bold">Find</button></div>{availablePrinters.length > 0 && (<div className="bg-white border p-2 rounded max-h-32 overflow-y-auto">{availablePrinters.map(p => (<div key={p.id} className="text-xs p-1 hover:bg-gray-100 cursor-pointer flex justify-between" onClick={() => setPnPrinterId(p.id)}><span>{p.name}</span><span className="font-mono text-gray-500">{p.id}</span></div>))}</div>)}</div>)}</div>
             <div className="mb-6 bg-gray-100 p-4 rounded border border-gray-200"><label className="block text-gray-800 font-bold mb-3 border-b border-gray-300 pb-2">Printer Output (Local)</label><div className="space-y-2"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="label" checked={printerType === 'label'} onChange={() => setPrinterType('label')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Thermal Label (4x6)</span><span className="text-xs text-gray-500">Standard for fast packing.</span></div></label><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="standard" checked={printerType === 'standard'} onChange={() => setPrinterType('standard')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Standard Sheet (8.5x11)</span><span className="text-xs text-gray-500">Large font packing slip for laser printers.</span></div></label></div></div>
             
-            {/* UPDATED PAYMENT SETTINGS */}
             <div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200">
                 <label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label>
                 <div className="space-y-4">
@@ -1297,7 +1199,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
                         <div><span className="font-bold block text-gray-800">Retail (Stripe / Square)</span><span className="text-xs text-gray-500">Collect credit card payments from guests.</span></div>
                     </label>
                     
-                    {/* NEW SUB-OPTION FOR RETAIL */}
                     {paymentMode === 'retail' && (
                         <div className="ml-8 bg-white p-3 rounded border border-blue-100 flex gap-4">
                             <span className="text-sm font-bold text-gray-600">Checkout Method:</span>
@@ -1343,6 +1244,56 @@ const handleAddProductWithSizeUpdates = async (e) => {
                     <div className="p-6 border-t flex justify-end gap-3 bg-gray-50 rounded-b-xl"><button onClick={closeEditModal} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-200 rounded">Cancel</button><button onClick={saveOrderEdits} className={`px-6 py-2 text-white font-bold rounded shadow transition-colors ${newOrderTotal > originalOrderTotal ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`} >{loading ? "Saving..." : (newOrderTotal > originalOrderTotal ? `Save & Pay Difference ($${(newOrderTotal - originalOrderTotal).toFixed(2)})` : "Save Changes")}</button></div>
                 </div>
             </div>
+        )}
+
+        {editingCustomer && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white p-6 rounded-lg shadow-xl w-96">
+                  <h2 className="text-xl font-bold mb-4">Edit Customer Info</h2>
+                  
+                  <div className="mb-4">
+                      <label className="block text-sm font-bold mb-1">Name</label>
+                      <input 
+                          value={customerForm.name}
+                          onChange={e => setCustomerForm({...customerForm, name: e.target.value})}
+                          className="w-full border p-2 rounded"
+                      />
+                  </div>
+
+                  <div className="mb-4">
+                      <label className="block text-sm font-bold mb-1">Phone</label>
+                      <input 
+                          value={customerForm.phone}
+                          onChange={e => setCustomerForm({...customerForm, phone: e.target.value})}
+                          className="w-full border p-2 rounded"
+                      />
+                  </div>
+
+                  <div className="mb-6">
+                      <label className="block text-sm font-bold mb-1">Email</label>
+                      <input 
+                          value={customerForm.email}
+                          onChange={e => setCustomerForm({...customerForm, email: e.target.value})}
+                          className="w-full border p-2 rounded"
+                      />
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                      <button 
+                          onClick={() => setEditingCustomer(null)}
+                          className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
+                      >
+                          Cancel
+                      </button>
+                      <button 
+                          onClick={saveCustomerInfo}
+                          className="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700"
+                      >
+                          Save Changes
+                      </button>
+                  </div>
+              </div>
+          </div>
         )}
       </div>
     </div>
