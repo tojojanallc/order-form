@@ -24,7 +24,6 @@ export async function POST(req: any) {
         {
           customer_name: customerName,
           phone: customerPhone || 'N/A',
-          email: customerEmail,
           total_price: parseFloat(total),
           status: hasBackorder ? 'pending_shipping' : 'pending',
           cart_data: cart,
