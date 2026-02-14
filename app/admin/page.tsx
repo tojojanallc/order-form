@@ -17,7 +17,6 @@ const POSITIONS = [
     { id: 'full_front', label: 'Full Front' }, { id: 'left_chest', label: 'Left Chest' },
     { id: 'center_chest', label: 'Center Chest' }, { id: 'left_sleeve', label: 'Left Sleeve' },
     { id: 'right_sleeve', label: 'Right Sleeve' }, { id: 'back_center', label: 'Back Center' },
-    { id: 'back_bottom', label: 'Back Bottom' }, { id: 'hood', label: 'Hood' },
     { id: 'left_thigh', label: 'Left Thigh' }, { id: 'right_thigh', label: 'Right Thigh' },
     { id: 'rear', label: 'Rear' }
 ];
