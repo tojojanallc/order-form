@@ -31,7 +31,6 @@ export async function POST(req: any) {
           cart_data: cart,
           payment_status: 'paid',
           payment_method: 'terminal',
-          event_name: eventName,
           event_slug: currentEvent,
           created_at: new Date()
         },
