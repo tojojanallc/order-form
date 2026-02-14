@@ -26,8 +26,8 @@ export async function POST(req: any) {
       .insert([
         {
           customer_name: customerName || 'Retail Customer',
-          phone: Phone,
-          email: Email,
+          phone: customerPhone,
+          email: customerEmail,
           total_price: parseFloat(total),
           status: hasBackorder ? 'pending_shipping' : 'completed',
           cart_data: cart,
