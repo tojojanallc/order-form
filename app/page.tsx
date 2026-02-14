@@ -588,6 +588,7 @@ if (backNameList && !backListConfirmed) {
                 cart,
                 customerName,
                 customerPhone,
+                customerEmail,
                 total: calculateGrandTotal(),
                 eventName,
                 eventSlug: currentSlug,
