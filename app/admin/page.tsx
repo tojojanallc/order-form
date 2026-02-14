@@ -38,6 +38,9 @@ export default function AdminPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
   
+  // --- NEW: Toggle Financial Visibility ---
+  const [showFinancials, setShowFinancials] = useState(false);
+
   // --- NEW: State for editing Name/Phone/Email only ---
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
@@ -873,9 +876,38 @@ export default function AdminPage() {
 
         {activeTab === 'orders' && ( <div className="space-y-6"> 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
-            <div className="bg-white p-4 rounded shadow border-l-4 border-green-500"><p className="text-xs text-gray-500 font-bold uppercase">Gross Revenue</p><p className="text-3xl font-black text-green-700">${stats.revenue.toFixed(2)}</p></div> 
-            <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
-            <div className="bg-white p-4 rounded shadow border-l-4 border-pink-500"><p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p><p className="text-3xl font-black text-pink-600">${stats.net.toFixed(2)}</p></div>
+            {/* --- REVENUE CARD (TOGGLE) --- */}
+            <div 
+                onClick={() => setShowFinancials(!showFinancials)} 
+                className="bg-white p-4 rounded shadow border-l-4 border-green-500 cursor-pointer hover:bg-gray-50 transition-colors"
+                title="Click to Toggle"
+            >
+                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">
+                    Gross Revenue {showFinancials ? '👁️' : '🔒'}
+                </p>
+                <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>
+                    {showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}
+                </p>
+            </div>
+            
+            <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500">
+                <p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p>
+                <p className="text-3xl font-black text-blue-900">{stats.count}</p>
+            </div> 
+            
+            {/* --- NET PROFIT CARD (TOGGLE) --- */}
+            <div 
+                onClick={() => setShowFinancials(!showFinancials)} 
+                className="bg-white p-4 rounded shadow border-l-4 border-pink-500 cursor-pointer hover:bg-gray-50 transition-colors"
+                title="Click to Toggle"
+            >
+                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">
+                    Est. Net Profit {showFinancials ? '👁️' : '🔒'}
+                </p>
+                <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>
+                    {showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}
+                </p>
+            </div>
             
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
                 <div className="flex items-center gap-2 mb-2">
