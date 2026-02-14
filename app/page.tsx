@@ -499,8 +499,8 @@ if (backNameList && !backListConfirmed) {
             body: JSON.stringify({ 
                 cart, 
                 customerName,
-                customerPhone,
-                customerEmail, 
+                customerPhone: customerPhone,
+                customerEmail: customerEmail, 
                 total: calculateGrandTotal(),
                 eventSlug: currentSlug, // <--- Sending the correctly detected slug
                 eventName: eventName
