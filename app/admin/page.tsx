@@ -428,6 +428,7 @@ const fetchInventory = async () => {
   };
   const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
   // --- UPDATED STATUS CHANGE WITH SMS ---
+  // --- UPDATED STATUS CHANGE WITH SMS ---
   const handleStatusChange = async (orderId, newStatus) => {
       // 1. Update UI and Database immediately
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
@@ -904,44 +905,6 @@ const handleAddProductWithSizeUpdates = async (e) => {
 
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
-
-// --- EDIT CUSTOMER INFO ---
-  const handleEditClick = (order) => {
-      setEditingOrder(order);
-      setEditForm({
-          name: order.customer_name || '',
-          phone: order.phone || '',
-          email: order.email || '' 
-      });
-  };
-
-  const saveCustomerInfo = async () => {
-      if (!editingOrder) return;
-      try {
-          const { error } = await supabase
-              .from('orders')
-              .update({
-                  customer_name: editForm.name,
-                  phone: editForm.phone,
-                  email: editForm.email
-              })
-              .eq('id', editingOrder.id);
-
-          if (error) throw error;
-
-          // Update local list instantly
-          setOrders(orders.map(o => o.id === editingOrder.id ? { 
-              ...o, 
-              customer_name: editForm.name, 
-              phone: editForm.phone, 
-              email: editForm.email 
-          } : o));
-          
-          setEditingOrder(null); // Close popup
-      } catch (err) {
-          alert("Update failed: " + err.message);
-      }
-  };
 
   // *** VISIBLE ORDERS FILTER: CONTROLLABLE ***
   const visibleOrders = orders.filter(o => {
