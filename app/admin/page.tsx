@@ -206,7 +206,11 @@ export default function AdminPage() {
           if (Array.isArray(editingOrder.cart_data)) {
               editingOrder.cart_data.forEach(item => {
                   if(!item) return;
-                  const productRef = products.find(p => p.name === item.productName);
+                  // Try to find product by ID first, then loose name match
+                  const productRef = products.find(p => 
+                      (item.productId && p.id === item.productId) || 
+                      (p.name && item.productName && p.name.toLowerCase() === item.productName.toLowerCase())
+                  );
                   const basePrice = productRef ? (productRef.base_price || 30) : 30;
                   let itemTotal = basePrice;
                   if (item.customizations) {
@@ -1283,7 +1287,10 @@ export default function AdminPage() {
                         <div className="bg-blue-50 p-4 rounded border border-blue-100"><label className="block text-xs font-bold uppercase text-blue-900 mb-1">Customer Name</label><input className="w-full p-2 border rounded font-bold" value={editingOrder.customer_name} onChange={(e) => handleEditChange('customer_name', e.target.value)} /></div>
                         {editingOrder.cart_data.map((item, idx) => {
                             // --- NEW LOGIC: DETECT BOTTOMS & FILTER LOGOS ---
-                            const productRef = products.find(p => p.name === item.productName);
+                            const productRef = products.find(p => 
+                                (item.productId && p.id === item.productId) || 
+                                (p.name && item.productName && p.name.toLowerCase() === item.productName.toLowerCase())
+                            );
                             const isBottom = productRef?.type === 'bottom';
                             const allowedLogos = logos.filter(l => isBottom ? l.placement !== 'large' : true);
                             // --------------------------------------------------
