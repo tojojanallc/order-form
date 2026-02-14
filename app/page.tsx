@@ -495,7 +495,9 @@ if (backNameList && !backListConfirmed) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 cart, 
-                customerName, 
+                customerName,
+                customerPhone,
+                CustomerEmail,
                 total: calculateGrandTotal(),
                 eventSlug: currentSlug 
             })
