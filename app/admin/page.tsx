@@ -17,6 +17,7 @@ const POSITIONS = [
     { id: 'full_front', label: 'Full Front' }, { id: 'left_chest', label: 'Left Chest' },
     { id: 'center_chest', label: 'Center Chest' }, { id: 'left_sleeve', label: 'Left Sleeve' },
     { id: 'right_sleeve', label: 'Right Sleeve' }, { id: 'back_center', label: 'Back Center' },
+
     { id: 'left_thigh', label: 'Left Thigh' }, { id: 'right_thigh', label: 'Right Thigh' },
     { id: 'rear', label: 'Rear' }
 ];
@@ -51,9 +52,6 @@ export default function AdminPage() {
 // --- MULTI-EVENT STATE ---
   const [availableEvents, setAvailableEvents] = useState([]);
   const [selectedEventSlug, setSelectedEventSlug] = useState(''); // The master filter
-
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '' });
 
   const [editingOrder, setEditingOrder] = useState(null);
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
