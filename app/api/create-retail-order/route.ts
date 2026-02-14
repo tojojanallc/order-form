@@ -26,12 +26,15 @@ export async function POST(req: any) {
       .insert([
         {
           customer_name: customerName || 'Retail Customer',
+          customer_phone: customerPhone,
+          customer_email: customerEmail,
           total_price: parseFloat(total),
           status: hasBackorder ? 'pending_shipping' : 'completed',
           cart_data: cart,
           payment_status: 'paid',
           payment_method: 'terminal',
           event_slug: currentEvent,
+          event_name: eventName,
           created_at: new Date()
         },
       ])
