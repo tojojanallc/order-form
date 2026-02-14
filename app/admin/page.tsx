@@ -972,7 +972,6 @@ export default function AdminPage() {
                         return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> );
                     })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
                     <td className="p-4 align-top text-right">
-                        {/* --- NEW: MARK PAID BUTTON --- */}
                         {!isPaid && (
                             <button 
                                 onClick={() => markOrderPaid(order.id)}
@@ -991,8 +990,6 @@ export default function AdminPage() {
             )})}</tbody></table> 
           </div> 
         </div> )}
-
-        {activeTab === 'history' && ( <div> <div className="bg-gray-800 text-white p-4 rounded-t-lg flex justify-between items-center"><h2 className="font-bold text-xl">Order Archive (Completed)</h2><button onClick={downloadCSV} className="bg-white text-black px-4 py-2 rounded font-bold hover:bg-gray-200 text-sm">📥 Download CSV</button></div> <div className="bg-white shadow rounded-b-lg overflow-hidden border border-gray-300 overflow-x-auto"> {historyOrders.length === 0 ? <div className="p-8 text-center text-gray-500">History is empty.</div> : ( <table className="w-full text-left min-w-[800px]"> <thead className="bg-gray-100 text-gray-500"> <tr> <th className="p-4">Event Name</th> <th className="p-4">Date</th> <th className="p-4">Customer</th> <th className="p-4">Items</th> <th className="p-4 text-right">Total</th> </tr> </thead> <tbody> {historyOrders.map((order) => { const safeItems = Array.isArray(order.cart_data) ? order.cart_data : []; return ( <tr key={order.id} className="border-b hover:bg-gray-50 opacity-75"> <td className="p-4 font-bold text-blue-900">{order.event_name || '-'}</td> <td className="p-4 text-sm" suppressHydrationWarning>{new Date(order.created_at).toLocaleString()}</td> <td className="p-4 font-bold">{order.customer_name}</td> <td className="p-4 text-sm">{safeItems.map(i => i?.productName).join(', ')}</td> <td className="p-4 text-right font-bold">${order.total_price}</td> </tr> ); })} </tbody> </table>)} </div> </div> )}
 
         {activeTab === 'inventory' && (
             <div className="grid md:grid-cols-3 gap-6">
@@ -1278,17 +1275,41 @@ export default function AdminPage() {
                     <div className="p-6 border-b flex justify-between bg-gray-50 rounded-t-xl"><h2 className="font-bold text-lg">Edit Order #{String(editingOrder.id).slice(0,8)}</h2><button onClick={closeEditModal} className="text-2xl text-gray-500 hover:text-black">×</button></div>
                     <div className="p-6 space-y-6">
                         <div className="bg-blue-50 p-4 rounded border border-blue-100"><label className="block text-xs font-bold uppercase text-blue-900 mb-1">Customer Name</label><input className="w-full p-2 border rounded font-bold" value={editingOrder.customer_name} onChange={(e) => handleEditChange('customer_name', e.target.value)} /></div>
-                        {editingOrder.cart_data.map((item, idx) => (
+                        {editingOrder.cart_data.map((item, idx) => {
+                            // --- NEW LOGIC: DETECT BOTTOMS & FILTER LOGOS ---
+                            const productRef = products.find(p => p.name === item.productName);
+                            const isBottom = productRef?.type === 'bottom';
+                            const allowedLogos = logos.filter(l => isBottom ? l.placement !== 'large' : true);
+                            // --------------------------------------------------
+
+                            return (
                             <div key={idx} className="bg-white p-4 border rounded-lg shadow-sm">
                                 <div className="flex justify-between items-center mb-4 pb-2 border-b">
                                     <span className="font-bold text-lg">{item.productName}</span>
                                     <select className="border-2 p-1 rounded font-bold bg-gray-50" value={item.size} onChange={(e) => handleEditItem(idx, 'size', e.target.value)}>{SIZE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}</select>
                                 </div>
-                                <div className="mb-4"><div className="text-xs font-bold text-gray-500 uppercase mb-1">Main Design</div><select className="w-full border p-2 rounded font-bold" value={item.customizations?.mainDesign || ''} onChange={(e) => handleUpdateMainDesign(idx, e.target.value)} ><option value="">(None)</option>{logos.filter(l => l.category === 'main').map(l => ( <option key={l.id} value={l.label}>{l.label}</option> ))}</select></div>
-                                <div className="space-y-2 mb-4"><div className="text-xs font-bold text-gray-500 uppercase">Accents ($5)</div>{item.customizations?.logos?.map((l, lIdx) => (<div key={lIdx} className="flex gap-2"><select className="border p-2 rounded flex-1 text-sm font-bold" value={l.type} onChange={(e) => handleUpdateAccent(idx, lIdx, 'type', e.target.value)}>{logos.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}</select><select className="border p-2 rounded w-40 text-sm" value={l.position} onChange={(e) => handleUpdateAccent(idx, lIdx, 'position', e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select></div>))}<button onClick={() => handleAddAccent(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Accent</button></div>
+                                <div className="mb-4">
+                                    <div className="text-xs font-bold text-gray-500 uppercase mb-1">Main Design</div>
+                                    <select className="w-full border p-2 rounded font-bold" value={item.customizations?.mainDesign || ''} onChange={(e) => handleUpdateMainDesign(idx, e.target.value)} >
+                                        <option value="">(None)</option>
+                                        {allowedLogos.filter(l => l.category === 'main').map(l => ( <option key={l.id} value={l.label}>{l.label}</option> ))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2 mb-4">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">Accents ($5)</div>
+                                    {item.customizations?.logos?.map((l, lIdx) => (
+                                        <div key={lIdx} className="flex gap-2">
+                                            <select className="border p-2 rounded flex-1 text-sm font-bold" value={l.type} onChange={(e) => handleUpdateAccent(idx, lIdx, 'type', e.target.value)}>
+                                                {allowedLogos.map(opt => <option key={opt.id} value={opt.label}>{opt.label}</option>)}
+                                            </select>
+                                            <select className="border p-2 rounded w-40 text-sm" value={l.position} onChange={(e) => handleUpdateAccent(idx, lIdx, 'position', e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select>
+                                        </div>
+                                    ))}
+                                    <button onClick={() => handleAddAccent(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Accent</button>
+                                </div>
                                 <div className="space-y-2"><div className="text-xs font-bold text-gray-500 uppercase">Personalization ($5)</div>{item.customizations?.names?.map((n, nIdx) => (<div key={nIdx} className="flex gap-2"><input className="border p-2 rounded flex-1 text-sm uppercase font-bold" value={n.text} onChange={(e) => handleEditName(idx, nIdx, e.target.value)} placeholder="NAME" /><select className="border p-2 rounded w-40 text-sm" value={n.position} onChange={(e) => handleUpdateNamePos(idx, nIdx, e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select></div>))}<button onClick={() => handleAddName(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Name</button></div>
                             </div>
-                        ))}
+                        )})}
                     </div>
                     <div className="p-6 border-t flex justify-end gap-3 bg-gray-50 rounded-b-xl"><button onClick={closeEditModal} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-200 rounded">Cancel</button><button onClick={saveOrderEdits} className={`px-6 py-2 text-white font-bold rounded shadow transition-colors ${newOrderTotal > originalOrderTotal ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`} >{loading ? "Saving..." : (newOrderTotal > originalOrderTotal ? `Save & Pay Difference ($${(newOrderTotal - originalOrderTotal).toFixed(2)})` : "Save Changes")}</button></div>
                 </div>
