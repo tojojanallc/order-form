@@ -230,7 +230,7 @@ export default function AdminPage() {
   useEffect(() => {
     if(!mounted || !orders) return;
     try {
-        const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'refunded');
+        const activeOrders = orders.filter(o => o.status !== 'refunded');
         if (activeOrders.length > 0) {
             let totalRevenue = 0;
             let totalCOGS = 0;
