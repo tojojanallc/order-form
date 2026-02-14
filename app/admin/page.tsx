@@ -39,8 +39,6 @@ export default function AdminPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
   const [newGuestName, setNewGuestName] = useState(''); // <--- NEW STATE
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '' });
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [products, setProducts] = useState([]);
@@ -328,49 +326,6 @@ export default function AdminPage() {
         .order('created_at', { ascending: false }); 
       if (data) setOrders(data); 
   };
-
-// ... (existing functions like fetchOrders, updateOrderStatus)
-
-  // --- 🆕 INSERT FUNCTIONS HERE ---
-  const handleEditClick = (order) => {
-      setEditingOrder(order);
-      setEditForm({
-          name: order.customer_name || '',
-          phone: order.phone || '',
-          email: order.email || '' 
-      });
-  };
-
-  const saveCustomerInfo = async () => {
-      if (!editingOrder) return;
-      try {
-          const { error } = await supabase
-              .from('orders')
-              .update({
-                  customer_name: editForm.name,
-                  phone: editForm.phone,
-                  email: editForm.email
-              })
-              .eq('id', editingOrder.id);
-
-          if (error) throw error;
-
-          // Update local list instantly
-          setOrders(orders.map(o => o.id === editingOrder.id ? { 
-              ...o, 
-              customer_name: editForm.name, 
-              phone: editForm.phone, 
-              email: editForm.email 
-          } : o));
-          
-          setEditingOrder(null); // Close popup
-          alert("Customer updated!");
-      } catch (err) {
-          alert("Update failed: " + err.message);
-      }
-  };
-  // --------------------------------
-
 const fetchInventory = async () => { 
       if (!supabase || !selectedEventSlug) return; 
       
@@ -1034,25 +989,8 @@ const handleAddProductWithSizeUpdates = async (e) => {
                         <div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div>
                     </td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                    {/* --- REPLACED CUSTOMER CELL --- */}
-                    <td className="p-4 align-top">
-                        <div className="font-bold">{order.customer_name}</div>
-                        <div className="text-sm">{order.phone}</div>
-                        <div className="text-xs text-gray-400">{order.email}</div>
-                        <button 
-                            onClick={() => {
-                                setEditingCustomer(order);
-                                setCustomerForm({
-                                    name: order.customer_name || '',
-                                    phone: order.phone || '',
-                                    email: order.email || '' 
-                                });
-                            }}
-                            className="text-blue-600 hover:text-blue-800 text-xs font-bold underline mt-1"
-                        >
-                            ✏️ Edit Info
-                        </button>
-                    </td><td className="p-4 align-top text-sm">{safeItems.map((item, i) => {
+                    <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div></td>
+                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => {
                         const customs = item?.customizations || {};
                         return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> );
                     })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
