@@ -9,7 +9,7 @@ const supabase = createClient(
 export async function POST(req: any) {
   try {
     const body = await req.json();
-    const { cart, customerName, total, eventSlug } = body; 
+    const { cart, customerName, customerPhone, customerEmail, total, eventSlug, eventName } = body; 
 
     // Normalize slug (handle nulls)
     const currentEvent = eventSlug || 'default';
