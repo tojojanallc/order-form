@@ -468,48 +468,48 @@ if (backNameList && !backListConfirmed) {
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
-  // --- FIXED TERMINAL CHECKOUT ---
-  const handleTerminalCheckout = async () => {
-    // 1. Validation
+  // --- UPDATED: ROBUST TERMINAL CHECKOUT ---
+ const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
     if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.\nAsk Admin to run Setup.");
     if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
 
-    // 2. Slug Detection
+    // --- SMART SLUG DETECTION (The Fix) ---
     const searchParams = new URLSearchParams(window.location.search);
     let currentSlug = searchParams.get('event');
+
+    // If URL is empty (Clean Link style), use the pathname (e.g., /event1)
     if (!currentSlug) {
-        const path = window.location.pathname.replace(/^\//, '');
+        const path = window.location.pathname.replace(/^\//, ''); // Remove slash
         if (path && path !== '') currentSlug = path;
     }
+    
+    // Safety Fallback
     if (!currentSlug) currentSlug = 'default';
+    // --------------------------------------
 
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
 
     try {
-        // 3. Create the Order in Database
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 cart, 
-                customerName,
-                customerPhone
+                customerName, 
                 total: calculateGrandTotal(),
-                eventSlug: currentSlug 
+                eventSlug: currentSlug // <--- Sending the correctly detected slug
             })
         });
 
         if (!createRes.ok) throw new Error("Order creation failed");
 
         const orderData = await createRes.json();
-        const orderId = orderData.orderId; // <--- WE CAPTURE THE ID HERE
-        
+        const orderId = orderData.orderId;
         setTerminalStatus("Sent to Terminal... Please Tap Card.");
 
-        // 4. Wake up the Terminal
         const payRes = await fetch('/api/terminal-pay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -522,22 +522,17 @@ if (backNameList && !backListConfirmed) {
 
         if (!payRes.ok) throw new Error("Terminal connection failed");
 
-        // 5. Define Success Logic
         const handleSuccess = () => {
             if (window.pollingRef) clearInterval(window.pollingRef);
             if (channel) supabase.removeChannel(channel);
-            
-            // --- CRITICAL FIX HERE ---
-            setLastOrderId(orderId); // <--- Save the ID for the screen!
-            
+            // SEND SMS & EMAIL HERE
             sendConfirmationSMS(customerName, customerPhone);
-            if (customerEmail) sendReceiptEmail(orderId, customerName, customerEmail, cart, calculateGrandTotal());
-            
+            sendReceiptEmail(orderId, customerName, customerEmail, cart, calculateGrandTotal());
             setOrderComplete(true);
-            setIsTerminalProcessing(false); // Unlocks the screen
+            // Don't clear cart here; resetApp handles it
+            setIsTerminalProcessing(false);
         };
 
-        // 6. Listen for Payment (Realtime)
         const channel = supabase.channel(`terminal_watch_${orderId}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` }, 
             (payload) => {
@@ -545,7 +540,6 @@ if (backNameList && !backListConfirmed) {
             })
             .subscribe();
 
-        // 7. Backup Polling (In case Realtime misses it)
         window.pollingRef = setInterval(async () => {
             const { data } = await supabase.from('orders').select('payment_status').eq('id', orderId).single();
             if (data && data.payment_status === 'paid') {
@@ -554,7 +548,7 @@ if (backNameList && !backListConfirmed) {
         }, 2000);
 
     } catch (err) {
-        console.error("Terminal Error:", err);
+        console.error("Checkout Error:", err);
         alert("System Error: " + err.message);
         if (window.pollingRef) clearInterval(window.pollingRef);
         setIsTerminalProcessing(false);
@@ -589,7 +583,6 @@ if (backNameList && !backListConfirmed) {
                 cart,
                 customerName,
                 customerPhone,
-                customerEmail,
                 total: calculateGrandTotal(),
                 eventName,
                 eventSlug: currentSlug,
