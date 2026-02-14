@@ -840,14 +840,20 @@ export default function AdminPage() {
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
   const visibleOrders = orders.filter(o => {
-      if (!hideUnpaid) return o.status !== 'completed' && o.status !== 'refunded';
+      // 1. Always hide Refunded (move to history)
+      if (o.status === 'refunded') return false;
+
+      // 2. Logic for "Hide Unpaid" Toggle
+      if (!hideUnpaid) return true; // Shows Pending, Completed, Ready, etc.
+
+      // 3. Logic for Paid Check
       const pStatus = (o.payment_status || '').toLowerCase();
       const isHostedEvent = paymentMode === 'hosted';
       const isPaid = isHostedEvent 
           ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') 
           : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0 || (pStatus === '' && o.status === 'pending'));
       
-      return isPaid && o.status !== 'completed' && o.status !== 'refunded';
+      return isPaid;
   });
 
   const historyOrders = Array.isArray(orders) ? orders.filter(o => o.status === 'completed' || o.status === 'refunded') : [];
