@@ -32,24 +32,41 @@ export default function AnalyticsDashboard() {
   const logoStats: Record<string, number> = {};
   const addonStats: Record<string, number> = { "Metallic Upgrade": 0, "Back Roster": 0, "Custom Names": 0 };
   
+  // --- DEEP SCAN AGGREGATION ---
+  const strokeStats: Record<string, number> = {};
+  const logoStats: Record<string, number> = {};
+  const addonStats: Record<string, number> = { "Metallic Upgrade": 0, "Back Roster": 0, "Custom Names": 0 };
+  
   filteredOrders.forEach(order => {
     const cart = Array.isArray(order.cart_data) ? order.cart_data : [];
+    
     cart.forEach((item: any) => {
-      // 1. Strokes/Main Design
-      if (item.mainDesign) strokeStats[item.mainDesign] = (strokeStats[item.mainDesign] || 0) + 1;
+      // 1. Identify the Stroke / Main Design
+      // Checks item.mainDesign OR item.customizations.mainDesign
+      const stroke = item.mainDesign || item.customizations?.mainDesign;
+      if (stroke) {
+        strokeStats[stroke] = (strokeStats[stroke] || 0) + 1;
+      }
       
-      // 2. Logos & Positions
-      if (Array.isArray(item.logos)) {
-        item.logos.forEach((logo: any) => {
-          const key = `${logo.type} (${logo.position})`;
-          logoStats[key] = (logoStats[key] || 0) + 1;
+      // 2. Identify Logos & Positions
+      const logos = item.logos || item.customizations?.logos;
+      if (Array.isArray(logos)) {
+        logos.forEach((logo: any) => {
+          const type = logo.type || logo.name;
+          const pos = logo.position || logo.pos;
+          if (type) {
+            const key = `${type} (${pos || 'Standard'})`;
+            logoStats[key] = (logoStats[key] || 0) + 1;
+          }
         });
       }
 
-      // 3. Add-ons
-      if (item.metallicUpgrade) addonStats["Metallic Upgrade"] += 1;
-      if (item.backNameList) addonStats["Back Roster"] += 1;
-      if (item.names && item.names.length > 0) addonStats["Custom Names"] += 1;
+      // 3. Identify Add-ons (Checking top level and nested)
+      if (item.metallicUpgrade || item.customizations?.metallicUpgrade) addonStats["Metallic Upgrade"] += 1;
+      if (item.backNameList || item.customizations?.backNameList) addonStats["Back Roster"] += 1;
+      
+      const names = item.names || item.customizations?.names;
+      if (names && names.length > 0) addonStats["Custom Names"] += 1;
     });
   });
 
