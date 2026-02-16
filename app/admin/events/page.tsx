@@ -115,7 +115,7 @@ export default function AdminPage() {
   useEffect(() => {
       if (isAuthorized && mounted) {
           const loadEvents = async () => {
-              const { data } = await supabase.from('event_settings').select('*').order('id');
+              const { data } = await supabase.from('event_settings').select('*').eq('status', 'active').order('id');
               if (data && data.length > 0) {
                   setAvailableEvents(data);
                   if (!selectedEventSlug) setSelectedEventSlug(data[0].slug);

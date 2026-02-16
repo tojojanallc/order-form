@@ -21,9 +21,7 @@ export default function EventHistory() {
     // Uncomment it ONLY if you verify the column exists in Supabase.
     const { data, error } = await supabase
       .from('event_settings')
-      .select('*')
-      .eq('status', 'active')  // <--- ADD THIS LINE
-      ;
+      .select('*');
       // .order('created_at', { ascending: false }); 
 
     if (error) {
