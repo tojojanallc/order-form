@@ -432,37 +432,31 @@ export default function AdminPage() {
   };
 
   const closeEvent = async () => { 
-      console.log("Attempting to close:", selectedEventSlug); // DEBUG LOG 1
+      console.log("Attempting to close:", selectedEventSlug); 
 
       if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; 
       setLoading(true); 
       
-      // 1. Update the Event Status and SELECT the result to see if it worked
-      const { data, error } = await supabase
+      // 1. Update the Event Status
+      const { data: updateData, error: updateError } = await supabase
         .from('event_settings')
         .update({ status: 'archived' }) 
         .eq('slug', selectedEventSlug)
-        .select(); // <--- This is crucial for debugging
+        .select();
 
-      // DEBUG LOG 2
-      console.log("Supabase Update Result:", data);
-      console.log("Supabase Error:", error);
-
-      if (error) {
-        alert("Error: " + error.message);
+      if (updateError) {
+        alert("Error: " + updateError.message);
         setLoading(false);
         return;
       }
 
-      // CHECK IF ROWS WERE ACTUALLY UPDATED
-      if (!data || data.length === 0) {
-        alert("⚠️ COMMAND FAILED: Database returned 0 updated rows. Check Console (F12) for details.");
-        console.warn("Possible causes: 1. Row Level Security (RLS) blocking UPDATE. 2. Slug mismatch.");
+      if (!updateData || updateData.length === 0) {
+        alert("⚠️ COMMAND FAILED: Database returned 0 updated rows.");
         setLoading(false);
         return;
       }
 
-      // 2. Mark orders as completed
+      // 2. Mark orders as completed for this specific event
       await supabase.from('orders')
         .update({ status: 'completed' })
         .eq('event_slug', selectedEventSlug)
@@ -471,27 +465,22 @@ export default function AdminPage() {
 
       alert("SUCCESS: Event Archived!"); 
       
-     // 3. Refresh UI (Fetch ONLY active events)
-// Renamed 'data' to 'refreshedData' to avoid the redefinition error
-const { data: refreshedData, error: refreshError } = await supabase
-    .from('event_settings')
-    .select('*')
-    .eq('status', 'active') 
-    .order('id');
+      // 3. Refresh the dropdown list (Fetch ONLY active events)
+      const { data: refreshedEvents } = await supabase
+          .from('event_settings')
+          .select('*')
+          .eq('status', 'active') 
+          .order('id');
 
-if (refreshedData) {
-    setAvailableEvents(refreshedData);
-    
-    // Auto-switch to the first active event if there is one
-    if (refreshedData.length > 0) {
-        setSelectedEventSlug(refreshedData[0].slug);
-    } else {
-        setSelectedEventSlug('');
-    }
-}
-
-
-      if (newData) setAvailableEvents(newData);
+      if (refreshedEvents) {
+          setAvailableEvents(refreshedEvents);
+          // Auto-switch to the first active event if available
+          if (refreshedEvents.length > 0) {
+              setSelectedEventSlug(refreshedEvents[0].slug);
+          } else {
+              setSelectedEventSlug('');
+          }
+      }
 
       fetchOrders(); 
       setLoading(false); 
