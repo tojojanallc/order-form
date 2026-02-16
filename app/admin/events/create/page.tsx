@@ -17,30 +17,28 @@ export default function CreateEventPage() {
     if (!form.name || !form.slug) return alert("Missing fields.");
     setLoading(true);
 
+    // Clean Slug + Timestamp to FORCE uniqueness if the DB is being stubborn
     const safeSlug = form.slug.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-    // 1. Check if slug exists in any status (active or archived)
-    const { data: existing } = await supabase.from('event_settings').select('slug').eq('slug', safeSlug).maybeSingle();
-    if (existing) {
-        alert(`SLUG TAKEN: "${safeSlug}" exists. Add a year or suffix.`);
-        setLoading(false);
-        return;
-    }
-
-    // 2. Insert essentials ONLY. Do NOT pass an ID.
+    // THE FIX: We explicitly omit 'id' and any legacy fields. 
+    // If this fails with 23505, your 'slug' column IS the Primary Key and it already exists.
     const { error } = await supabase.from('event_settings').insert([
       {
         event_name: form.name,
         slug: safeSlug,
         status: 'active',
         payment_mode: form.mode,
-        header_color: '#1e3a8a'
+        header_color: '#1e3a8a',
+        offer_back_names: true,
+        offer_metallic: true,
+        offer_personalization: true
       }
     ]);
 
     if (error) {
-      console.error("CRITICAL DB ERROR:", error);
-      alert(`DB ERROR ${error.code}: ${error.message}`);
+      console.error("Supabase Error:", error);
+      // If code is 23505, it is a DUPLICATE.
+      alert(`DB REJECTED: The slug "${safeSlug}" is already taken (Check archives!). Change the slug to something like "${safeSlug}-2026"`);
       setLoading(false);
     } else {
       alert("🎉 Event Created!");
@@ -50,8 +48,8 @@ export default function CreateEventPage() {
 
   return (
     <div className="min-h-screen bg-white text-black p-8 max-w-2xl mx-auto border-x-4 border-black">
-      <Link href="/admin" className="text-blue-600 font-black uppercase text-[10px] hover:underline">← Command Center</Link>
-      <h1 className="text-6xl font-black uppercase mt-4 mb-10 italic">New Event</h1>
+      <Link href="/admin" className="text-blue-600 font-black uppercase text-[10px] hover:underline">← Dashboard</Link>
+      <h1 className="text-6xl font-black uppercase mt-4 mb-10 italic tracking-tighter">New Event</h1>
 
       <form onSubmit={handleCreate} className="space-y-8 bg-gray-50 p-8 border-4 border-black shadow-[12px_12px_0px_0px_black]">
         <div>
@@ -74,8 +72,8 @@ export default function CreateEventPage() {
             className={`p-6 border-4 border-black font-black uppercase transition-all ${form.mode === 'hosted' ? 'bg-pink-600 text-white shadow-[6px_6px_0px_0px_black] -translate-y-1' : 'bg-white'}`}>Hosted</button>
         </div>
 
-        <button disabled={loading} className="w-full bg-black text-white py-8 font-black uppercase text-3xl border-4 border-black hover:bg-green-500 transition-all">
-          {loading ? 'DEPLOYING...' : 'CREATE EVENT'}
+        <button disabled={loading} className="w-full bg-black text-white py-8 font-black uppercase text-3xl border-4 border-black hover:bg-green-500 hover:text-black active:translate-y-2 transition-all">
+          {loading ? 'DEPLOYING...' : 'LAUNCH EVENT'}
         </button>
       </form>
     </div>
