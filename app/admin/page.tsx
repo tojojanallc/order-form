@@ -76,87 +76,67 @@ export default function MasterAdmin() {
         </div>
       </div>
 
-      {/* OPERATIONS LINKS (The "Big Buttons") */}
-      <h2 className="text-xl font-bold text-gray-800 mb-6">Inventory Operations</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-8 bg-white">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-8 bg-gray-50">
   
-  {/* MANAGE POs */}
-  <Link href="/admin/purchasing/list" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_black] bg-white hover:bg-gray-50 transition-all group flex flex-col justify-between h-full">
+  {/* ROW 1: PURCHASING & LOGISTICS */}
+  <Link href="/admin/purchasing/list" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
     <div>
-      <div className="flex justify-between items-start">
-        <h2 className="text-2xl font-black uppercase leading-tight text-black">Manage POs</h2>
-        <span className="text-3xl">📋</span>
+      <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+        <span className="text-2xl">📋</span>
       </div>
-      <p className="mt-4 font-bold text-gray-500 uppercase text-[10px] tracking-widest leading-relaxed">
-        View history, check status, or cancel open orders.
-      </p>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Manage POs</h2>
+      <p className="text-gray-500 text-sm leading-relaxed">View history, check status, or cancel open orders.</p>
     </div>
   </Link>
 
-  {/* RECEIVE STOCK */}
-  <Link href="/admin/purchasing/receive" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_black] bg-white hover:bg-gray-50 transition-all group flex flex-col justify-between h-full">
+  <Link href="/admin/purchasing/receive" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
     <div>
-      <div className="flex justify-between items-start">
-        <h2 className="text-2xl font-black uppercase leading-tight text-black">Receive Stock</h2>
-        <span className="text-3xl">📦</span>
+      <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+        <span className="text-2xl">📦</span>
       </div>
-      <p className="mt-4 font-bold text-gray-500 uppercase text-[10px] tracking-widest leading-relaxed">
-        Scan incoming boxes against Open POs. Updates Warehouse.
-      </p>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Receive Stock</h2>
+      <p className="text-gray-500 text-sm leading-relaxed">Scan incoming boxes against Open POs. Updates Warehouse.</p>
     </div>
   </Link>
 
-  {/* LOAD TRUCK */}
-  <Link href="/admin/inventory/transfer" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_black] bg-white hover:bg-gray-50 transition-all group flex flex-col justify-between h-full">
+  <Link href="/admin/inventory/transfer" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
     <div>
-      <div className="flex justify-between items-start">
-        <h2 className="text-2xl font-black uppercase leading-tight text-black">Load Truck</h2>
-        <span className="text-3xl">🚛</span>
+      <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+        <span className="text-2xl">🚛</span>
       </div>
-      <p className="mt-4 font-bold text-gray-500 uppercase text-[10px] tracking-widest leading-relaxed">
-        Transfer stock from Warehouse to a specific Event Kiosk.
-      </p>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Load Truck</h2>
+      <p className="text-gray-500 text-sm leading-relaxed">Transfer stock from Warehouse to a specific Event Kiosk.</p>
     </div>
   </Link>
 
-  {/* RECONCILE EVENT */}
-  <Link href="/admin/inventory/reconcile" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_black] bg-white hover:bg-gray-50 transition-all group flex flex-col justify-between h-full">
+  {/* ROW 2: EVENT MANAGEMENT & ADJUSTMENTS */}
+  <Link href="/admin/inventory/reconcile" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
     <div>
-      <div className="flex justify-between items-start">
-        <h2 className="text-2xl font-black uppercase leading-tight text-black">Reconcile Event</h2>
-        <span className="text-3xl">🔄</span>
+      <div className="w-12 h-12 bg-purple-50 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+        <span className="text-2xl">🔄</span>
       </div>
-      <p className="mt-4 font-bold text-gray-500 uppercase text-[10px] tracking-widest leading-relaxed">
-        Count unsold items, return stock to warehouse, and close out the event.
-      </p>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Reconcile Event</h2>
+      <p className="text-gray-500 text-sm leading-relaxed">Count unsold items, return stock to warehouse, and close event.</p>
     </div>
   </Link>
 
-  {/* EVENT ARCHIVE */}
-  <Link href="/admin/events/history" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_black] bg-white hover:bg-gray-50 transition-all group flex flex-col justify-between h-full">
+  <Link href="/admin/events/history" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
     <div>
-      <div className="flex justify-between items-start">
-        <h2 className="text-2xl font-black uppercase leading-tight text-black">Event Archive</h2>
-        <span className="text-3xl">📁</span>
+      <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+        <span className="text-2xl">📁</span>
       </div>
-      <p className="mt-4 font-bold text-gray-500 uppercase text-[10px] tracking-widest leading-relaxed">
-        View past events, download CSV sales data, and manage historical records.
-      </p>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Event Archive</h2>
+      <p className="text-gray-500 text-sm leading-relaxed">View past events, download CSV sales data, and manage historical records.</p>
     </div>
   </Link>
 
-  {/* ADJUST STOCK */}
-  <Link href="/admin/inventory/adjust" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_black] bg-white hover:bg-gray-50 transition-all group flex flex-col justify-between h-full">
+  <Link href="/admin/inventory/adjust" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
     <div>
-      <div className="flex justify-between items-start">
-        <h2 className="text-2xl font-black uppercase leading-tight text-black">Adjust Stock</h2>
-        <span className="text-3xl">🗑️</span>
+      <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+        <span className="text-2xl">🗑️</span>
       </div>
-      <p className="mt-4 font-bold text-gray-500 uppercase text-[10px] tracking-widest leading-relaxed">
-        Remove damaged goods, correct physical counts, or record write-offs.
-      </p>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Write Offs</h2>
+      <p className="text-gray-500 text-sm leading-relaxed">Remove damaged goods or correct stock counts manually.</p>
     </div>
   </Link>
 
