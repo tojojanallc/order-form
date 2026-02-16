@@ -11,7 +11,6 @@ export async function POST(req: any) {
     const body = await req.json();
     const { cart, guestName, guestId, eventName, eventSlug, customerPhone } = body;
 
-    // FORCE DEFAULT if missing
     const currentEvent = (eventSlug && eventSlug !== '') ? eventSlug : 'default';
 
     // 1. Create the Order
@@ -41,11 +40,33 @@ export async function POST(req: any) {
         await supabase.from('guests').update({ has_ordered: true }).eq('id', guestId);
     }
 
-    // 3. INVENTORY UPDATE (BRUTE FORCE)
+    // 3. INVENTORY UPDATE & SALES LEDGER LOGGING
     for (const item of cart) {
         if (item.productId && item.size) {
             
-            // A. Get ALL rows for this product/size (Ignore slug for a moment)
+            // --- NEW: LOG TO SALES LEDGER (Cost of "Free" items) ---
+            const { data: invMaster } = await supabase
+                .from('inventory_master')
+                .select('cost_per_unit')
+                .eq('product_id', item.productId)
+                .eq('size', item.size)
+                .single();
+
+            const costBasis = invMaster?.cost_per_unit || 0;
+
+            await supabase.from('sales_ledger').insert({
+                event_slug: currentEvent,
+                product_id: item.productId,
+                size: item.size,
+                qty: 1,
+                sale_price: 0, // Guest paid nothing
+                cost_basis: costBasis, // But it cost you the blank
+                payment_method: 'hosted',
+                order_id: order.id
+            });
+            // -------------------------------------------------------
+
+            // EXISTING: STOCK DECREMENT LOGIC
             const { data: candidates } = await supabase
                 .from('inventory')
                 .select('*')
@@ -53,36 +74,21 @@ export async function POST(req: any) {
                 .eq('size', item.size);
 
             if (candidates && candidates.length > 0) {
-                // B. Manual Filter in Javascript (More reliable)
-                // Look for Exact Slug Match
                 let targetRow = candidates.find(c => c.event_slug === currentEvent);
-
-                // If not found, look for 'default'
                 if (!targetRow) {
                     targetRow = candidates.find(c => c.event_slug === 'default');
                 }
-
-                // If still not found, look for NULL (Legacy)
                 if (!targetRow) {
                     targetRow = candidates.find(c => !c.event_slug);
                 }
 
-                // C. Update the specific ID
                 if (targetRow) {
-                    console.log(`📉 FOUND IT! Updating Inventory ID: ${targetRow.id} (Current: ${targetRow.count})`);
-                    
                     const newCount = Math.max(0, targetRow.count - 1);
-                    
                     await supabase
                         .from('inventory')
                         .update({ count: newCount })
-                        .eq('id', targetRow.id); // Update by ID is guaranteed
-                        
-                } else {
-                    console.log(`⚠️ CRITICAL: Item exists in products but NOT in inventory for this event: ${item.productId}`);
+                        .eq('id', targetRow.id);
                 }
-            } else {
-                console.log(`⚠️ Item not found in ANY inventory: ${item.productId}`);
             }
         }
     }
