@@ -120,6 +120,17 @@ export default function MasterAdmin() {
           </div>
         </Link>
 
+        {/* Add this button to your existing grid of admin tools */}
+<Link href="/admin/events/history" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white hover:bg-blue-50 transition-all group">
+  <div className="flex justify-between items-start">
+    <h2 className="text-2xl font-black uppercase">Event Archive</h2>
+    <span className="text-2xl">📁</span>
+  </div>
+  <p className="mt-4 font-bold text-gray-500 uppercase text-xs">
+    View past events, download CSV sales data, and manage historical records.
+  </p>
+</Link>
+
         {/* 5. WRITE OFF (Adjust) */}
         <Link href="/admin/inventory/adjust" className="group">
             <div className="bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 p-8 rounded-xl transition-all cursor-pointer h-full">
