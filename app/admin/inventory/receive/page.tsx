@@ -63,7 +63,7 @@ export default function ReceivePO() {
         {/* TOP NAVIGATION BAR */}
         <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-xl border-2 border-gray-200 shadow-sm">
           <Link href="/admin" className="bg-gray-900 text-white px-5 py-2 rounded-lg font-black uppercase text-xs hover:bg-black transition-colors">
-            ← Dashboard
+            ← Return to Dashboard
           </Link>
           <h1 className="text-2xl font-black text-black">Inbound Receiving</h1>
           <div className="w-24"></div> {/* Spacer for symmetry */}
