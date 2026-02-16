@@ -228,90 +228,74 @@ export default function AdminPage() {
 
   // --- GROUND ZERO STATS LOGIC ---
   useEffect(() => {
-    // 1. Safety check & Hard Reset
+    // 1. Reset state to avoid carrying over old numbers
     if (!mounted || !orders || !selectedEventSlug) {
       setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
       return;
     }
 
     try {
-      // 2. DEDUPLICATE: Create a Map where the Key is the Order ID.
-      // This mathematically guarantees that no order is counted twice.
+      // 2. STRICT DEDUPLICATION: Use a Map with order.id to ensure each order is counted ONCE.
       const uniqueOrderMap = new Map();
       orders.forEach(o => {
         if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
           uniqueOrderMap.set(o.id, o);
         }
       });
-
       const activeOrders = Array.from(uniqueOrderMap.values());
 
-      // 3. INTERNAL MATH VARIABLES (Reset to 0 every time)
-      let calculatedGross = 0;
-      let calculatedCOGS = 0;
-      const itemCounts = {};
+      let totalGross = 0;
+      let totalCost = 0;
+      const counts = {};
 
       activeOrders.forEach(order => {
-        const rawItems = Array.isArray(order.cart_data) ? order.cart_data : [];
-        const items = rawItems.filter(Boolean); // Remove empty/null items
-        
+        const items = Array.isArray(order.cart_data) ? order.cart_data.filter(Boolean) : [];
         let orderWorth = 0;
 
-        // 4. BRANCHING LOGIC: Hosted vs Retail
+        // 3. Revenue Logic
         if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
-          // HOSTED MODE: We must calculate the value because the customer paid $0
           items.forEach(item => {
-            const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+            const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
             const prod = products.find(p => p.id === item.productId);
             
-            // Use override price, then base price, default to 0
-            let price = Number(invItem?.override_price ?? prod?.base_price ?? 0);
+            // Defaulting to 0 instead of 30 if not found to prevent "nuts" revenue
+            let price = Number(inv?.override_price ?? prod?.base_price ?? 0);
             
-            // Add Customizations ($5 each)
             if (item.customizations) {
-              const logos = Number(item.customizations.logos?.length || 0);
-              const names = Number(item.customizations.names?.length || 0);
-              const metallic = item.customizations.metallic ? 5 : 0;
-              price += (logos * 5) + (names * 5) + metallic;
+              price += (Number(item.customizations.logos?.length || 0) * 5);
+              price += (Number(item.customizations.names?.length || 0) * 5);
+              if (item.customizations.metallic) price += 5;
             }
             orderWorth += price;
           });
         } else {
-          // RETAIL MODE: Use the actual money collected in the database
           orderWorth = Number(order.total_price || 0);
         }
 
-        // Add this order's value to the Gross Revenue
-        calculatedGross += orderWorth;
+        totalGross += orderWorth;
 
-        // 5. COGS & TOP ITEM (Always runs per item)
+        // 4. COGS & Top Item Tracking
         items.forEach(item => {
-          const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-          const unitCost = Number(invItem?.cost_price || 8.50);
-          calculatedCOGS += (unitCost + 1.50); // Garment + Transfer/Labor
-
+          const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+          totalCost += (Number(inv?.cost_price || 8.50) + 1.50);
           const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
-          itemCounts[key] = (itemCounts[key] || 0) + 1;
+          counts[key] = (counts[key] || 0) + 1;
         });
       });
 
-      // 6. FINAL NET CALCULATION
-      const stripeFees = paymentMode === 'hosted' ? 0 : (calculatedGross * 0.029) + (activeOrders.length * 0.30);
-      const netProfit = calculatedGross - stripeFees - calculatedCOGS;
-
-      const sorted = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
+      const stripeFees = paymentMode === 'hosted' ? 0 : (totalGross * 0.029) + (activeOrders.length * 0.30);
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
 
       setStats({
-        revenue: calculatedGross,
+        revenue: totalGross,
         count: activeOrders.length,
-        net: netProfit,
+        net: totalGross - stripeFees - totalCost,
         topItem: sorted.length > 0 ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
       });
 
-    } catch (err) {
-      console.error("CRITICAL STATS ERROR:", err);
-    }
+    } catch (e) { console.error("Stats Error:", e); }
   }, [orders, inventory, mounted, paymentMode, products, selectedEventSlug]);
+  
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
