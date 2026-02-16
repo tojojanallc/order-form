@@ -390,8 +390,42 @@ export default function AdminPage() {
       alert("Saved settings for " + selectedEventSlug); 
   };
 
-  const closeEvent = async () => { if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; setLoading(true); await supabase.from('orders').update({ event_name: eventName }).neq('status', 'completed'); await supabase.from('orders').update({ status: 'completed' }).neq('status', 'completed'); alert("Event Closed!"); fetchOrders(); setLoading(false); };
+  const closeEvent = async () => { 
+      if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; 
+      setLoading(true); 
+      
+      // 1. UPDATE THE EVENT STATUS (This hides it from the public page)
+      const { error } = await supabase
+        .from('event_settings')
+        .update({ status: 'archived' })
+        .eq('slug', selectedEventSlug);
 
+      if (error) {
+        alert("Error archiving event: " + error.message);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Mark pending orders as completed (Added safety check for current event only)
+      await supabase.from('orders')
+        .update({ event_name: eventName })
+        .neq('status', 'completed')
+        .eq('event_slug', selectedEventSlug); // <--- Added safety filter
+
+      await supabase.from('orders')
+        .update({ status: 'completed' })
+        .neq('status', 'completed')
+        .eq('event_slug', selectedEventSlug); // <--- Added safety filter
+
+      alert("Event Closed & Archived!"); 
+      
+      // 3. Refresh the list of available events so the UI updates
+      const { data } = await supabase.from('event_settings').select('*').order('id');
+      if (data) setAvailableEvents(data);
+
+      fetchOrders(); 
+      setLoading(false); 
+  };
   const handleStatusChange = async (orderId, newStatus) => {
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
