@@ -34,7 +34,7 @@ export default function AnalyticsDashboard() {
     return acc;
   }, {});
 
-  // --- AGGREGATION LOGIC ---
+  // --- UPDATED AGGREGATION LOGIC ---
   const mainStrokeStats: Record<string, number> = {};
   const addOnLogoStats: Record<string, number> = {};
   const garmentSizeStats: Record<string, number> = {};
@@ -46,17 +46,17 @@ export default function AnalyticsDashboard() {
     cart.forEach((item: any) => {
       totalItemsSold += 1;
       
-      // 1. Garment & Size Breakdown
-      const gName = item.name || item.productName || "Unknown";
-      const gSize = item.size || "N/A";
+      // 1. ROBUST SIZE SCAN (Checking top-level and nested)
+      const gName = item.name || item.productName || "Unknown Item";
+      const gSize = item.size || item.customizations?.size || "N/A";
       const gKey = `${gName} - ${gSize}`;
       garmentSizeStats[gKey] = (garmentSizeStats[gKey] || 0) + 1;
 
-      // 2. Main Stroke (Primary Design)
+      // 2. Main Stroke
       const mainDesign = item.mainDesign || item.customizations?.mainDesign;
       if (mainDesign) mainStrokeStats[mainDesign] = (mainStrokeStats[mainDesign] || 0) + 1;
       
-      // 3. Add-on Logos
+      // 3. Add-on Logos (Legacy and Modern)
       const logos = item.logos || item.customizations?.logos || item['Additional Imprints'];
       if (Array.isArray(logos)) {
         logos.forEach((logo: any) => {
@@ -65,7 +65,7 @@ export default function AnalyticsDashboard() {
         });
       }
 
-      // 4. Technical Add-ons
+      // 4. Upgrades
       if (item.metallicUpgrade || item.customizations?.metallicUpgrade) addonStats["Metallic Upgrade"] += 1;
       if (item.backNameList || item.customizations?.backNameList || item['Add Roster'] === 'Yes') addonStats["Back Roster"] += 1;
       const names = item.names || item.customizations?.names;
@@ -73,10 +73,11 @@ export default function AnalyticsDashboard() {
     });
   });
 
+  // Prepare data for the visual Size Chart
   const chartData = Object.entries(garmentSizeStats)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
-    .slice(0, 10); // Show top 10 combinations
+    .slice(0, 10);
 
   const hasAddOnLogos = Object.keys(addOnLogoStats).length > 0;
 
@@ -98,7 +99,7 @@ export default function AnalyticsDashboard() {
       o.email || 'N/A',
       o.phone || 'N/A',
       o.total_price,
-      (o.cart_data || []).map((i: any) => `${i.name || i.productName} (${i.size})`).join(" | ")
+      (o.cart_data || []).map((i: any) => `${i.name || i.productName} (${i.size || i.customizations?.size || 'N/A'})`).join(" | ")
     ]);
     saveCSV("Orders_by_Customer", headers, rows);
   };
@@ -112,7 +113,7 @@ export default function AnalyticsDashboard() {
     saveCSV("Logo_and_Stroke_Usage", ["Design Name", "Total Used"], Object.entries({ ...mainStrokeStats, ...addOnLogoStats }));
   };
 
-  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Building Command Center...</div>;
+  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Compiling Size Trends...</div>;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans relative">
@@ -138,7 +139,7 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* KPI CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-slate-900">
           <div className="bg-white p-6 rounded-3xl border shadow-sm">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Revenue</p>
             <p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p>
@@ -153,18 +154,18 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* INVENTORY CHART SECTION */}
-        <div className="bg-white rounded-[2.5rem] border shadow-sm p-8 mb-8">
-          <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-8 flex items-center gap-2"><BarChart3 size={14}/> Popular Garment & Size Combinations</h3>
-          <div className="h-[300px] w-full">
+        {/* INVENTORY SIZE CHART */}
+        <div className="bg-white rounded-[2.5rem] border shadow-sm p-8 mb-8 text-slate-900">
+          <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-8 flex items-center gap-2"><BarChart3 size={14}/> Size Usage Breakdown</h3>
+          <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={chartData} margin={{ left: 40, right: 40 }}>
+              <BarChart layout="vertical" data={chartData} margin={{ left: 50, right: 50 }}>
                 <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" width={150} fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
+                <YAxis dataKey="name" type="category" width={180} fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
                 <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
-                <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={20}>
+                <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={25}>
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#2563eb' : '#3b82f6'} />
+                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#10b981' : '#34d399'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -184,7 +185,7 @@ export default function AnalyticsDashboard() {
           </div>
 
           {hasAddOnLogos && (
-            <div className="bg-white rounded-[2rem] border shadow-sm p-8">
+            <div className="bg-white rounded-[2rem] border shadow-sm p-8 text-slate-900">
               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><MapPin size={14}/> Add-On Logo Usage</h3>
               <div className="space-y-3">
                 {Object.entries(addOnLogoStats).sort((a,b)=>b[1]-a[1]).map(([label, count]) => (
@@ -240,7 +241,7 @@ export default function AnalyticsDashboard() {
 
                 return (
                   <div key={i} className="mb-4 p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                    <div className="flex justify-between items-center mb-4"><span className="font-black text-slate-800 uppercase italic tracking-tighter">{item.name || item.productName}</span><span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black font-mono">{item.size}</span></div>
+                    <div className="flex justify-between items-center mb-4"><span className="font-black text-slate-800 uppercase italic tracking-tighter">{item.name || item.productName}</span><span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black font-mono">{item.size || item.customizations?.size || 'N/A'}</span></div>
                     <div className="grid grid-cols-2 gap-4 text-[10px] uppercase font-bold text-slate-400">
                       <div><p className="mb-1 tracking-widest text-[8px]">Main Design</p><p className="text-slate-700 text-xs">{item.mainDesign || item.customizations?.mainDesign || 'None'}</p></div>
                       <div>
