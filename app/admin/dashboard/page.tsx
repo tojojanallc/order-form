@@ -44,8 +44,7 @@ export default function AnalyticsDashboard() {
     const meta = eventMetadata[slug];
     const startStr = meta.start.toLocaleDateString();
     const endStr = meta.end.toLocaleDateString();
-    const dateRange = startStr === endStr ? startStr : `${startStr}-${endStr}`;
-    return `${dateRange} - ${meta.name}`;
+    return `${startStr === endStr ? startStr : startStr + '-' + endStr} - ${meta.name}`;
   };
 
   // --- AGGREGATION LOGIC ---
@@ -82,12 +81,13 @@ export default function AnalyticsDashboard() {
     });
   });
 
+  const totalMainStroke = Object.values(mainStrokeStats).reduce((a, b) => a + b, 0);
+  const totalAddOnLogos = Object.values(addOnLogoStats).reduce((a, b) => a + b, 0);
+  const totalUpgrades = Object.values(addonStats).reduce((a, b) => a + b, 0);
+
   const chartData = Object.entries(garmentSizeStats)
     .map(([name, value]) => ({ name, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10);
-
-  const hasAddOnLogos = Object.keys(addOnLogoStats).length > 0;
+    .sort((a, b) => b.value - a.value).slice(0, 10);
 
   // --- CSV DOWNLOAD HELPERS ---
   const saveCSV = (filename: string, headers: string[], rows: any[][]) => {
@@ -107,27 +107,17 @@ export default function AnalyticsDashboard() {
       o.email || 'N/A',
       o.phone || 'N/A',
       o.total_price,
-      (o.cart_data || []).map((i: any) => `${i.name || i.productName} (${i.size || i.customizations?.size || 'N/A'})`).join(" | ")
+      (o.cart_data || []).map((i: any) => `${i.name || i.productName} (${i.size || 'N/A'})`).join(" | ")
     ]);
     saveCSV("Orders_by_Customer", headers, rows);
   };
 
   const downloadInventory = () => {
+    const sizeOrder: Record<string, number> = { 'YS': 1, 'YM': 2, 'YL': 3, 'YXL': 4, 'AS': 5, 'AM': 6, 'AL': 7, 'AXL': 8, 'A2XL': 9, 'A3XL': 10 };
     const rows = Object.entries(garmentSizeStats)
-      .map(([key, qty]) => {
-        const parts = key.split(" - ");
-        return { style: parts[0], size: parts[1], qty };
-      })
-      .sort((a, b) => {
-        // First sort by style
-        if (a.style < b.style) return -1;
-        if (a.style > b.style) return 1;
-        // Then sort by size
-        const sizeOrder: Record<string, number> = { 'YS': 1, 'YM': 2, 'YL': 3, 'YXL': 4, 'AS': 5, 'AM': 6, 'AL': 7, 'AXL': 8, 'A2XL': 9, 'A3XL': 10 };
-        return (sizeOrder[a.size] || 99) - (sizeOrder[b.size] || 99);
-      })
-      .map(item => [item.style, item.size, item.qty]);
-
+      .map(([key, qty]) => ({ style: key.split(" - ")[0], size: key.split(" - ")[1], qty }))
+      .sort((a, b) => a.style.localeCompare(b.style) || (sizeOrder[a.size] || 99) - (sizeOrder[b.size] || 99))
+      .map(i => [i.style, i.size, i.qty]);
     saveCSV("Inventory_Usage", ["Garment Style", "Size", "Quantity Sold"], rows);
   };
 
@@ -135,11 +125,13 @@ export default function AnalyticsDashboard() {
     saveCSV("Logo_and_Stroke_Usage", ["Design Name", "Total Used"], Object.entries({ ...mainStrokeStats, ...addOnLogoStats }));
   };
 
-  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Optimizing Sort Logic...</div>;
+  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Compiling Full Command Center...</div>;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans relative">
       <div className="max-w-7xl mx-auto">
+        
+        {/* HEADER & EXPORT BUTTONS */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-slate-900 p-2 rounded-xl text-white shadow-lg"><LayoutDashboard size={24}/></div>
@@ -168,53 +160,59 @@ export default function AnalyticsDashboard() {
           <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transactions</p><p className="text-3xl font-black">{filteredOrders.length}</p></div>
         </div>
 
-        {/* INVENTORY SIZE CHART */}
-        <div className="bg-white rounded-[2.5rem] border shadow-sm p-8 mb-8 text-slate-900">
-          <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-8 flex items-center gap-2"><BarChart3 size={14}/> Size Usage Breakdown</h3>
-          <div className="h-[400px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={chartData} margin={{ left: 50, right: 80 }}>
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" width={180} fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
-                <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
-                <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={25}>
-                  <LabelList dataKey="value" position="right" offset={10} style={{ fontSize: '12px', fontWeight: '900', fill: '#065f46' }} />
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#10b981' : '#34d399'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* BREAKDOWN SECTION */}
+        {/* BREAKDOWN GRID WITH TOTALS */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 text-slate-900">
           <div className="bg-white rounded-[2rem] border shadow-sm p-8">
-            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Tag size={14}/> Main Stroke Choices</h3>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Tag size={14}/> Main Stroke Choices</h3>
+              <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-black">{totalMainStroke}</span>
+            </div>
             <div className="space-y-3">
               {Object.entries(mainStrokeStats).sort((a,b)=>b[1]-a[1]).map(([label, count]) => (
                 <div key={label} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{label}</span><span className="bg-white px-3 py-1 rounded-lg shadow-sm font-black text-blue-600">{count}</span></div>
               ))}
             </div>
           </div>
-          {hasAddOnLogos && (
-            <div className="bg-white rounded-[2rem] border shadow-sm p-8 text-slate-900">
-              <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><MapPin size={14}/> Add-On Logo Usage</h3>
-              <div className="space-y-3">
-                {Object.entries(addOnLogoStats).sort((a,b)=>b[1]-a[1]).map(([label, count]) => (
-                  <div key={label} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{label}</span><span className="bg-white px-3 py-1 rounded-lg shadow-sm font-black text-purple-600">{count}</span></div>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="bg-white rounded-[2rem] border shadow-sm p-8 text-slate-900">
-            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Sparkles size={14}/> Upgrades</h3>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><MapPin size={14}/> Add-On Logo Usage</h3>
+              <span className="bg-purple-50 text-purple-700 px-3 py-1 rounded-full text-xs font-black">{totalAddOnLogos}</span>
+            </div>
+            <div className="space-y-3">
+              {Object.entries(addOnLogoStats).sort((a,b)=>b[1]-a[1]).map(([label, count]) => (
+                <div key={label} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{label}</span><span className="bg-white px-3 py-1 rounded-lg shadow-sm font-black text-purple-600">{count}</span></div>
+              ))}
+            </div>
+          </div>
+          <div className="bg-white rounded-[2rem] border shadow-sm p-8 text-slate-900">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><Sparkles size={14}/> Upgrades</h3>
+              <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-xs font-black">{totalUpgrades}</span>
+            </div>
             <div className="space-y-4">
               {Object.entries(addonStats).map(([name, count]) => (
                 <div key={name} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{name}</span><span className="bg-white px-4 py-1 rounded-full font-black text-emerald-600 shadow-sm">{count}</span></div>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* SIZE CHART WITH LABELS */}
+        <div className="bg-white rounded-[2.5rem] border shadow-sm p-8 mb-8 text-slate-900">
+          <div className="flex justify-between items-center mb-8">
+            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 flex items-center gap-2"><BarChart3 size={14}/> Size Usage Breakdown</h3>
+            <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-xs font-black">{totalItemsSold} Units</span>
+          </div>
+          <div className="h-[400px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart layout="vertical" data={chartData} margin={{ left: 50, right: 80 }}>
+                <XAxis type="number" hide /><YAxis dataKey="name" type="category" width={180} fontSize={10} fontWeight="900" axisLine={false} tickLine={false} />
+                <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={25}>
+                  <LabelList dataKey="value" position="right" offset={10} style={{ fontSize: '12px', fontWeight: '900', fill: '#065f46' }} />
+                  {chartData.map((e, i) => <Cell key={i} fill={i % 2 === 0 ? '#10b981' : '#34d399'} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
@@ -224,10 +222,10 @@ export default function AnalyticsDashboard() {
             <thead className="bg-slate-50 border-b">
               <tr className="text-[10px] font-black uppercase text-slate-400 font-mono"><th className="p-6">Customer / Contact</th><th className="p-6">Method</th><th className="p-6">Total</th><th className="p-6 text-right">Details</th></tr>
             </thead>
-            <tbody className="divide-y text-sm font-medium">
+            <tbody className="divide-y text-sm">
               {filteredOrders.map(o => (
                 <tr key={o.id} className="hover:bg-blue-50 cursor-pointer transition-all" onClick={() => setSelectedOrder(o)}>
-                  <td className="p-6"><p className="font-bold text-slate-800">{o.customer_name}</p><p className="text-[10px] text-slate-400 italic">{o.email || 'No Email'}</p></td>
+                  <td className="p-6"><p className="font-bold">{o.customer_name}</p><p className="text-[10px] text-slate-400 font-medium italic">{o.email || 'No Email'}</p></td>
                   <td className="p-6 uppercase text-slate-400 font-bold text-[10px] tracking-widest">{o.payment_method}</td>
                   <td className="p-6 font-black text-blue-600">${o.total_price}</td>
                   <td className="p-6 text-right"><button className="bg-slate-100 text-slate-400 p-2 rounded-lg hover:bg-blue-600 hover:text-white transition-all"><Search size={16}/></button></td>
