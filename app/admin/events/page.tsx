@@ -430,13 +430,26 @@ export default function AdminPage() {
 
       alert("SUCCESS: Event Archived!"); 
       
-      // 3. Refresh UI
-      // 4. Refresh the dropdown list (Fetch ONLY active events)
-      const { data } = await supabase
-          .from('event_settings')
-          .select('*')
-          .eq('status', 'active') // <--- Add this here too
-          .order('id');
+     // 3. Refresh UI (Fetch ONLY active events)
+// Renamed 'data' to 'refreshedData' to avoid the redefinition error
+const { data: refreshedData, error: refreshError } = await supabase
+    .from('event_settings')
+    .select('*')
+    .eq('status', 'active') 
+    .order('id');
+
+if (refreshedData) {
+    setAvailableEvents(refreshedData);
+    
+    // Auto-switch to the first active event if there is one
+    if (refreshedData.length > 0) {
+        setSelectedEventSlug(refreshedData[0].slug);
+    } else {
+        setSelectedEventSlug('');
+    }
+}
+
+
       if (newData) setAvailableEvents(newData);
 
       fetchOrders(); 
