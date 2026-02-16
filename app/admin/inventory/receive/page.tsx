@@ -34,7 +34,7 @@ export default function ReceivePO() {
   };
 
   const receiveAll = async () => {
-    if (!confirm(`Confirm receipt of PO ${selectedPO.po_number}? This adds stock to Warehouse.`)) return;
+    if (!confirm(`Confirm receipt of PO ${selectedPO.po_number}?`)) return;
 
     try {
       for (const item of poItems) {
@@ -44,102 +44,94 @@ export default function ReceivePO() {
             cost_per_unit: item.unit_cost 
         }).eq('sku', item.sku);
       }
-
       await supabase.from('purchases').update({ status: 'received' }).eq('id', selectedPO.id);
-
-      alert("✅ Stock Received Successfully!");
+      alert("✅ Stock Received!");
       setSelectedPO(null);
       fetchOpenPOs();
-
     } catch (err: any) {
       alert("Error: " + err.message);
     }
   };
 
   return (
-    <div className="min-h-screen bg-white text-black p-8 max-w-5xl mx-auto">
-      
-      {/* HEADER SECTION */}
-      <div className="flex justify-between items-center mb-10 border-b-4 border-black pb-4">
-        <div>
-          <Link href="/admin" className="text-blue-600 font-black uppercase text-xs hover:underline">
-            ← Dashboard
-          </Link>
-          <h1 className="text-4xl font-black uppercase mt-2">Receive Stock</h1>
+    <div style={{ backgroundColor: 'white', color: 'black', minHeight: '100vh', padding: '40px' }}>
+      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+        
+        {/* HEADER */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '4px solid black', paddingBottom: '20px', marginBottom: '40px' }}>
+          <div>
+            <Link href="/admin" style={{ color: '#2563eb', fontWeight: '900', textTransform: 'uppercase', fontSize: '12px', textDecoration: 'underline' }}>
+              ← Back to Dashboard
+            </Link>
+            <h1 style={{ fontSize: '40px', fontWeight: '900', textTransform: 'uppercase', margin: '8px 0 0 0' }}>Receive Stock</h1>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="text-xs font-black text-gray-400 uppercase">Module</p>
-          <p className="font-bold">Inbound Inventory</p>
-        </div>
-      </div>
-      
-      {!selectedPO ? (
-        <div className="grid gap-4">
-          <h2 className="font-bold text-gray-500 uppercase text-xs tracking-widest ml-2">Shipments Awaiting Arrival</h2>
-          
-          {loading && <p className="p-10 text-center font-bold">Checking database...</p>}
-          
-          {!loading && openPOs.length === 0 && (
-             <div className="text-center p-16 bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl">
-                <p className="text-gray-400 font-bold text-lg mb-4">All purchase orders are fully received.</p>
-                <Link href="/admin/purchasing/create" className="bg-black text-white px-8 py-3 rounded font-bold uppercase text-sm">
-                  Create New PO
-                </Link>
+        
+        {!selectedPO ? (
+          <div>
+            {loading ? (
+              <p style={{ fontWeight: 'bold' }}>Loading shipments...</p>
+            ) : openPOs.length === 0 ? (
+               <div style={{ textAlign: 'center', padding: '60px', border: '2px dashed #ccc', borderRadius: '12px' }}>
+                  <p style={{ color: '#666', fontWeight: 'bold' }}>No open purchase orders.</p>
+                  <Link href="/admin/purchasing/create" style={{ display: 'inline-block', marginTop: '20px', backgroundColor: 'black', color: 'white', padding: '12px 24px', fontWeight: 'bold', textDecoration: 'none' }}>
+                    Create New PO
+                  </Link>
+               </div>
+            ) : (
+              openPOs.map(po => (
+                <div key={po.id} onClick={() => loadPO(po)} style={{ backgroundColor: 'white', padding: '24px', border: '2px solid black', marginBottom: '16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '4px 4px 0px 0px black' }}>
+                   <div>
+                     <div style={{ fontSize: '24px', fontWeight: '900' }}>{po.po_number}</div>
+                     <div style={{ fontWeight: 'bold', textTransform: 'uppercase' }}>{po.vendors?.name}</div>
+                   </div>
+                   <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '24px', fontWeight: '900' }}>${po.total_amount?.toFixed(2)}</div>
+                      <div style={{ fontSize: '10px', fontWeight: '900', backgroundColor: '#fde047', padding: '4px 8px', textTransform: 'uppercase', marginTop: '8px', border: '1px solid black' }}>Ordered</div>
+                   </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+          <div style={{ border: '4px solid black', padding: '32px', boxShadow: '8px 8px 0px 0px black', backgroundColor: 'white' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px', borderBottom: '2px solid black', paddingBottom: '24px' }}>
+                <div>
+                    <button onClick={() => setSelectedPO(null)} style={{ color: '#2563eb', fontWeight: '900', fontSize: '12px', textTransform: 'uppercase', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>← Back to List</button>
+                    <h2 style={{ fontSize: '40px', fontWeight: '900', margin: '4px 0' }}>{selectedPO.po_number}</h2>
+                    <p style={{ fontSize: '20px', fontWeight: 'bold', color: '#666', textTransform: 'uppercase' }}>{selectedPO.vendors?.name}</p>
+                </div>
+                <button 
+                    onClick={receiveAll} 
+                    style={{ backgroundColor: '#16a34a', color: 'white', padding: '20px 40px', fontWeight: '900', textTransform: 'uppercase', fontSize: '18px', border: '2px solid black', boxShadow: '4px 4px 0px 0px black', cursor: 'pointer' }}
+                >
+                   Verify & Receive
+                </button>
              </div>
-          )}
-
-          {openPOs.map(po => (
-            <div key={po.id} onClick={() => loadPO(po)} className="bg-white p-6 border-2 border-black hover:bg-gray-50 cursor-pointer shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all flex justify-between items-center group">
-               <div>
-                 <div className="text-2xl font-black group-hover:text-blue-600">{po.po_number}</div>
-                 <div className="text-lg font-bold uppercase">{po.vendors?.name}</div>
-                 <div className="text-sm text-gray-500">{new Date(po.created_at).toLocaleDateString()}</div>
-               </div>
-               <div className="text-right">
-                  <div className="text-2xl font-black">${po.total_amount?.toFixed(2)}</div>
-                  <div className="mt-2 text-[10px] font-black bg-yellow-300 border border-black px-2 py-1 uppercase inline-block">Review PO</div>
-               </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="border-4 border-black p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white">
-           <div className="flex justify-between items-start mb-10 border-b-2 border-black pb-6">
-              <div>
-                  <button onClick={() => setSelectedPO(null)} className="text-blue-600 font-black text-xs uppercase hover:underline mb-2">← Back to PO List</button>
-                  <h2 className="text-4xl font-black">{selectedPO.po_number}</h2>
-                  <p className="text-xl font-bold text-gray-600 uppercase">{selectedPO.vendors?.name}</p>
-              </div>
-              <button 
-                  onClick={receiveAll} 
-                  className="bg-green-600 text-white px-10 py-5 font-black uppercase text-lg border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-green-700 active:translate-y-1 active:shadow-none transition-all"
-              >
-                 Accept Shipment
-              </button>
-           </div>
-           
-           <table className="w-full text-left bg-white">
-              <thead>
-                  <tr className="bg-gray-100 border-b-2 border-black">
-                      <th className="p-4 font-black uppercase text-xs">Item Description</th>
-                      <th className="p-4 font-black uppercase text-xs text-center">Qty</th>
-                      <th className="p-4 font-black uppercase text-xs text-right">Cost</th>
-                  </tr>
-              </thead>
-              <tbody className="divide-y-2 border-b border-black">
-                 {poItems.map(item => (
-                   <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="p-6 font-black text-xl">
-                          {item.inventory_master?.item_name} <span className="text-gray-400 font-bold ml-2">({item.inventory_master?.size})</span>
-                      </td>
-                      <td className="p-6 font-mono text-3xl font-black text-center">{item.quantity}</td>
-                      <td className="p-6 text-right font-mono font-bold text-lg text-gray-600">${item.unit_cost.toFixed(2)}</td>
-                   </tr>
-                 ))}
-              </tbody>
-           </table>
-        </div>
-      )}
+             
+             <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+                <thead>
+                    <tr style={{ backgroundColor: '#f3f4f6', borderBottom: '2px solid black' }}>
+                        <th style={{ padding: '16px', fontWeight: '900', textTransform: 'uppercase', fontSize: '12px' }}>Item</th>
+                        <th style={{ padding: '16px', fontWeight: '900', textTransform: 'uppercase', fontSize: '12px', textAlign: 'center' }}>Qty</th>
+                        <th style={{ padding: '16px', fontWeight: '900', textTransform: 'uppercase', fontSize: '12px', textAlign: 'right' }}>Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                   {poItems.map(item => (
+                     <tr key={item.id} style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '24px 16px', fontSize: '20px', fontWeight: '900' }}>
+                            {item.inventory_master?.item_name} <span style={{ color: '#999', fontWeight: 'bold', marginLeft: '8px' }}>({item.inventory_master?.size})</span>
+                        </td>
+                        <td style={{ padding: '24px 16px', fontSize: '24px', fontWeight: '900', textAlign: 'center' }}>{item.quantity}</td>
+                        <td style={{ padding: '24px 16px', fontSize: '18px', fontWeight: 'bold', textAlign: 'right', color: '#666' }}>${item.unit_cost.toFixed(2)}</td>
+                     </tr>
+                   ))}
+                </tbody>
+             </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
