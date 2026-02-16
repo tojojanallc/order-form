@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Download, DollarSign, Package, LayoutDashboard, Search, X, ShoppingCart, Tag, Sparkles, Mail, Phone, MapPin, UserCircle } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { Download, DollarSign, Package, LayoutDashboard, Search, X, ShoppingCart, Tag, Sparkles, Mail, Phone, MapPin, UserCircle, BarChart3 } from 'lucide-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -36,6 +37,7 @@ export default function AnalyticsDashboard() {
   // --- AGGREGATION LOGIC ---
   const mainStrokeStats: Record<string, number> = {};
   const addOnLogoStats: Record<string, number> = {};
+  const garmentSizeStats: Record<string, number> = {};
   const addonStats: Record<string, number> = { "Metallic Upgrade": 0, "Back Roster": 0, "Custom Names": 0 };
   let totalItemsSold = 0;
   
@@ -44,9 +46,17 @@ export default function AnalyticsDashboard() {
     cart.forEach((item: any) => {
       totalItemsSold += 1;
       
+      // 1. Garment & Size Breakdown
+      const gName = item.name || item.productName || "Unknown";
+      const gSize = item.size || "N/A";
+      const gKey = `${gName} - ${gSize}`;
+      garmentSizeStats[gKey] = (garmentSizeStats[gKey] || 0) + 1;
+
+      // 2. Main Stroke (Primary Design)
       const mainDesign = item.mainDesign || item.customizations?.mainDesign;
       if (mainDesign) mainStrokeStats[mainDesign] = (mainStrokeStats[mainDesign] || 0) + 1;
       
+      // 3. Add-on Logos
       const logos = item.logos || item.customizations?.logos || item['Additional Imprints'];
       if (Array.isArray(logos)) {
         logos.forEach((logo: any) => {
@@ -55,6 +65,7 @@ export default function AnalyticsDashboard() {
         });
       }
 
+      // 4. Technical Add-ons
       if (item.metallicUpgrade || item.customizations?.metallicUpgrade) addonStats["Metallic Upgrade"] += 1;
       if (item.backNameList || item.customizations?.backNameList || item['Add Roster'] === 'Yes') addonStats["Back Roster"] += 1;
       const names = item.names || item.customizations?.names;
@@ -62,13 +73,16 @@ export default function AnalyticsDashboard() {
     });
   });
 
+  const chartData = Object.entries(garmentSizeStats)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10); // Show top 10 combinations
+
   const hasAddOnLogos = Object.keys(addOnLogoStats).length > 0;
 
   // --- CSV DOWNLOAD HELPERS ---
   const saveCSV = (filename: string, headers: string[], rows: any[][]) => {
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -90,14 +104,7 @@ export default function AnalyticsDashboard() {
   };
 
   const downloadInventory = () => {
-    const invMap: Record<string, number> = {};
-    filteredOrders.forEach(o => {
-      (o.cart_data || []).forEach((item: any) => {
-        const key = `${item.name || item.productName || "Unknown Garment"} - ${item.size || "N/A"}`;
-        invMap[key] = (invMap[key] || 0) + 1;
-      });
-    });
-    const rows = Object.entries(invMap).map(([key, qty]) => [...key.split(" - "), qty]);
+    const rows = Object.entries(garmentSizeStats).map(([key, qty]) => [...key.split(" - "), qty]);
     saveCSV("Inventory_Usage", ["Garment Style", "Size", "Quantity Sold"], rows);
   };
 
@@ -105,7 +112,7 @@ export default function AnalyticsDashboard() {
     saveCSV("Logo_and_Stroke_Usage", ["Design Name", "Total Used"], Object.entries({ ...mainStrokeStats, ...addOnLogoStats }));
   };
 
-  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Compiling Full Report...</div>;
+  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Building Command Center...</div>;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans relative">
@@ -118,9 +125,9 @@ export default function AnalyticsDashboard() {
             <h1 className="text-2xl font-black uppercase tracking-tighter">Command Center</h1>
           </div>
           <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-            <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2 font-mono"><ShoppingCart size={14}/> ORDERS</button>
-            <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2 font-mono"><Package size={14}/> INVENTORY</button>
-            <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2 font-mono"><Tag size={14}/> LOGOS</button>
+            <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2"><ShoppingCart size={14}/> ORDERS</button>
+            <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2"><Package size={14}/> INVENTORY</button>
+            <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2"><Tag size={14}/> LOGOS</button>
             <select className="flex-1 lg:flex-none bg-white border px-4 py-2 rounded-xl font-bold text-[10px] outline-none shadow-sm" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
               <option value="all">ALL EVENTS</option>
               {Object.entries(eventMapping).map(([slug, name]: any) => (
@@ -131,13 +138,41 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* KPI CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-slate-900">
-          <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gross Revenue</p><p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p></div>
-          <div className="bg-white p-6 rounded-3xl border shadow-sm border-b-4 border-blue-500"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Units Sold</p><p className="text-3xl font-black">{totalItemsSold}</p></div>
-          <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transactions</p><p className="text-3xl font-black">{filteredOrders.length}</p></div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-3xl border shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Revenue</p>
+            <p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p>
+          </div>
+          <div className="bg-white p-6 rounded-3xl border shadow-sm border-b-4 border-blue-500">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Units Sold</p>
+            <p className="text-3xl font-black">{totalItemsSold}</p>
+          </div>
+          <div className="bg-white p-6 rounded-3xl border shadow-sm">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transactions</p>
+            <p className="text-3xl font-black">{filteredOrders.length}</p>
+          </div>
         </div>
 
-        {/* BREAKDOWN SECTION */}
+        {/* INVENTORY CHART SECTION */}
+        <div className="bg-white rounded-[2.5rem] border shadow-sm p-8 mb-8">
+          <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-8 flex items-center gap-2"><BarChart3 size={14}/> Popular Garment & Size Combinations</h3>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart layout="vertical" data={chartData} margin={{ left: 40, right: 40 }}>
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" width={150} fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
+                <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
+                <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={20}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#2563eb' : '#3b82f6'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* DESIGN BREAKDOWN GRID */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 text-slate-900">
           <div className="bg-white rounded-[2rem] border shadow-sm p-8">
             <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Tag size={14}/> Main Stroke Choices</h3>
@@ -170,15 +205,15 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* ORDER TABLE */}
-        <div className="bg-white rounded-[2rem] border shadow-sm overflow-hidden text-slate-900">
-          <table className="w-full text-left border-collapse">
+        <div className="bg-white rounded-[2rem] border shadow-sm overflow-hidden text-slate-900 mb-20">
+          <table className="w-full text-left">
             <thead className="bg-slate-50 border-b">
               <tr className="text-[10px] font-black uppercase text-slate-400 font-mono"><th className="p-6">Customer / Contact</th><th className="p-6">Method</th><th className="p-6">Total</th><th className="p-6 text-right">Details</th></tr>
             </thead>
-            <tbody className="divide-y text-sm font-medium">
+            <tbody className="divide-y text-sm">
               {filteredOrders.map(o => (
                 <tr key={o.id} className="hover:bg-blue-50 cursor-pointer transition-all" onClick={() => setSelectedOrder(o)}>
-                  <td className="p-6"><p className="font-bold text-slate-800">{o.customer_name}</p><p className="text-[10px] text-slate-400 italic">{o.email || 'No Email'}</p></td>
+                  <td className="p-6"><p className="font-bold">{o.customer_name}</p><p className="text-[10px] text-slate-400 font-medium italic">{o.email || 'No Email'}</p></td>
                   <td className="p-6 uppercase text-slate-400 font-bold text-[10px] tracking-widest">{o.payment_method}</td>
                   <td className="p-6 font-black text-blue-600">${o.total_price}</td>
                   <td className="p-6 text-right"><button className="bg-slate-100 text-slate-400 p-2 rounded-lg hover:bg-blue-600 hover:text-white transition-all"><Search size={16}/></button></td>
@@ -195,22 +230,18 @@ export default function AnalyticsDashboard() {
           <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-150 border-8 border-slate-900">
             <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
               <div><h2 className="text-2xl font-black tracking-tighter mb-1 leading-none uppercase italic">{selectedOrder.customer_name}</h2><div className="flex gap-4 opacity-60"><span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 font-mono"><Mail size={12}/> {selectedOrder.email || 'N/A'}</span><span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 font-mono"><Phone size={12}/> {selectedOrder.phone || 'N/A'}</span></div></div>
-              <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-white/10 rounded-full"><X/></button>
+              <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X/></button>
             </div>
             <div className="p-8 max-h-[60vh] overflow-y-auto text-slate-900">
               {selectedOrder.cart_data?.map((item: any, i: number) => {
                 const legacyLogos = item['Additional Imprints'] ? String(item['Additional Imprints']).split(',') : [];
                 const modernLogos = item.logos || item.customizations?.logos || [];
-                
-                // Get Names (Add-on)
                 const nameAddon = item.names || item.customizations?.names || [];
-                const hasNames = nameAddon.length > 0;
 
                 return (
                   <div key={i} className="mb-4 p-6 bg-slate-50 rounded-3xl border border-slate-100">
                     <div className="flex justify-between items-center mb-4"><span className="font-black text-slate-800 uppercase italic tracking-tighter">{item.name || item.productName}</span><span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black font-mono">{item.size}</span></div>
-                    
-                    <div className="grid grid-cols-2 gap-4 text-[10px] uppercase font-bold text-slate-400 mb-4">
+                    <div className="grid grid-cols-2 gap-4 text-[10px] uppercase font-bold text-slate-400">
                       <div><p className="mb-1 tracking-widest text-[8px]">Main Design</p><p className="text-slate-700 text-xs">{item.mainDesign || item.customizations?.mainDesign || 'None'}</p></div>
                       <div>
                         <p className="mb-1 tracking-widest text-[8px]">Add-On Logos</p>
@@ -221,9 +252,7 @@ export default function AnalyticsDashboard() {
                         )) : <p className="text-slate-300">None</p>}
                       </div>
                     </div>
-
-                    {/* NAMES SECTION */}
-                    {hasNames && (
+                    {nameAddon.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-slate-200">
                             <p className="mb-1 tracking-widest text-[8px] uppercase font-bold text-slate-400">Custom Names</p>
                             <div className="flex flex-wrap gap-2 mt-2">
