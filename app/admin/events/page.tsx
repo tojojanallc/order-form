@@ -227,6 +227,7 @@ export default function AdminPage() {
   }, [editingOrder, products, mounted]);
 
   // --- STATS LOGIC ---
+  // --- STATS LOGIC ---
   useEffect(() => {
     if(!mounted || !orders || orders.length === 0) {
         setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
@@ -234,7 +235,13 @@ export default function AdminPage() {
     }
 
     try {
-        const activeOrders = orders.filter(o => o.status !== 'refunded');
+        // PREVENT DOUBLE COUNTING: Filter unique orders by ID first
+        const uniqueOrderMap = new Map();
+        orders.forEach(o => {
+          if (o.status !== 'refunded') uniqueOrderMap.set(o.id, o);
+        });
+        const activeOrders = Array.from(uniqueOrderMap.values());
+
         let runningRevenue = 0;
         let runningCOGS = 0;
         const itemCounts = {};
@@ -243,22 +250,17 @@ export default function AdminPage() {
             const items = Array.isArray(order.cart_data) ? order.cart_data : [];
             let orderTotalValue = 0;
 
-            // 1. Calculate Revenue for this order
             if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
-                // Manually sum items based on inventory/product prices
+                // Sum items manually for Hosted
                 items.forEach(item => {
                     if (!item) return;
-
-                    // Find prices
                     const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
                     const prod = products.find(p => p.id === item.productId);
 
-                    // Base Price logic
                     let price = 0;
                     if (invItem && invItem.override_price) price = Number(invItem.override_price);
                     else if (prod && prod.base_price) price = Number(prod.base_price);
 
-                    // Customization Add-ons
                     if (item.customizations) {
                         price += (Number(item.customizations.logos?.length || 0) * 5);
                         price += (Number(item.customizations.names?.length || 0) * 5);
@@ -266,15 +268,12 @@ export default function AdminPage() {
                     }
                     orderTotalValue += price;
 
-                    // Track Item frequency for "Top Item"
                     const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
                     itemCounts[key] = (itemCounts[key] || 0) + 1;
                 });
             } else {
-                // Retail mode: Use the baked-in total
+                // Retail mode: Use DB total
                 orderTotalValue = Number(order.total_price || 0);
-                
-                // Still need to count item frequency for the "Top Item" stat
                 items.forEach(item => {
                     if (!item) return;
                     const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
@@ -284,20 +283,18 @@ export default function AdminPage() {
 
             runningRevenue += orderTotalValue;
 
-            // 2. Calculate COGS for this order
+            // Calculate COGS
             items.forEach(item => {
                 if (!item) return;
                 const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
                 const unitCost = Number(invItem?.cost_price || 8.50);
-                runningCOGS += (unitCost + 1.50); // Garment cost + transfer/labor approx
+                runningCOGS += (unitCost + 1.50);
             });
         });
 
-        // 3. Final Net Calculation
         const stripeFees = paymentMode === 'hosted' ? 0 : (runningRevenue * 0.029) + (activeOrders.length * 0.30);
         const netProfit = runningRevenue - stripeFees - runningCOGS;
 
-        // 4. Determine Top Item
         const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
         const topItemStr = sortedItems.length > 0 ? `${sortedItems[0][0]} (${sortedItems[0][1]})` : '-';
 
