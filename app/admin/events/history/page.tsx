@@ -13,33 +13,44 @@ export default function EventHistory() {
 
   const fetchHistory = async () => {
     setLoading(true);
+    console.log("Fetching event history...");
+
     // 1. Get the list of events
+    // NOTE: I commented out .order() temporarily to debug.
+    // If your table does not have a column named 'created_at', this line breaks the query.
+    // Uncomment it ONLY if you verify the column exists in Supabase.
     const { data, error } = await supabase
       .from('event_settings')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*');
+      // .order('created_at', { ascending: false }); 
 
-    if (error) console.error("Error loading events:", error.message);
+    if (error) {
+      console.error("SUPABASE ERROR:", error);
+      alert("Error loading events: " + error.message);
+    } else {
+      console.log("SUPABASE DATA:", data);
+    }
+
     setHistory(data || []);
     setLoading(false);
   };
 
   const downloadCSV = async (slug) => {
-    // 2. THIS IS THE FIX: We read from the 'order' table now
-    // NOTE: Ensure your order table has a column named 'event_slug'. 
-    // If it's named 'slug' or 'event_id', change .eq('event_slug', slug) below.
+    // 2. Querying the 'order' table
+    // WARNING: 'order' is a reserved SQL keyword. If this fails, consider renaming your table to 'orders'.
     const { data, error } = await supabase
       .from('order')  
       .select('*')
       .eq('event_slug', slug); 
 
     if (error) {
+      console.error("CSV Download Error:", error);
       alert("Error loading orders: " + error.message);
       return;
     }
 
     if (!data || data.length === 0) {
-      alert("No orders found for this event in the 'order' table.");
+      alert("No orders found for this event.");
       return;
     }
 
@@ -75,11 +86,12 @@ export default function EventHistory() {
         ) : history.length === 0 ? (
           <div className="bg-white border-2 border-dashed border-gray-300 p-20 rounded-2xl text-center">
             <p className="text-gray-500 font-bold">NO ARCHIVED EVENTS FOUND</p>
+            <p className="text-xs text-gray-400 mt-2">(Check console for debugging details)</p>
           </div>
         ) : (
           <div className="grid gap-4">
             {history.map(event => (
-              <div key={event.slug} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center hover:shadow-md transition-all">
+              <div key={event.id || event.slug} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center hover:shadow-md transition-all">
                 <div>
                   <h2 className="text-xl font-bold text-gray-900">{event.event_name}</h2>
                   <p className="text-xs font-mono text-gray-400">{event.slug}</p>
