@@ -79,7 +79,7 @@ export default function MasterAdmin() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-8 bg-gray-50">
   
   {/* ROW 1: PURCHASING & LOGISTICS */}
-  <Link href="/admin/purchasing/list" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
+  <Link href="/admin/purchasing/manage/" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
     <div>
       <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
         <span className="text-2xl">📋</span>
