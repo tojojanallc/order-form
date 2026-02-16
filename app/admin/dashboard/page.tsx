@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Download, DollarSign, Package, LayoutDashboard, Search, X, ShoppingCart, Tag, MapPin, Sparkles } from 'lucide-react';
 
+// Initialize Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -24,44 +26,42 @@ export default function AnalyticsDashboard() {
     fetchData();
   }, []);
 
+  // --- FILTERING ---
   const filteredOrders = eventFilter === 'all' ? orders : orders.filter(o => o.event_slug === eventFilter);
   const events = Array.from(new Set(orders.map(o => o.event_slug))).filter(Boolean);
 
-  // --- COMPONENT LOGIC: AGGREGATE LOGOS & ADD-ONS ---
+  // --- AGGREGATION LOGIC (Deep Scan) ---
   const strokeStats: Record<string, number> = {};
   const logoStats: Record<string, number> = {};
   const addonStats: Record<string, number> = { "Metallic Upgrade": 0, "Back Roster": 0, "Custom Names": 0 };
-  
-  // --- DEEP SCAN AGGREGATION ---
-  const strokeStats: Record<string, number> = {};
-  const logoStats: Record<string, number> = {};
-  const addonStats: Record<string, number> = { "Metallic Upgrade": 0, "Back Roster": 0, "Custom Names": 0 };
+  let totalItems = 0;
   
   filteredOrders.forEach(order => {
     const cart = Array.isArray(order.cart_data) ? order.cart_data : [];
     
     cart.forEach((item: any) => {
-      // 1. Identify the Stroke / Main Design
-      // Checks item.mainDesign OR item.customizations.mainDesign
+      totalItems += 1;
+
+      // 1. Strokes / Main Design
       const stroke = item.mainDesign || item.customizations?.mainDesign;
       if (stroke) {
         strokeStats[stroke] = (strokeStats[stroke] || 0) + 1;
       }
       
-      // 2. Identify Logos & Positions
+      // 2. Logos & Positions
       const logos = item.logos || item.customizations?.logos;
       if (Array.isArray(logos)) {
         logos.forEach((logo: any) => {
           const type = logo.type || logo.name;
-          const pos = logo.position || logo.pos;
+          const pos = logo.position || logo.pos || 'Standard';
           if (type) {
-            const key = `${type} (${pos || 'Standard'})`;
+            const key = `${type} (Pos: ${pos})`;
             logoStats[key] = (logoStats[key] || 0) + 1;
           }
         });
       }
 
-      // 3. Identify Add-ons (Checking top level and nested)
+      // 3. Add-ons
       if (item.metallicUpgrade || item.customizations?.metallicUpgrade) addonStats["Metallic Upgrade"] += 1;
       if (item.backNameList || item.customizations?.backNameList) addonStats["Back Roster"] += 1;
       
@@ -70,7 +70,20 @@ export default function AnalyticsDashboard() {
     });
   });
 
-  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse">BUILDING REPORT...</div>;
+  const downloadCSV = () => {
+    const csvRows = [
+      ["Date", "Customer", "Event", "Total", "Items"],
+      ...filteredOrders.map(o => [new Date(o.created_at).toLocaleDateString(), o.customer_name, o.event_slug, o.total_price, o.cart_data?.length])
+    ];
+    const csvContent = csvRows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `Lev-Analytics-${eventFilter}.csv`;
+    link.click();
+  };
+
+  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Compiling Analytics...</div>;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans relative">
@@ -82,39 +95,44 @@ export default function AnalyticsDashboard() {
             <div className="bg-slate-900 p-2 rounded-xl text-white shadow-lg"><LayoutDashboard size={24}/></div>
             <h1 className="text-2xl font-black uppercase tracking-tighter">Merch Command Center</h1>
           </div>
-          <select className="bg-white border px-4 py-2 rounded-xl font-bold text-sm shadow-sm text-blue-600" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
-            <option value="all">ALL EVENTS</option>
-            {events.map((e: any) => <option key={e} value={e}>{e}</option>)}
-          </select>
+          <div className="flex gap-2 w-full md:w-auto">
+            <button onClick={downloadCSV} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border px-4 py-2 rounded-xl font-bold text-sm shadow-sm hover:bg-gray-50 transition-all">
+              <Download size={16} /> EXPORT CSV
+            </button>
+            <select className="flex-1 md:flex-none bg-white border px-4 py-2 rounded-xl font-bold text-sm shadow-sm outline-none text-blue-600" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
+              <option value="all">ALL EVENTS</option>
+              {events.map((e: any) => <option key={e} value={e}>{e}</option>)}
+            </select>
+          </div>
         </div>
 
         {/* TOP KPI CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4">
-            <div className="p-4 bg-blue-50 rounded-2xl text-blue-600"><Sparkles size={28}/></div>
-            <div><p className="text-xs font-bold text-gray-400 uppercase">Total Add-ons</p><p className="text-3xl font-black">{Object.values(addonStats).reduce((a,b)=>a+b, 0)}</p></div>
-          </div>
-          <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4 border-b-4 border-blue-500">
-            <div className="p-4 bg-slate-50 rounded-2xl text-slate-600"><Tag size={28}/></div>
-            <div><p className="text-xs font-bold text-gray-400 uppercase">Logo Placements</p><p className="text-3xl font-black">{Object.values(logoStats).reduce((a,b)=>a+b, 0)}</p></div>
-          </div>
-          <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4">
             <div className="p-4 bg-emerald-50 rounded-2xl text-emerald-600"><DollarSign size={28}/></div>
             <div><p className="text-xs font-bold text-gray-400 uppercase">Revenue</p><p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p></div>
           </div>
+          <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4 border-b-4 border-blue-500">
+            <div className="p-4 bg-blue-50 rounded-2xl text-blue-600"><Package size={28}/></div>
+            <div><p className="text-xs font-bold text-gray-400 uppercase">Items Sold</p><p className="text-3xl font-black">{totalItems}</p></div>
+          </div>
+          <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4">
+            <div className="p-4 bg-purple-50 rounded-2xl text-purple-600"><ShoppingCart size={28}/></div>
+            <div><p className="text-xs font-bold text-gray-400 uppercase">Orders</p><p className="text-3xl font-black">{filteredOrders.length}</p></div>
+          </div>
         </div>
 
-        {/* LOGO & STROKE BREAKDOWN */}
+        {/* PRODUCT & LOGO BREAKDOWN */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           <div className="bg-white rounded-3xl border shadow-sm p-6">
             <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><MapPin size={14}/> Logo Usage & Location</h3>
             <div className="space-y-3">
-              {Object.entries(logoStats).sort((a,b)=>b[1]-a[1]).map(([label, count]) => (
+              {Object.keys(logoStats).length > 0 ? Object.entries(logoStats).sort((a,b)=>b[1]-a[1]).map(([label, count]) => (
                 <div key={label} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <span className="text-sm font-bold text-slate-700">{label}</span>
                   <span className="bg-white px-3 py-1 rounded-lg shadow-sm font-black text-blue-600">{count}</span>
                 </div>
-              ))}
+              )) : <p className="text-sm text-slate-400 italic">No logo data found</p>}
             </div>
           </div>
 
@@ -125,7 +143,7 @@ export default function AnalyticsDashboard() {
                 <div key={name}>
                   <div className="flex justify-between text-sm font-bold mb-2"><span>{name}</span><span>{count}</span></div>
                   <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full" style={{ width: `${(count / (filteredOrders.length || 1)) * 100}%` }} />
+                    <div className="bg-emerald-500 h-full" style={{ width: `${(count / (totalItems || 1)) * 100}%` }} />
                   </div>
                 </div>
               ))}
@@ -133,71 +151,72 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* TRANSACTION TABLE */}
+        {/* ORDER LIST */}
         <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 border-b">
-              <tr className="text-[10px] font-black uppercase text-slate-400">
-                <th className="p-6">Customer</th>
-                <th className="p-6">Total</th>
-                <th className="p-6 text-right">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filteredOrders.map(o => (
-                <tr key={o.id} className="hover:bg-blue-50 cursor-pointer group transition-all" onClick={() => setSelectedOrder(o)}>
-                  <td className="p-6 font-bold text-slate-800">{o.customer_name}</td>
-                  <td className="p-6 font-black text-slate-900">${o.total_price}</td>
-                  <td className="p-6 text-right"><button className="bg-slate-100 text-slate-400 px-4 py-2 rounded-lg group-hover:bg-blue-600 group-hover:text-white font-bold text-xs transition-all">VIEW ORDER</button></td>
+          <div className="p-6 border-b flex justify-between items-center">
+            <h3 className="font-black text-xs uppercase tracking-widest text-slate-500">Recent Transactions</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] font-black uppercase text-slate-400 border-b">
+                  <th className="p-6">Customer</th>
+                  <th className="p-6">Method</th>
+                  <th className="p-6">Total</th>
+                  <th className="p-6 text-right">Details</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y text-sm">
+                {filteredOrders.map(o => (
+                  <tr key={o.id} className="hover:bg-blue-50 cursor-pointer transition-all" onClick={() => setSelectedOrder(o)}>
+                    <td className="p-6 font-bold text-slate-800">{o.customer_name}</td>
+                    <td className="p-6 uppercase text-slate-400 font-bold text-[10px]">{o.payment_method}</td>
+                    <td className="p-6 font-black text-slate-900">${o.total_price}</td>
+                    <td className="p-6 text-right"><button className="bg-slate-100 text-slate-400 p-2 rounded-lg"><Search size={16} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      {/* MODAL: ORDER DETAILS WITH ADD-ONS */}
+      {/* DETAIL MODAL */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-150">
             <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
               <div>
                 <h2 className="text-2xl font-black tracking-tighter">{selectedOrder.customer_name}</h2>
-                <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">{selectedOrder.event_name}</p>
+                <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">{selectedOrder.event_slug}</p>
               </div>
               <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-white/10 rounded-full"><X/></button>
             </div>
-            <div className="p-8 max-h-[70vh] overflow-y-auto">
+            <div className="p-8 max-h-[60vh] overflow-y-auto">
               {selectedOrder.cart_data?.map((item: any, i: number) => (
-                <div key={i} className="mb-6 p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="font-black text-lg text-slate-800 uppercase italic">{item.name}</span>
-                    <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase">{item.size}</span>
+                <div key={i} className="mb-4 p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="font-black text-slate-800 uppercase italic">{item.name || item.productName}</span>
+                    <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black">{item.size}</span>
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="text-xs">
-                      <p className="font-black text-slate-400 uppercase mb-2">Main Design</p>
-                      <p className="font-bold text-slate-700">{item.mainDesign || 'None'}</p>
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <p className="font-black text-slate-400 uppercase mb-1">Design</p>
+                      <p className="font-bold">{item.mainDesign || item.customizations?.mainDesign || 'N/A'}</p>
                     </div>
-                    <div className="text-xs">
-                      <p className="font-black text-slate-400 uppercase mb-2">Logos & Positions</p>
-                      {item.logos?.length > 0 ? item.logos.map((l:any, idx:number) => (
-                        <p key={idx} className="font-bold text-blue-600">{l.type} - <span className="text-slate-500">Pos: {l.position}</span></p>
-                      )) : <p className="text-slate-400">No extra logos</p>}
+                    <div>
+                      <p className="font-black text-slate-400 uppercase mb-1">Logos</p>
+                      {(item.logos || item.customizations?.logos)?.map((l:any, idx:number) => (
+                        <p key={idx} className="font-bold text-blue-600">{l.type || l.name} ({l.position || l.pos})</p>
+                      )) || <p>None</p>}
                     </div>
                   </div>
-
-                  {/* ADD-ONS SECTION */}
-                  {(item.metallicUpgrade || item.backNameList || item.names?.length > 0) && (
-                    <div className="mt-4 pt-4 border-t border-slate-200 flex flex-wrap gap-2">
-                      {item.metallicUpgrade && <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded font-bold text-[10px] uppercase">✨ Metallic</span>}
-                      {item.backNameList && <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded font-bold text-[10px] uppercase">📋 Roster List</span>}
-                      {item.names?.length > 0 && <span className="bg-green-100 text-green-700 px-2 py-1 rounded font-bold text-[10px] uppercase">🏷️ Custom Name</span>}
-                    </div>
-                  )}
                 </div>
               ))}
+            </div>
+            <div className="p-8 border-t flex justify-between items-center">
+              <p className="font-bold text-slate-400">TOTAL PAID</p>
+              <p className="text-3xl font-black">${selectedOrder.total_price}</p>
             </div>
           </div>
         </div>
