@@ -11,91 +11,79 @@ export default function EventHistory() {
     fetchHistory();
   }, []);
 
-  const fetchHistory = async (statusFilter = '') => {
+  const fetchHistory = async () => {
     setLoading(true);
-    let query = supabase
+    // Removed the .eq('status', 'archived') filter so you see EVERYTHING
+    const { data, error } = await supabase
       .from('event_settings')
-      .select('slug, event_name, created_at, status')
+      .select('*')
       .order('created_at', { ascending: false });
 
-    if (statusFilter) {
-      query = query.eq('status', statusFilter);
-    }
-
-    const { data, error } = await query;
-    if (error) console.error(error);
+    if (error) console.error("Database Error:", error);
     setHistory(data || []);
     setLoading(false);
   };
 
-  const downloadEventData = async (slug, name) => {
-    // Fetch all sales for this specific event
+  const downloadCSV = async (slug) => {
     const { data, error } = await supabase
       .from('sales_ledger')
       .select('*')
       .eq('event_slug', slug);
 
     if (error || !data || data.length === 0) {
-      alert("No sales data found for this event to export.");
-      return;
+      return alert("No sales data found for this event slug in the sales_ledger.");
     }
 
-    // Convert JSON to CSV
     const headers = Object.keys(data[0]).join(",");
-    const rows = data.map(row => 
-      Object.values(row).map(val => `"${val}"`).join(",")
-    );
+    const rows = data.map(row => Object.values(row).map(v => `"${v}"`).join(","));
     const csvContent = [headers, ...rows].join("\n");
 
-    // Create download link
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${slug}_sales_export.csv`;
+    a.download = `${slug}_final_sales.csv`;
     a.click();
-    window.URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="min-h-screen bg-white text-black p-8 max-w-6xl mx-auto border-x-4 border-black">
-      <div className="flex justify-between items-center mb-10 border-b-4 border-black pb-4">
-        <div>
-          <Link href="/admin" className="text-blue-600 font-black uppercase text-xs hover:underline">← Dashboard</Link>
-          <h1 className="text-4xl font-black uppercase mt-2">Event Archive</h1>
+    <div className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex justify-between items-center mb-10">
+          <h1 className="text-3xl font-black text-gray-900 uppercase italic">Event History</h1>
+          <Link href="/admin" className="bg-white border-2 border-black px-4 py-2 font-bold text-xs hover:bg-black hover:text-white transition-all shadow-[4px_4px_0px_0px_black]">
+            ← BACK
+          </Link>
         </div>
-      </div>
 
-      <div className="flex gap-4 mb-8">
-        <button onClick={() => fetchHistory('')} className="bg-black text-white px-4 py-2 font-black text-xs uppercase">All</button>
-        <button onClick={() => fetchHistory('active')} className="border-2 border-black px-4 py-2 font-black text-xs uppercase hover:bg-gray-100">Active</button>
-        <button onClick={() => fetchHistory('archived')} className="border-2 border-black px-4 py-2 font-black text-xs uppercase hover:bg-gray-100">Archived</button>
-      </div>
-
-      <div className="grid gap-6">
         {loading ? (
-          <p className="font-black animate-pulse">EXTRACTING HISTORICAL DATA...</p>
+          <div className="p-20 text-center font-black text-gray-400 animate-pulse uppercase">Searching Archives...</div>
+        ) : history.length === 0 ? (
+          <div className="bg-white border-4 border-black p-16 text-center shadow-[8px_8px_0px_0px_black]">
+            <p className="text-xl font-bold uppercase text-gray-400">No Events Found in Database</p>
+          </div>
         ) : (
-          history.map(event => (
-            <div key={event.slug} className="border-4 border-black p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] flex justify-between items-center bg-white">
-              <div>
-                <h2 className="text-2xl font-black uppercase">{event.event_name}</h2>
-                <p className="font-bold text-gray-500">SLUG: {event.slug}</p>
-                <p className="text-sm font-bold text-gray-400">{new Date(event.created_at).toLocaleDateString()}</p>
+          <div className="space-y-4">
+            {history.map(event => (
+              <div key={event.slug} className="bg-white border-4 border-black p-6 flex justify-between items-center shadow-[4px_4px_0px_0px_black] hover:translate-x-1 hover:-translate-y-1 transition-all">
+                <div>
+                  <h2 className="text-2xl font-black uppercase tracking-tight">{event.event_name}</h2>
+                  <p className="text-xs font-bold text-blue-600 font-mono uppercase">{event.slug}</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className={`px-3 py-1 border-2 border-black text-[10px] font-black uppercase ${event.status === 'active' ? 'bg-green-400' : 'bg-gray-200'}`}>
+                    {event.status || 'Archived'}
+                  </span>
+                  <button 
+                    onClick={() => downloadCSV(event.slug)}
+                    className="bg-black text-white px-6 py-3 font-black text-xs uppercase hover:bg-blue-600 transition-colors"
+                  >
+                    Export CSV
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-col gap-3 items-end">
-                <span className={`px-3 py-1 border-2 border-black font-black uppercase text-[10px] ${event.status === 'active' ? 'bg-green-400' : 'bg-gray-200'}`}>
-                  {event.status}
-                </span>
-                <button 
-                  onClick={() => downloadEventData(event.slug, event.event_name)}
-                  className="bg-blue-600 text-white px-4 py-2 font-black uppercase text-xs border-2 border-black shadow-[2px_2px_0px_0px_black] hover:bg-blue-700 active:translate-y-0.5"
-                >
-                  Download CSV
-                </button>
-              </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
     </div>
