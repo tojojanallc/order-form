@@ -391,36 +391,48 @@ export default function AdminPage() {
   };
 
   const closeEvent = async () => { 
-      // 1. Confirm action
-      if (prompt(`Type 'CLOSE' to confirm archive for ${selectedEventSlug}:`) !== 'CLOSE') return; 
-      
-      setLoading(true); 
+      console.log("Attempting to close:", selectedEventSlug); // DEBUG LOG 1
 
-      // 2. Mark the EVENT itself as archived (This hides it from the public page)
-      const { error } = await supabase
+      if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; 
+      setLoading(true); 
+      
+      // 1. Update the Event Status and SELECT the result to see if it worked
+      const { data, error } = await supabase
         .from('event_settings')
         .update({ status: 'archived' }) 
-        .eq('slug', selectedEventSlug);
+        .eq('slug', selectedEventSlug)
+        .select(); // <--- This is crucial for debugging
+
+      // DEBUG LOG 2
+      console.log("Supabase Update Result:", data);
+      console.log("Supabase Error:", error);
 
       if (error) {
-        alert("Error archiving event: " + error.message);
+        alert("Error: " + error.message);
         setLoading(false);
         return;
       }
 
-      // 3. Mark pending orders FOR THIS EVENT ONLY as completed
-      // (Added .eq('event_slug') to prevent closing orders for other active events)
+      // CHECK IF ROWS WERE ACTUALLY UPDATED
+      if (!data || data.length === 0) {
+        alert("⚠️ COMMAND FAILED: Database returned 0 updated rows. Check Console (F12) for details.");
+        console.warn("Possible causes: 1. Row Level Security (RLS) blocking UPDATE. 2. Slug mismatch.");
+        setLoading(false);
+        return;
+      }
+
+      // 2. Mark orders as completed
       await supabase.from('orders')
         .update({ status: 'completed' })
         .eq('event_slug', selectedEventSlug)
         .neq('status', 'completed')
         .neq('status', 'refunded');
 
-      alert("Event Closed & Archived!"); 
+      alert("SUCCESS: Event Archived!"); 
       
-      // 4. Refresh the dropdown list so the status updates in your UI
-      const { data } = await supabase.from('event_settings').select('*').order('id');
-      if (data) setAvailableEvents(data);
+      // 3. Refresh UI
+      const { data: newData } = await supabase.from('event_settings').select('*').order('id');
+      if (newData) setAvailableEvents(newData);
 
       fetchOrders(); 
       setLoading(false); 
