@@ -226,7 +226,7 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
- // --- GROUND ZERO STATS LOGIC ---
+  // --- GROUND ZERO STATS LOGIC ---
   // --- GROUND ZERO REVENUE FIX ---
   useEffect(() => {
     if (!mounted || !orders || !selectedEventSlug) {
@@ -295,7 +295,6 @@ export default function AdminPage() {
 
     } catch (e) { console.error("Stats Error:", e); }
   }, [orders, inventory, mounted, paymentMode, products, selectedEventSlug]);
-
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
@@ -430,7 +429,7 @@ export default function AdminPage() {
 
       if (updateError) {
         alert("Error: " + updateError.message);
-        setLoadi ng(false);
+        setLoading(false);
         return;
       }
 
