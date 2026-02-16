@@ -110,36 +110,48 @@ export default function MasterAdmin() {
 
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* 4. RECONCILE (Return) */}
-        <Link href="/admin/inventory/reconcile" className="group">
-          <div className="bg-white hover:bg-purple-50 border border-gray-200 hover:border-purple-300 p-8 rounded-xl transition-all cursor-pointer h-full">
-            <div className="bg-purple-100 w-12 h-12 rounded-full flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">↩️</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Reconcile Event</h3>
-            <p className="text-gray-500 text-sm">Count unsold items, return to warehouse, and close event.</p>
-          </div>
-        </Link>
-
-        {/* Add this button to your existing grid of admin tools */}
-<Link href="/admin/events/history" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white hover:bg-blue-50 transition-all group">
-  <div className="flex justify-between items-start">
-    <h2 className="text-2xl font-black uppercase">Event Archive</h2>
-    <span className="text-2xl">📁</span>
-  </div>
-  <p className="mt-4 font-bold text-gray-500 uppercase text-xs">
-    View past events, download CSV sales data, and manage historical records.
-  </p>
-</Link>
-
-        {/* 5. WRITE OFF (Adjust) */}
-        <Link href="/admin/inventory/adjust" className="group">
-            <div className="bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 p-8 rounded-xl transition-all cursor-pointer h-full">
-                <div className="bg-red-100 w-12 h-12 rounded-full flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">🗑️</div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Write Offs</h3>
-                <p className="text-gray-500 text-sm">Remove damaged goods or correct stock counts manually.</p>
-            </div>
-        </Link>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 p-8">
+  
+  {/* RECONCILE EVENT CARD */}
+  <Link href="/admin/inventory/reconcile" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white hover:bg-yellow-50 transition-all group flex flex-col justify-between h-full">
+    <div>
+      <div className="flex justify-between items-start">
+        <h2 className="text-2xl font-black uppercase leading-tight">Reconcile Event</h2>
+        <span className="text-3xl group-hover:rotate-12 transition-transform">🔄</span>
       </div>
+      <p className="mt-4 font-bold text-gray-500 uppercase text-xs leading-relaxed">
+        Count unsold items, return stock to warehouse, and close out the event.
+      </p>
+    </div>
+  </Link>
+
+  {/* EVENT ARCHIVE CARD */}
+  <Link href="/admin/events/history" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white hover:bg-blue-50 transition-all group flex flex-col justify-between h-full">
+    <div>
+      <div className="flex justify-between items-start">
+        <h2 className="text-2xl font-black uppercase leading-tight">Event Archive</h2>
+        <span className="text-3xl group-hover:scale-110 transition-transform">📁</span>
+      </div>
+      <p className="mt-4 font-bold text-gray-500 uppercase text-xs leading-relaxed">
+        View past events, download CSV sales data, and manage historical records.
+      </p>
+    </div>
+  </Link>
+
+  {/* WRITE OFFS / ADJUST STOCK CARD */}
+  <Link href="/admin/inventory/adjust" className="border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] bg-white hover:bg-red-50 transition-all group flex flex-col justify-between h-full">
+    <div>
+      <div className="flex justify-between items-start">
+        <h2 className="text-2xl font-black uppercase leading-tight">Adjust Stock</h2>
+        <span className="text-3xl group-hover:shake transition-transform">🗑️</span>
+      </div>
+      <p className="mt-4 font-bold text-gray-500 uppercase text-xs leading-relaxed">
+        Remove damaged goods, correct physical counts, or record write-offs.
+      </p>
+    </div>
+  </Link>
+
+</div>
 
       {/* Legacy/Event Management Section */}
       <div className="mt-12 border-t pt-10">
