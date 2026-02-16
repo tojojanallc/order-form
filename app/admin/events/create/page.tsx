@@ -17,31 +17,25 @@ export default function CreateEventPage() {
     if (!form.name || !form.slug) return alert("Missing fields.");
     setLoading(true);
 
-    // Clean Slug
     const safeSlug = form.slug.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-    // THE NUCLEAR INSERT: We only send Name, Slug, Status, and Mode.
-    // If this fails with a PKEY error, your 'id' column is the problem.
+    // STERN INSERT: We only send the 4 essential columns. 
+    // We do NOT send ID. If this fails, your ID column in Supabase is set to 'Manual' instead of 'Identity'.
     const { error } = await supabase.from('event_settings').insert([
       {
         event_name: form.name,
         slug: safeSlug,
         status: 'active',
-        payment_mode: form.mode,
-        header_color: '#1e3a8a',
-        offer_back_names: true,
-        offer_metallic: true,
-        offer_personalization: true
+        payment_mode: form.mode
       }
     ]);
 
     if (error) {
-      console.error("Detailed DB Error:", error);
-      // If it's code 23505, it's a duplicate.
-      alert(`DATABASE REJECTED THIS: ${error.message} (Code: ${error.code}). Try changing the slug to something like ${safeSlug}-2026`);
+      console.error("Supabase Error:", error);
+      alert(`DB ERROR ${error.code}: ${error.message}. TIP: Try adding '-2026' to the slug.`);
       setLoading(false);
     } else {
-      alert("🎉 SUCCESS! Event Created.");
+      alert("🎉 Event Launched!");
       window.location.href = '/admin'; 
     }
   };
@@ -54,43 +48,25 @@ export default function CreateEventPage() {
       <form onSubmit={handleCreate} className="space-y-8 bg-gray-50 p-8 border-4 border-black shadow-[12px_12px_0px_0px_black]">
         <div>
           <label className="block text-xs font-black uppercase mb-2">Event Title</label>
-          <input 
-            required 
-            className="w-full p-4 border-4 border-black font-bold text-2xl outline-none focus:bg-yellow-50"
-            placeholder="NSHS WINTER INVITE" 
-            value={form.name}
-            onChange={e => setForm({...form, name: e.target.value, slug: e.target.value.toLowerCase().replace(/\s+/g, '-')})} 
-          />
+          <input required className="w-full p-4 border-4 border-black font-bold text-2xl outline-none focus:bg-yellow-50"
+            placeholder="NSHS WINTER INVITE" value={form.name}
+            onChange={e => setForm({...form, name: e.target.value, slug: e.target.value.toLowerCase().replace(/\s+/g, '-')})} />
         </div>
 
         <div>
-          <label className="block text-xs font-black uppercase mb-2">Unique URL Slug</label>
-          <input 
-            required 
-            className="w-full p-4 border-4 border-black font-mono text-lg outline-none focus:bg-yellow-50"
-            value={form.slug} 
-            onChange={e => setForm({...form, slug: e.target.value})} 
-          />
+          <label className="block text-xs font-black uppercase mb-2">URL Slug</label>
+          <input required className="w-full p-4 border-4 border-black font-mono text-lg outline-none focus:bg-yellow-50"
+            value={form.slug} onChange={e => setForm({...form, slug: e.target.value})} />
         </div>
 
         <div className="grid grid-cols-2 gap-6">
-          <button 
-            type="button" 
-            onClick={() => setForm({...form, mode: 'retail'})} 
-            className={`p-6 border-4 border-black font-black uppercase transition-all ${form.mode === 'retail' ? 'bg-blue-900 text-white shadow-[6px_6px_0px_0px_black] -translate-y-1' : 'bg-white'}`}
-          >
-            Retail
-          </button>
-          <button 
-            type="button" 
-            onClick={() => setForm({...form, mode: 'hosted'})} 
-            className={`p-6 border-4 border-black font-black uppercase transition-all ${form.mode === 'hosted' ? 'bg-pink-600 text-white shadow-[6px_6px_0px_0px_black] -translate-y-1' : 'bg-white'}`}
-          >
-            Hosted
-          </button>
+          <button type="button" onClick={() => setForm(f => ({...f, mode: 'retail'}))} 
+            className={`p-6 border-4 border-black font-black uppercase transition-all ${form.mode === 'retail' ? 'bg-blue-900 text-white shadow-[6px_6px_0px_0px_black] -translate-y-1' : 'bg-white'}`}>Retail</button>
+          <button type="button" onClick={() => setForm(f => ({...f, mode: 'hosted'}))} 
+            className={`p-6 border-4 border-black font-black uppercase transition-all ${form.mode === 'hosted' ? 'bg-pink-600 text-white shadow-[6px_6px_0px_0px_black] -translate-y-1' : 'bg-white'}`}>Hosted</button>
         </div>
 
-        <button disabled={loading} className="w-full bg-black text-white py-8 font-black uppercase text-3xl border-4 border-black hover:bg-green-500 hover:text-black transition-all">
+        <button disabled={loading} className="w-full bg-black text-white py-8 font-black uppercase text-3xl border-4 border-black hover:bg-green-500 hover:text-black active:translate-y-2 transition-all">
           {loading ? 'DEPLOYING...' : 'LAUNCH EVENT'}
         </button>
       </form>
