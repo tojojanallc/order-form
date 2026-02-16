@@ -26,7 +26,6 @@ export default function AnalyticsDashboard() {
 
   const filteredOrders = eventFilter === 'all' ? orders : orders.filter(o => o.event_slug === eventFilter);
   
-  // Mapping slugs to human-readable names
   const eventMapping = orders.reduce((acc: any, curr: any) => {
     if (curr.event_slug && curr.event_name) {
       acc[curr.event_slug] = curr.event_name;
@@ -48,18 +47,16 @@ export default function AnalyticsDashboard() {
       const mainDesign = item.mainDesign || item.customizations?.mainDesign;
       if (mainDesign) mainStrokeStats[mainDesign] = (mainStrokeStats[mainDesign] || 0) + 1;
       
-      const logos = item.logos || item.customizations?.logos;
+      const logos = item.logos || item.customizations?.logos || item['Additional Imprints'];
       if (Array.isArray(logos)) {
         logos.forEach((logo: any) => {
-          const type = logo.type || logo.name;
-          if (type) addOnLogoStats[type] = (addOnLogoStats[type] || 0) + 1;
+          const type = logo.type || logo.name || logo;
+          if (type && typeof type === 'string') addOnLogoStats[type] = (addOnLogoStats[type] || 0) + 1;
         });
       }
 
-      if (item.metallicUpgrade || item.customizations?.metallicUpgrade) addonStats["Metallic Upgrade"] += 1;
-      if (item.backNameList || item.customizations?.backNameList) addonStats["Back Roster"] += 1;
-      const names = item.names || item.customizations?.names;
-      if (names && names.length > 0) addonStats["Custom Names"] += 1;
+      if (item.metallicUpgrade || item.customizations?.metallicUpgrade || item['Add Roster'] === 'Yes') addonStats["Back Roster"] += 1;
+      if (item.names?.length > 0 || item['Add Names'] === 'Yes') addonStats["Custom Names"] += 1;
     });
   });
 
@@ -106,10 +103,10 @@ export default function AnalyticsDashboard() {
     saveCSV("Logo_and_Stroke_Usage", ["Design Name", "Total Used"], Object.entries({ ...mainStrokeStats, ...addOnLogoStats }));
   };
 
-  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse">RESTORING EXPORTS...</div>;
+  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Restoring History...</div>;
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans relative">
       <div className="max-w-7xl mx-auto">
         
         {/* HEADER & EXPORT BUTTONS */}
@@ -119,9 +116,9 @@ export default function AnalyticsDashboard() {
             <h1 className="text-2xl font-black uppercase tracking-tighter">Command Center</h1>
           </div>
           <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-            <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2"><ShoppingCart size={14}/> ORDERS</button>
-            <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2"><Package size={14}/> INVENTORY</button>
-            <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2"><Tag size={14}/> LOGOS</button>
+            <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2 font-mono"><ShoppingCart size={14}/> ORDERS</button>
+            <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2 font-mono"><Package size={14}/> INVENTORY</button>
+            <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2 font-mono"><Tag size={14}/> LOGOS</button>
             <select className="flex-1 lg:flex-none bg-white border px-4 py-2 rounded-xl font-bold text-[10px] outline-none shadow-sm" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
               <option value="all">ALL EVENTS</option>
               {Object.entries(eventMapping).map(([slug, name]: any) => (
@@ -132,14 +129,14 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* KPI CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Revenue</p><p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p></div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-slate-900">
+          <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gross Revenue</p><p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p></div>
           <div className="bg-white p-6 rounded-3xl border shadow-sm border-b-4 border-blue-500"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Units Sold</p><p className="text-3xl font-black">{totalItemsSold}</p></div>
-          <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Orders</p><p className="text-3xl font-black">{filteredOrders.length}</p></div>
+          <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transactions</p><p className="text-3xl font-black">{filteredOrders.length}</p></div>
         </div>
 
         {/* BREAKDOWN SECTION */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 text-slate-900">
           <div className="bg-white rounded-[2rem] border shadow-sm p-8">
             <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Tag size={14}/> Main Stroke Choices</h3>
             <div className="space-y-3">
@@ -160,8 +157,8 @@ export default function AnalyticsDashboard() {
             </div>
           )}
 
-          <div className="bg-white rounded-[2rem] border shadow-sm p-8">
-            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Sparkles size={14}/> Technical Upgrades</h3>
+          <div className="bg-white rounded-[2rem] border shadow-sm p-8 text-slate-900">
+            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Sparkles size={14}/> Upgrades</h3>
             <div className="space-y-4">
               {Object.entries(addonStats).map(([name, count]) => (
                 <div key={name} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100"><span className="text-sm font-bold text-slate-700">{name}</span><span className="bg-white px-4 py-1 rounded-full font-black text-emerald-600 shadow-sm">{count}</span></div>
@@ -171,10 +168,10 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* ORDER TABLE */}
-        <div className="bg-white rounded-[2rem] border shadow-sm overflow-hidden">
+        <div className="bg-white rounded-[2rem] border shadow-sm overflow-hidden text-slate-900">
           <table className="w-full text-left">
             <thead className="bg-slate-50 border-b">
-              <tr className="text-[10px] font-black uppercase text-slate-400"><th className="p-6">Customer / Contact</th><th className="p-6">Method</th><th className="p-6">Total</th><th className="p-6 text-right">Details</th></tr>
+              <tr className="text-[10px] font-black uppercase text-slate-400 font-mono"><th className="p-6">Customer / Contact</th><th className="p-6">Method</th><th className="p-6">Total</th><th className="p-6 text-right">Details</th></tr>
             </thead>
             <tbody className="divide-y text-sm">
               {filteredOrders.map(o => (
@@ -190,24 +187,36 @@ export default function AnalyticsDashboard() {
         </div>
       </div>
 
-      {/* MODAL */}
+      {/* DETAIL MODAL */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-150">
             <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
-              <div><h2 className="text-2xl font-black tracking-tighter mb-1 leading-none">{selectedOrder.customer_name}</h2><div className="flex gap-4 opacity-60"><span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1"><Mail size={12}/> {selectedOrder.email || 'N/A'}</span><span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1"><Phone size={12}/> {selectedOrder.phone || 'N/A'}</span></div></div>
+              <div><h2 className="text-2xl font-black tracking-tighter mb-1 leading-none uppercase italic">{selectedOrder.customer_name}</h2><div className="flex gap-4 opacity-60"><span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 font-mono"><Mail size={12}/> {selectedOrder.email || 'N/A'}</span><span className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 font-mono"><Phone size={12}/> {selectedOrder.phone || 'N/A'}</span></div></div>
               <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-white/10 rounded-full"><X/></button>
             </div>
-            <div className="p-8 max-h-[60vh] overflow-y-auto">
-              {selectedOrder.cart_data?.map((item: any, i: number) => (
-                <div key={i} className="mb-4 p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                  <div className="flex justify-between items-center mb-4"><span className="font-black text-slate-800 uppercase italic tracking-tighter">{item.name || item.productName}</span><span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black">{item.size}</span></div>
-                  <div className="grid grid-cols-2 gap-4 text-[10px] uppercase font-bold text-slate-400">
-                    <div><p className="mb-1 tracking-widest text-[8px]">Main Design</p><p className="text-slate-700 text-xs">{item.mainDesign || item.customizations?.mainDesign || 'None'}</p></div>
-                    <div><p className="mb-1 tracking-widest text-[8px]">Add-On Logos</p>{(item.logos || item.customizations?.logos)?.map((l:any, idx:number) => (<p key={idx} className="text-blue-600 text-xs">{l.type || l.name}</p>)) || <p className="text-slate-300">None</p>}</div>
+            <div className="p-8 max-h-[60vh] overflow-y-auto text-slate-900">
+              {selectedOrder.cart_data?.map((item: any, i: number) => {
+                const legacyLogos = item['Additional Imprints'] ? String(item['Additional Imprints']).split(',') : [];
+                const modernLogos = item.logos || item.customizations?.logos || [];
+
+                return (
+                  <div key={i} className="mb-4 p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                    <div className="flex justify-between items-center mb-4"><span className="font-black text-slate-800 uppercase italic tracking-tighter">{item.name || item.productName}</span><span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black font-mono">{item.size}</span></div>
+                    <div className="grid grid-cols-2 gap-4 text-[10px] uppercase font-bold text-slate-400">
+                      <div><p className="mb-1 tracking-widest text-[8px]">Main Design</p><p className="text-slate-700 text-xs">{item.mainDesign || item.customizations?.mainDesign || 'None'}</p></div>
+                      <div>
+                        <p className="mb-1 tracking-widest text-[8px]">Add-On Logos</p>
+                        {modernLogos.length > 0 ? modernLogos.map((l:any, idx:number) => (
+                          <p key={idx} className="text-blue-600 text-xs">{l.type || l.name}</p>
+                        )) : legacyLogos.length > 0 ? legacyLogos.map((l:any, idx:number) => (
+                          <p key={idx} className="text-blue-600 text-xs">{l}</p>
+                        )) : <p className="text-slate-300">None</p>}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
