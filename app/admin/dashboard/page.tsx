@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
-import { Download, DollarSign, Package, LayoutDashboard, Search, X, ShoppingCart, Tag, Sparkles, Mail, Phone, MapPin, UserCircle, BarChart3 } from 'lucide-react';
+import { Download, DollarSign, Package, LayoutDashboard, Search, X, ShoppingCart, Tag, Sparkles, Mail, Phone, MapPin, UserCircle, BarChart3, Calendar } from 'lucide-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -27,12 +27,34 @@ export default function AnalyticsDashboard() {
 
   const filteredOrders = eventFilter === 'all' ? orders : orders.filter(o => o.event_slug === eventFilter);
   
-  const eventMapping = orders.reduce((acc: any, curr: any) => {
-    if (curr.event_slug && curr.event_name) {
-      acc[curr.event_slug] = curr.event_name;
+  // --- DYNAMIC EVENT DATE MAPPING ---
+  // This groups orders by slug to find the earliest and latest date for each event
+  const eventMetadata = orders.reduce((acc: any, curr: any) => {
+    const slug = curr.event_slug;
+    if (!slug) return acc;
+
+    const date = new Date(curr.created_at);
+    if (!acc[slug]) {
+      acc[slug] = {
+        name: curr.event_name || slug,
+        start: date,
+        end: date
+      };
+    } else {
+      if (date < acc[slug].start) acc[slug].start = date;
+      if (date > acc[slug].end) acc[slug].end = date;
     }
     return acc;
   }, {});
+
+  // Formats the dates into the "MM/DD/YYYY" or "Date - Date" string you requested
+  const getEventLabel = (slug: string) => {
+    const meta = eventMetadata[slug];
+    const startStr = meta.start.toLocaleDateString();
+    const endStr = meta.end.toLocaleDateString();
+    const dateRange = startStr === endStr ? startStr : `${startStr}-${endStr}`;
+    return `${dateRange} - ${meta.name}`;
+  };
 
   // --- AGGREGATION LOGIC ---
   const mainStrokeStats: Record<string, number> = {};
@@ -108,7 +130,7 @@ export default function AnalyticsDashboard() {
     saveCSV("Logo_and_Stroke_Usage", ["Design Name", "Total Used"], Object.entries({ ...mainStrokeStats, ...addOnLogoStats }));
   };
 
-  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Adding Labels...</div>;
+  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Organizing Event History...</div>;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans relative">
@@ -121,15 +143,23 @@ export default function AnalyticsDashboard() {
             <h1 className="text-2xl font-black uppercase tracking-tighter">Command Center</h1>
           </div>
           <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-            <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2 font-mono"><ShoppingCart size={14}/> ORDERS</button>
-            <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2 font-mono"><Package size={14}/> INVENTORY</button>
-            <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2 font-mono"><Tag size={14}/> LOGOS</button>
-            <select className="flex-1 lg:flex-none bg-white border px-4 py-2 rounded-xl font-bold text-[10px] outline-none shadow-sm" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
-              <option value="all">ALL EVENTS</option>
-              {Object.entries(eventMapping).map(([slug, name]: any) => (
-                <option key={slug} value={slug}>{String(name).toUpperCase()}</option>
-              ))}
-            </select>
+            <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2"><ShoppingCart size={14}/> ORDERS</button>
+            <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2"><Package size={14}/> INVENTORY</button>
+            <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2"><Tag size={14}/> LOGOS</button>
+            
+            <div className="flex-1 lg:flex-none relative">
+              <Calendar className="absolute left-3 top-2.5 text-slate-400" size={14} />
+              <select 
+                className="w-full bg-white border border-slate-200 pl-9 pr-4 py-2 rounded-xl font-bold text-[10px] outline-none shadow-sm appearance-none cursor-pointer text-slate-600" 
+                value={eventFilter} 
+                onChange={(e) => setEventFilter(e.target.value)}
+              >
+                <option value="all">ALL HISTORICAL EVENTS</option>
+                {Object.keys(eventMetadata).sort((a, b) => eventMetadata[b].start - eventMetadata[a].start).map((slug) => (
+                  <option key={slug} value={slug}>{getEventLabel(slug).toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
