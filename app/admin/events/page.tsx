@@ -391,13 +391,15 @@ export default function AdminPage() {
   };
 
   const closeEvent = async () => { 
-      if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; 
-      setLoading(true); 
+      // 1. Confirm action
+      if (prompt(`Type 'CLOSE' to confirm archive for ${selectedEventSlug}:`) !== 'CLOSE') return; 
       
-      // 1. UPDATE THE EVENT STATUS (This hides it from the public page)
+      setLoading(true); 
+
+      // 2. Mark the EVENT itself as archived (This hides it from the public page)
       const { error } = await supabase
         .from('event_settings')
-        .update({ status: 'archived' })
+        .update({ status: 'archived' }) 
         .eq('slug', selectedEventSlug);
 
       if (error) {
@@ -406,20 +408,17 @@ export default function AdminPage() {
         return;
       }
 
-      // 2. Mark pending orders as completed (Added safety check for current event only)
-      await supabase.from('orders')
-        .update({ event_name: eventName })
-        .neq('status', 'completed')
-        .eq('event_slug', selectedEventSlug); // <--- Added safety filter
-
+      // 3. Mark pending orders FOR THIS EVENT ONLY as completed
+      // (Added .eq('event_slug') to prevent closing orders for other active events)
       await supabase.from('orders')
         .update({ status: 'completed' })
+        .eq('event_slug', selectedEventSlug)
         .neq('status', 'completed')
-        .eq('event_slug', selectedEventSlug); // <--- Added safety filter
+        .neq('status', 'refunded');
 
       alert("Event Closed & Archived!"); 
       
-      // 3. Refresh the list of available events so the UI updates
+      // 4. Refresh the dropdown list so the status updates in your UI
       const { data } = await supabase.from('event_settings').select('*').order('id');
       if (data) setAvailableEvents(data);
 
