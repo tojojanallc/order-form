@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Download, DollarSign, Package, LayoutDashboard, Search, X, ShoppingCart, Tag, Sparkles } from 'lucide-react';
+import { Download, DollarSign, Package, LayoutDashboard, Search, X, ShoppingCart, Tag, Sparkles, Mail, Phone } from 'lucide-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -28,7 +28,7 @@ export default function AnalyticsDashboard() {
   const filteredOrders = eventFilter === 'all' ? orders : orders.filter(o => o.event_slug === eventFilter);
   const events = Array.from(new Set(orders.map(o => o.event_slug))).filter(Boolean);
 
-  // --- UPDATED AGGREGATION: GROUP BY STROKE ONLY ---
+  // --- AGGREGATION LOGIC ---
   const strokeStats: Record<string, number> = {};
   const logoStats: Record<string, number> = {};
   const addonStats: Record<string, number> = { "Metallic Upgrade": 0, "Back Roster": 0, "Custom Names": 0 };
@@ -36,32 +36,21 @@ export default function AnalyticsDashboard() {
   
   filteredOrders.forEach(order => {
     const cart = Array.isArray(order.cart_data) ? order.cart_data : [];
-    
     cart.forEach((item: any) => {
       totalItems += 1;
-
-      // 1. Main Design / Stroke
       const stroke = item.mainDesign || item.customizations?.mainDesign;
-      if (stroke) {
-        strokeStats[stroke] = (strokeStats[stroke] || 0) + 1;
-      }
+      if (stroke) strokeStats[stroke] = (strokeStats[stroke] || 0) + 1;
       
-      // 2. Logos (Grouped by Type only - Ignoring Position)
       const logos = item.logos || item.customizations?.logos;
       if (Array.isArray(logos)) {
         logos.forEach((logo: any) => {
           const type = logo.type || logo.name;
-          if (type) {
-            // Grouping purely by the stroke name (type)
-            logoStats[type] = (logoStats[type] || 0) + 1;
-          }
+          if (type) logoStats[type] = (logoStats[type] || 0) + 1;
         });
       }
 
-      // 3. Add-ons
       if (item.metallicUpgrade || item.customizations?.metallicUpgrade) addonStats["Metallic Upgrade"] += 1;
       if (item.backNameList || item.customizations?.backNameList) addonStats["Back Roster"] += 1;
-      
       const names = item.names || item.customizations?.names;
       if (names && names.length > 0) addonStats["Custom Names"] += 1;
     });
@@ -69,8 +58,16 @@ export default function AnalyticsDashboard() {
 
   const downloadCSV = () => {
     const csvRows = [
-      ["Date", "Customer", "Event", "Total", "Items"],
-      ...filteredOrders.map(o => [new Date(o.created_at).toLocaleDateString(), o.customer_name, o.event_slug, o.total_price, o.cart_data?.length])
+      ["Date", "Customer", "Email", "Phone", "Event", "Total", "Items"],
+      ...filteredOrders.map(o => [
+        new Date(o.created_at).toLocaleDateString(), 
+        o.customer_name, 
+        o.email || 'N/A', 
+        o.phone || 'N/A', 
+        o.event_slug, 
+        o.total_price, 
+        o.cart_data?.length
+      ])
     ];
     const csvContent = csvRows.map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -90,7 +87,7 @@ export default function AnalyticsDashboard() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-slate-900 p-2 rounded-xl text-white shadow-lg"><LayoutDashboard size={24}/></div>
-            <h1 className="text-2xl font-black uppercase tracking-tighter">Command Center</h1>
+            <h1 className="text-2xl font-black uppercase tracking-tighter text-slate-800">Command Center</h1>
           </div>
           <div className="flex gap-2 w-full md:w-auto">
             <button onClick={downloadCSV} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border px-4 py-2 rounded-xl font-bold text-sm shadow-sm hover:bg-gray-50 transition-all">
@@ -104,7 +101,7 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* TOP KPI CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-slate-800">
           <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4">
             <div className="p-4 bg-emerald-50 rounded-2xl text-emerald-600"><DollarSign size={28}/></div>
             <div><p className="text-xs font-bold text-gray-400 uppercase">Revenue</p><p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p></div>
@@ -113,7 +110,7 @@ export default function AnalyticsDashboard() {
             <div className="p-4 bg-blue-50 rounded-2xl text-blue-600"><Package size={28}/></div>
             <div><p className="text-xs font-bold text-gray-400 uppercase">Items Produced</p><p className="text-3xl font-black">{totalItems}</p></div>
           </div>
-          <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4">
+          <div className="bg-white p-6 rounded-2xl border shadow-sm flex items-center gap-4 text-slate-800">
             <div className="p-4 bg-purple-50 rounded-2xl text-purple-600"><ShoppingCart size={28}/></div>
             <div><p className="text-xs font-bold text-gray-400 uppercase">Orders</p><p className="text-3xl font-black">{filteredOrders.length}</p></div>
           </div>
@@ -122,7 +119,7 @@ export default function AnalyticsDashboard() {
         {/* LOGO & ADD-ON BREAKDOWN */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           <div className="bg-white rounded-3xl border shadow-sm p-6">
-            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2">Stroke / Logo Usage (Total Units)</h3>
+            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6">Logo Usage (Total Units)</h3>
             <div className="space-y-3">
               {Object.entries(logoStats).sort((a,b)=>b[1]-a[1]).map(([label, count]) => (
                 <div key={label} className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
@@ -130,12 +127,11 @@ export default function AnalyticsDashboard() {
                   <span className="bg-white px-3 py-1 rounded-lg shadow-sm font-black text-blue-600">{count}</span>
                 </div>
               ))}
-              {Object.keys(logoStats).length === 0 && <p className="text-slate-400 italic text-sm text-center py-4">No data available for this event.</p>}
             </div>
           </div>
 
           <div className="bg-white rounded-3xl border shadow-sm p-6">
-            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Sparkles size={14}/> Add-on Performance</h3>
+            <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6">Add-on Performance</h3>
             <div className="space-y-4 pt-2">
               {Object.entries(addonStats).map(([name, count]) => (
                 <div key={name}>
@@ -150,11 +146,11 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* TRANSACTION TABLE */}
-        <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
+        <div className="bg-white rounded-3xl border shadow-sm overflow-hidden text-slate-800">
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 border-b">
               <tr className="text-[10px] font-black uppercase text-slate-400">
-                <th className="p-6">Customer</th>
+                <th className="p-6">Customer Info</th>
                 <th className="p-6">Method</th>
                 <th className="p-6">Total</th>
                 <th className="p-6 text-right">Details</th>
@@ -163,7 +159,10 @@ export default function AnalyticsDashboard() {
             <tbody className="divide-y">
               {filteredOrders.map(o => (
                 <tr key={o.id} className="hover:bg-blue-50 cursor-pointer group transition-all" onClick={() => setSelectedOrder(o)}>
-                  <td className="p-6 font-bold text-slate-800">{o.customer_name}</td>
+                  <td className="p-6">
+                    <p className="font-bold text-slate-800">{o.customer_name}</p>
+                    <p className="text-[11px] text-slate-400 font-medium">{o.email || 'No Email'}</p>
+                  </td>
                   <td className="p-6 uppercase text-slate-400 font-bold text-[10px]">{o.payment_method}</td>
                   <td className="p-6 font-black text-slate-900">${o.total_price}</td>
                   <td className="p-6 text-right"><button className="bg-slate-100 text-slate-400 p-2 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-all"><Search size={16} /></button></td>
@@ -180,8 +179,11 @@ export default function AnalyticsDashboard() {
           <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in duration-150">
             <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-black tracking-tighter">{selectedOrder.customer_name}</h2>
-                <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">{selectedOrder.event_slug}</p>
+                <h2 className="text-2xl font-black tracking-tighter leading-tight">{selectedOrder.customer_name}</h2>
+                <div className="flex gap-4 mt-2">
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-blue-400 uppercase tracking-widest"><Mail size={12}/> {selectedOrder.email || 'N/A'}</span>
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-blue-400 uppercase tracking-widest"><Phone size={12}/> {selectedOrder.phone || 'N/A'}</span>
+                </div>
               </div>
               <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-white/10 rounded-full"><X/></button>
             </div>
@@ -194,13 +196,13 @@ export default function AnalyticsDashboard() {
                   </div>
                   <div className="grid grid-cols-2 gap-4 text-xs">
                     <div>
-                      <p className="font-black text-slate-400 uppercase mb-1 text-[10px]">Base Stroke</p>
+                      <p className="font-black text-slate-400 uppercase mb-1">Design</p>
                       <p className="font-bold">{item.mainDesign || item.customizations?.mainDesign || 'N/A'}</p>
                     </div>
                     <div>
-                      <p className="font-black text-slate-400 uppercase mb-1 text-[10px]">Applied Logos</p>
+                      <p className="font-black text-slate-400 uppercase mb-1">Logos</p>
                       {(item.logos || item.customizations?.logos)?.map((l:any, idx:number) => (
-                        <p key={idx} className="font-bold text-blue-600">{l.type || l.name} <span className="text-slate-400 font-normal">({l.position || l.pos})</span></p>
+                        <p key={idx} className="font-bold text-blue-600">{l.type || l.name}</p>
                       )) || <p>None</p>}
                     </div>
                   </div>
