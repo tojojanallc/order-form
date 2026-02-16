@@ -231,8 +231,9 @@ export default function AdminPage() {
     if(!mounted || !orders) return;
     try {
         const activeOrders = orders.filter(o => o.status !== 'refunded');
+        
         if (activeOrders.length > 0) {
-            let totalRevenue = 0;
+            let totalRevenue = 0; // Starts as a Number
             let totalCOGS = 0;
             const itemCounts = {};
 
@@ -240,28 +241,40 @@ export default function AdminPage() {
                 const items = Array.isArray(order.cart_data) ? order.cart_data : [];
                 let orderValue = 0;
                 
-                if (paymentMode === 'hosted' || order.total_price === 0) {
+                if (paymentMode === 'hosted' || Number(order.total_price) === 0) {
                     items.forEach(item => {
                         const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                        let itemPrice = 0;
+                        const prod = products.find(p => p.id === item.productId);
+
+                        // FORCE NUMERIC BASE PRICE
+                        let itemPrice = 0; 
                         if (invItem && invItem.override_price) {
                             itemPrice = Number(invItem.override_price);
-                        } else {
-                            const prod = products.find(p => p.id === item.productId);
-                            if (prod) itemPrice = Number(prod.base_price);
+                        } else if (prod && prod.base_price) {
+                            itemPrice = Number(prod.base_price);
                         }
+
+                        // FORCE NUMERIC CUSTOMIZATIONS
                         if (item.customizations) {
-                            itemPrice += (item.customizations.logos?.length || 0) * 5;
-                            itemPrice += (item.customizations.names?.length || 0) * 5;
-                            if (item.customizations.metallic) itemPrice += 5;
+                            const logoCount = Number(item.customizations.logos?.length || 0);
+                            const nameCount = Number(item.customizations.names?.length || 0);
+                            const metallicAdd = item.customizations.metallic ? 5 : 0;
+                            
+                            itemPrice += (logoCount * 5);
+                            itemPrice += (nameCount * 5);
+                            itemPrice += metallicAdd;
                         }
-                        orderValue += itemPrice;
+                        
+                        orderValue += Number(itemPrice);
                     });
                 } else {
-                    orderValue = order.total_price || 0;
+                    // RETAIL MODE: Use total_price from DB
+                    orderValue = Number(order.total_price || 0);
                 }
+                
                 totalRevenue += orderValue;
 
+                // COGS Logic
                 items.forEach(item => {
                     if (!item) return;
                     const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
@@ -272,18 +285,24 @@ export default function AdminPage() {
                 });
             });
 
-            const stripeFees = paymentMode === 'hosted' ? 0 : (totalRevenue * 0.029) + (activeOrders.length * 0.30);
-            const net = totalRevenue - stripeFees - totalCOGS;
+            // FINAL CALCULATION
+            const stripeFees = paymentMode === 'hosted' ? 0 : (Number(totalRevenue) * 0.029) + (activeOrders.length * 0.30);
+            const net = Number(totalRevenue) - Number(stripeFees) - Number(totalCOGS);
+            
             const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
             const topItem = sortedItems.length > 0 ? sortedItems[0] : null;
 
-            setStats({ revenue: totalRevenue, count: activeOrders.length, net, topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' });
+            setStats({ 
+                revenue: Number(totalRevenue), 
+                count: activeOrders.length, 
+                net: Number(net), 
+                topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' 
+            });
         } else { 
             setStats({ revenue: 0, count: 0, net: 0, topItem: '-' }); 
         }
     } catch (e) { console.error("Stats Error:", e); }
   }, [orders, inventory, mounted, paymentMode, products]);
-
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
