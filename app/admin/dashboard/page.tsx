@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import { Download, DollarSign, Package, LayoutDashboard, Search, X, ShoppingCart, Tag, Sparkles, Mail, Phone, MapPin, UserCircle, BarChart3 } from 'lucide-react';
 
 const supabase = createClient(
@@ -34,7 +34,7 @@ export default function AnalyticsDashboard() {
     return acc;
   }, {});
 
-  // --- UPDATED AGGREGATION LOGIC ---
+  // --- AGGREGATION LOGIC ---
   const mainStrokeStats: Record<string, number> = {};
   const addOnLogoStats: Record<string, number> = {};
   const garmentSizeStats: Record<string, number> = {};
@@ -46,17 +46,14 @@ export default function AnalyticsDashboard() {
     cart.forEach((item: any) => {
       totalItemsSold += 1;
       
-      // 1. ROBUST SIZE SCAN (Checking top-level and nested)
       const gName = item.name || item.productName || "Unknown Item";
       const gSize = item.size || item.customizations?.size || "N/A";
       const gKey = `${gName} - ${gSize}`;
       garmentSizeStats[gKey] = (garmentSizeStats[gKey] || 0) + 1;
 
-      // 2. Main Stroke
       const mainDesign = item.mainDesign || item.customizations?.mainDesign;
       if (mainDesign) mainStrokeStats[mainDesign] = (mainStrokeStats[mainDesign] || 0) + 1;
       
-      // 3. Add-on Logos (Legacy and Modern)
       const logos = item.logos || item.customizations?.logos || item['Additional Imprints'];
       if (Array.isArray(logos)) {
         logos.forEach((logo: any) => {
@@ -65,7 +62,6 @@ export default function AnalyticsDashboard() {
         });
       }
 
-      // 4. Upgrades
       if (item.metallicUpgrade || item.customizations?.metallicUpgrade) addonStats["Metallic Upgrade"] += 1;
       if (item.backNameList || item.customizations?.backNameList || item['Add Roster'] === 'Yes') addonStats["Back Roster"] += 1;
       const names = item.names || item.customizations?.names;
@@ -73,7 +69,6 @@ export default function AnalyticsDashboard() {
     });
   });
 
-  // Prepare data for the visual Size Chart
   const chartData = Object.entries(garmentSizeStats)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
@@ -113,7 +108,7 @@ export default function AnalyticsDashboard() {
     saveCSV("Logo_and_Stroke_Usage", ["Design Name", "Total Used"], Object.entries({ ...mainStrokeStats, ...addOnLogoStats }));
   };
 
-  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Compiling Size Trends...</div>;
+  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Adding Labels...</div>;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans relative">
@@ -126,9 +121,9 @@ export default function AnalyticsDashboard() {
             <h1 className="text-2xl font-black uppercase tracking-tighter">Command Center</h1>
           </div>
           <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-            <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2"><ShoppingCart size={14}/> ORDERS</button>
-            <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2"><Package size={14}/> INVENTORY</button>
-            <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2"><Tag size={14}/> LOGOS</button>
+            <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2 font-mono"><ShoppingCart size={14}/> ORDERS</button>
+            <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2 font-mono"><Package size={14}/> INVENTORY</button>
+            <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2 font-mono"><Tag size={14}/> LOGOS</button>
             <select className="flex-1 lg:flex-none bg-white border px-4 py-2 rounded-xl font-bold text-[10px] outline-none shadow-sm" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
               <option value="all">ALL EVENTS</option>
               {Object.entries(eventMapping).map(([slug, name]: any) => (
@@ -140,30 +135,22 @@ export default function AnalyticsDashboard() {
 
         {/* KPI CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 text-slate-900">
-          <div className="bg-white p-6 rounded-3xl border shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Revenue</p>
-            <p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p>
-          </div>
-          <div className="bg-white p-6 rounded-3xl border shadow-sm border-b-4 border-blue-500">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Units Sold</p>
-            <p className="text-3xl font-black">{totalItemsSold}</p>
-          </div>
-          <div className="bg-white p-6 rounded-3xl border shadow-sm">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transactions</p>
-            <p className="text-3xl font-black">{filteredOrders.length}</p>
-          </div>
+          <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Revenue</p><p className="text-3xl font-black">${filteredOrders.reduce((a,b)=>a+(Number(b.total_price)||0),0).toFixed(2)}</p></div>
+          <div className="bg-white p-6 rounded-3xl border shadow-sm border-b-4 border-blue-500"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Units Sold</p><p className="text-3xl font-black">{totalItemsSold}</p></div>
+          <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transactions</p><p className="text-3xl font-black">{filteredOrders.length}</p></div>
         </div>
 
-        {/* INVENTORY SIZE CHART */}
+        {/* INVENTORY SIZE CHART WITH LABELS */}
         <div className="bg-white rounded-[2.5rem] border shadow-sm p-8 mb-8 text-slate-900">
           <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-8 flex items-center gap-2"><BarChart3 size={14}/> Size Usage Breakdown</h3>
-          <div className="h-[350px] w-full">
+          <div className="h-[400px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={chartData} margin={{ left: 50, right: 50 }}>
+              <BarChart layout="vertical" data={chartData} margin={{ left: 50, right: 80 }}>
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" width={180} fontSize={10} fontWeight="bold" axisLine={false} tickLine={false} />
                 <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
                 <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={25}>
+                  <LabelList dataKey="value" position="right" offset={10} style={{ fontSize: '12px', fontWeight: '900', fill: '#065f46' }} />
                   {chartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#10b981' : '#34d399'} />
                   ))}
@@ -173,7 +160,7 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
-        {/* DESIGN BREAKDOWN GRID */}
+        {/* BREAKDOWN SECTION */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 text-slate-900">
           <div className="bg-white rounded-[2rem] border shadow-sm p-8">
             <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Tag size={14}/> Main Stroke Choices</h3>
