@@ -228,82 +228,90 @@ export default function AdminPage() {
 
   // --- STATS LOGIC ---
   useEffect(() => {
-    if(!mounted || !orders) return;
+    if(!mounted || !orders || orders.length === 0) {
+        setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
+        return;
+    }
+
     try {
         const activeOrders = orders.filter(o => o.status !== 'refunded');
-        
-        if (activeOrders.length > 0) {
-            let totalRevenue = 0; // Starts as a Number
-            let totalCOGS = 0;
-            const itemCounts = {};
+        let runningRevenue = 0;
+        let runningCOGS = 0;
+        const itemCounts = {};
 
-            activeOrders.forEach(order => {
-                const items = Array.isArray(order.cart_data) ? order.cart_data : [];
-                let orderValue = 0;
-                
-                if (paymentMode === 'hosted' || Number(order.total_price) === 0) {
-                    items.forEach(item => {
-                        const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                        const prod = products.find(p => p.id === item.productId);
+        activeOrders.forEach(order => {
+            const items = Array.isArray(order.cart_data) ? order.cart_data : [];
+            let orderTotalValue = 0;
 
-                        // FORCE NUMERIC BASE PRICE
-                        let itemPrice = 0; 
-                        if (invItem && invItem.override_price) {
-                            itemPrice = Number(invItem.override_price);
-                        } else if (prod && prod.base_price) {
-                            itemPrice = Number(prod.base_price);
-                        }
-
-                        // FORCE NUMERIC CUSTOMIZATIONS
-                        if (item.customizations) {
-                            const logoCount = Number(item.customizations.logos?.length || 0);
-                            const nameCount = Number(item.customizations.names?.length || 0);
-                            const metallicAdd = item.customizations.metallic ? 5 : 0;
-                            
-                            itemPrice += (logoCount * 5);
-                            itemPrice += (nameCount * 5);
-                            itemPrice += metallicAdd;
-                        }
-                        
-                        orderValue += Number(itemPrice);
-                    });
-                } else {
-                    // RETAIL MODE: Use total_price from DB
-                    orderValue = Number(order.total_price || 0);
-                }
-                
-                totalRevenue += orderValue;
-
-                // COGS Logic
+            // 1. Calculate Revenue for this order
+            if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
+                // Manually sum items based on inventory/product prices
                 items.forEach(item => {
                     if (!item) return;
+
+                    // Find prices
                     const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                    const unitCost = Number(invItem?.cost_price || 8.00); 
-                    totalCOGS += (unitCost + 1.50); 
+                    const prod = products.find(p => p.id === item.productId);
+
+                    // Base Price logic
+                    let price = 0;
+                    if (invItem && invItem.override_price) price = Number(invItem.override_price);
+                    else if (prod && prod.base_price) price = Number(prod.base_price);
+
+                    // Customization Add-ons
+                    if (item.customizations) {
+                        price += (Number(item.customizations.logos?.length || 0) * 5);
+                        price += (Number(item.customizations.names?.length || 0) * 5);
+                        if (item.customizations.metallic) price += 5;
+                    }
+                    orderTotalValue += price;
+
+                    // Track Item frequency for "Top Item"
                     const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
                     itemCounts[key] = (itemCounts[key] || 0) + 1;
                 });
-            });
+            } else {
+                // Retail mode: Use the baked-in total
+                orderTotalValue = Number(order.total_price || 0);
+                
+                // Still need to count item frequency for the "Top Item" stat
+                items.forEach(item => {
+                    if (!item) return;
+                    const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
+                    itemCounts[key] = (itemCounts[key] || 0) + 1;
+                });
+            }
 
-            // FINAL CALCULATION
-            const stripeFees = paymentMode === 'hosted' ? 0 : (Number(totalRevenue) * 0.029) + (activeOrders.length * 0.30);
-            const net = Number(totalRevenue) - Number(stripeFees) - Number(totalCOGS);
-            
-            const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
-            const topItem = sortedItems.length > 0 ? sortedItems[0] : null;
+            runningRevenue += orderTotalValue;
 
-            setStats({ 
-                revenue: Number(totalRevenue), 
-                count: activeOrders.length, 
-                net: Number(net), 
-                topItem: topItem ? `${topItem[0]} (${topItem[1]})` : '-' 
+            // 2. Calculate COGS for this order
+            items.forEach(item => {
+                if (!item) return;
+                const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                const unitCost = Number(invItem?.cost_price || 8.50);
+                runningCOGS += (unitCost + 1.50); // Garment cost + transfer/labor approx
             });
-        } else { 
-            setStats({ revenue: 0, count: 0, net: 0, topItem: '-' }); 
-        }
-    } catch (e) { console.error("Stats Error:", e); }
+        });
+
+        // 3. Final Net Calculation
+        const stripeFees = paymentMode === 'hosted' ? 0 : (runningRevenue * 0.029) + (activeOrders.length * 0.30);
+        const netProfit = runningRevenue - stripeFees - runningCOGS;
+
+        // 4. Determine Top Item
+        const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
+        const topItemStr = sortedItems.length > 0 ? `${sortedItems[0][0]} (${sortedItems[0][1]})` : '-';
+
+        setStats({
+            revenue: runningRevenue,
+            count: activeOrders.length,
+            net: netProfit,
+            topItem: topItemStr
+        });
+
+    } catch (e) {
+        console.error("Critical Stats Calculation Error:", e);
+    }
   }, [orders, inventory, mounted, paymentMode, products]);
-
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
