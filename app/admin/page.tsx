@@ -80,14 +80,14 @@ export default function MasterAdmin() {
       <h2 className="text-xl font-bold text-gray-800 mb-6">Inventory Operations</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         
-        {/* 1. CREATE PO (Buy) */}
-        <Link href="/admin/purchasing/create" className="group">
-          <div className="bg-white hover:bg-orange-50 border border-gray-200 hover:border-orange-300 p-8 rounded-xl transition-all cursor-pointer h-full">
-            <div className="bg-orange-100 w-12 h-12 rounded-full flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">🛒</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Create PO</h3>
-            <p className="text-gray-500 text-sm">Order new stock from vendors. Generates PO #.</p>
-          </div>
-        </Link>
+        {/* 1. MANAGE POs */}
+<Link href="/admin/purchasing/manage" className="group">
+  <div className="bg-white hover:bg-gray-50 border border-gray-200 hover:border-gray-300 p-8 rounded-xl transition-all cursor-pointer h-full">
+    <div className="bg-gray-100 w-12 h-12 rounded-full flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">📋</div>
+    <h3 className="text-xl font-bold text-gray-900 mb-2">Manage POs</h3>
+    <p className="text-gray-500 text-sm">View history, check status, or cancel open orders.</p>
+  </div>
+</Link>
 
         {/* 2. RECEIVE PO (Inbound) */}
         <Link href="/admin/purchasing/receive" className="group">
