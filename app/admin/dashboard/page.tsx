@@ -27,19 +27,12 @@ export default function AnalyticsDashboard() {
 
   const filteredOrders = eventFilter === 'all' ? orders : orders.filter(o => o.event_slug === eventFilter);
   
-  // --- DYNAMIC EVENT DATE MAPPING ---
-  // This groups orders by slug to find the earliest and latest date for each event
   const eventMetadata = orders.reduce((acc: any, curr: any) => {
     const slug = curr.event_slug;
     if (!slug) return acc;
-
     const date = new Date(curr.created_at);
     if (!acc[slug]) {
-      acc[slug] = {
-        name: curr.event_name || slug,
-        start: date,
-        end: date
-      };
+      acc[slug] = { name: curr.event_name || slug, start: date, end: date };
     } else {
       if (date < acc[slug].start) acc[slug].start = date;
       if (date > acc[slug].end) acc[slug].end = date;
@@ -47,7 +40,6 @@ export default function AnalyticsDashboard() {
     return acc;
   }, {});
 
-  // Formats the dates into the "MM/DD/YYYY" or "Date - Date" string you requested
   const getEventLabel = (slug: string) => {
     const meta = eventMetadata[slug];
     const startStr = meta.start.toLocaleDateString();
@@ -67,7 +59,6 @@ export default function AnalyticsDashboard() {
     const cart = Array.isArray(order.cart_data) ? order.cart_data : [];
     cart.forEach((item: any) => {
       totalItemsSold += 1;
-      
       const gName = item.name || item.productName || "Unknown Item";
       const gSize = item.size || item.customizations?.size || "N/A";
       const gKey = `${gName} - ${gSize}`;
@@ -122,7 +113,21 @@ export default function AnalyticsDashboard() {
   };
 
   const downloadInventory = () => {
-    const rows = Object.entries(garmentSizeStats).map(([key, qty]) => [...key.split(" - "), qty]);
+    const rows = Object.entries(garmentSizeStats)
+      .map(([key, qty]) => {
+        const parts = key.split(" - ");
+        return { style: parts[0], size: parts[1], qty };
+      })
+      .sort((a, b) => {
+        // First sort by style
+        if (a.style < b.style) return -1;
+        if (a.style > b.style) return 1;
+        // Then sort by size
+        const sizeOrder: Record<string, number> = { 'YS': 1, 'YM': 2, 'YL': 3, 'YXL': 4, 'AS': 5, 'AM': 6, 'AL': 7, 'AXL': 8, 'A2XL': 9, 'A3XL': 10 };
+        return (sizeOrder[a.size] || 99) - (sizeOrder[b.size] || 99);
+      })
+      .map(item => [item.style, item.size, item.qty]);
+
     saveCSV("Inventory_Usage", ["Garment Style", "Size", "Quantity Sold"], rows);
   };
 
@@ -130,13 +135,11 @@ export default function AnalyticsDashboard() {
     saveCSV("Logo_and_Stroke_Usage", ["Design Name", "Total Used"], Object.entries({ ...mainStrokeStats, ...addOnLogoStats }));
   };
 
-  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Organizing Event History...</div>;
+  if (loading) return <div className="p-20 text-center font-black text-blue-600 animate-pulse uppercase tracking-widest">Optimizing Sort Logic...</div>;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 text-slate-900 font-sans relative">
       <div className="max-w-7xl mx-auto">
-        
-        {/* HEADER & EXPORT BUTTONS */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-slate-900 p-2 rounded-xl text-white shadow-lg"><LayoutDashboard size={24}/></div>
@@ -146,14 +149,9 @@ export default function AnalyticsDashboard() {
             <button onClick={downloadOrders} className="flex-1 lg:flex-none bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-blue-700 shadow-md flex items-center justify-center gap-2"><ShoppingCart size={14}/> ORDERS</button>
             <button onClick={downloadInventory} className="flex-1 lg:flex-none bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-emerald-700 shadow-md flex items-center justify-center gap-2"><Package size={14}/> INVENTORY</button>
             <button onClick={downloadLogos} className="flex-1 lg:flex-none bg-purple-600 text-white px-4 py-2 rounded-xl font-bold text-[10px] hover:bg-purple-700 shadow-md flex items-center justify-center gap-2"><Tag size={14}/> LOGOS</button>
-            
             <div className="flex-1 lg:flex-none relative">
               <Calendar className="absolute left-3 top-2.5 text-slate-400" size={14} />
-              <select 
-                className="w-full bg-white border border-slate-200 pl-9 pr-4 py-2 rounded-xl font-bold text-[10px] outline-none shadow-sm appearance-none cursor-pointer text-slate-600" 
-                value={eventFilter} 
-                onChange={(e) => setEventFilter(e.target.value)}
-              >
+              <select className="w-full bg-white border border-slate-200 pl-9 pr-4 py-2 rounded-xl font-bold text-[10px] outline-none shadow-sm appearance-none cursor-pointer text-slate-600" value={eventFilter} onChange={(e) => setEventFilter(e.target.value)}>
                 <option value="all">ALL HISTORICAL EVENTS</option>
                 {Object.keys(eventMetadata).sort((a, b) => eventMetadata[b].start - eventMetadata[a].start).map((slug) => (
                   <option key={slug} value={slug}>{getEventLabel(slug).toUpperCase()}</option>
@@ -170,7 +168,7 @@ export default function AnalyticsDashboard() {
           <div className="bg-white p-6 rounded-3xl border shadow-sm"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Transactions</p><p className="text-3xl font-black">{filteredOrders.length}</p></div>
         </div>
 
-        {/* INVENTORY SIZE CHART WITH LABELS */}
+        {/* INVENTORY SIZE CHART */}
         <div className="bg-white rounded-[2.5rem] border shadow-sm p-8 mb-8 text-slate-900">
           <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-8 flex items-center gap-2"><BarChart3 size={14}/> Size Usage Breakdown</h3>
           <div className="h-[400px] w-full">
@@ -200,7 +198,6 @@ export default function AnalyticsDashboard() {
               ))}
             </div>
           </div>
-
           {hasAddOnLogos && (
             <div className="bg-white rounded-[2rem] border shadow-sm p-8 text-slate-900">
               <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><MapPin size={14}/> Add-On Logo Usage</h3>
@@ -211,7 +208,6 @@ export default function AnalyticsDashboard() {
               </div>
             </div>
           )}
-
           <div className="bg-white rounded-[2rem] border shadow-sm p-8 text-slate-900">
             <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2"><Sparkles size={14}/> Upgrades</h3>
             <div className="space-y-4">
@@ -228,10 +224,10 @@ export default function AnalyticsDashboard() {
             <thead className="bg-slate-50 border-b">
               <tr className="text-[10px] font-black uppercase text-slate-400 font-mono"><th className="p-6">Customer / Contact</th><th className="p-6">Method</th><th className="p-6">Total</th><th className="p-6 text-right">Details</th></tr>
             </thead>
-            <tbody className="divide-y text-sm">
+            <tbody className="divide-y text-sm font-medium">
               {filteredOrders.map(o => (
                 <tr key={o.id} className="hover:bg-blue-50 cursor-pointer transition-all" onClick={() => setSelectedOrder(o)}>
-                  <td className="p-6"><p className="font-bold">{o.customer_name}</p><p className="text-[10px] text-slate-400 font-medium italic">{o.email || 'No Email'}</p></td>
+                  <td className="p-6"><p className="font-bold text-slate-800">{o.customer_name}</p><p className="text-[10px] text-slate-400 italic">{o.email || 'No Email'}</p></td>
                   <td className="p-6 uppercase text-slate-400 font-bold text-[10px] tracking-widest">{o.payment_method}</td>
                   <td className="p-6 font-black text-blue-600">${o.total_price}</td>
                   <td className="p-6 text-right"><button className="bg-slate-100 text-slate-400 p-2 rounded-lg hover:bg-blue-600 hover:text-white transition-all"><Search size={16}/></button></td>
@@ -255,32 +251,15 @@ export default function AnalyticsDashboard() {
                 const legacyLogos = item['Additional Imprints'] ? String(item['Additional Imprints']).split(',') : [];
                 const modernLogos = item.logos || item.customizations?.logos || [];
                 const nameAddon = item.names || item.customizations?.names || [];
-
                 return (
                   <div key={i} className="mb-4 p-6 bg-slate-50 rounded-3xl border border-slate-100">
                     <div className="flex justify-between items-center mb-4"><span className="font-black text-slate-800 uppercase italic tracking-tighter">{item.name || item.productName}</span><span className="bg-blue-600 text-white px-3 py-1 rounded-full text-[10px] font-black font-mono">{item.size || item.customizations?.size || 'N/A'}</span></div>
                     <div className="grid grid-cols-2 gap-4 text-[10px] uppercase font-bold text-slate-400">
                       <div><p className="mb-1 tracking-widest text-[8px]">Main Design</p><p className="text-slate-700 text-xs">{item.mainDesign || item.customizations?.mainDesign || 'None'}</p></div>
-                      <div>
-                        <p className="mb-1 tracking-widest text-[8px]">Add-On Logos</p>
-                        {modernLogos.length > 0 ? modernLogos.map((l:any, idx:number) => (
-                          <p key={idx} className="text-blue-600 text-xs">{l.type || l.name}</p>
-                        )) : legacyLogos.length > 0 ? legacyLogos.map((l:any, idx:number) => (
-                          <p key={idx} className="text-blue-600 text-xs">{l}</p>
-                        )) : <p className="text-slate-300">None</p>}
-                      </div>
+                      <div><p className="mb-1 tracking-widest text-[8px]">Add-On Logos</p>{modernLogos.length > 0 ? modernLogos.map((l:any, idx:number) => (<p key={idx} className="text-blue-600 text-xs">{l.type || l.name}</p>)) : legacyLogos.length > 0 ? legacyLogos.map((l:any, idx:number) => (<p key={idx} className="text-blue-600 text-xs">{l}</p>)) : <p className="text-slate-300">None</p>}</div>
                     </div>
                     {nameAddon.length > 0 && (
-                        <div className="mt-4 pt-4 border-t border-slate-200">
-                            <p className="mb-1 tracking-widest text-[8px] uppercase font-bold text-slate-400">Custom Names</p>
-                            <div className="flex flex-wrap gap-2 mt-2">
-                                {nameAddon.map((n: any, idx: number) => (
-                                    <span key={idx} className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1 rounded-xl text-xs font-black text-emerald-600 shadow-sm">
-                                        <UserCircle size={12}/> {n.text || n}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
+                      <div className="mt-4 pt-4 border-t border-slate-200"><p className="mb-1 tracking-widest text-[8px] uppercase font-bold text-slate-400">Custom Names</p><div className="flex flex-wrap gap-2 mt-2">{nameAddon.map((n: any, idx: number) => (<span key={idx} className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1 rounded-xl text-xs font-black text-emerald-600 shadow-sm"><UserCircle size={12}/> {n.text || n}</span>))}</div></div>
                     )}
                   </div>
                 );
