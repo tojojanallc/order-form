@@ -431,7 +431,12 @@ export default function AdminPage() {
       alert("SUCCESS: Event Archived!"); 
       
       // 3. Refresh UI
-      const { data: newData } = await supabase.from('event_settings').select('*').order('id');
+      // 4. Refresh the dropdown list (Fetch ONLY active events)
+      const { data } = await supabase
+          .from('event_settings')
+          .select('*')
+          .eq('status', 'active') // <--- Add this here too
+          .order('id');
       if (newData) setAvailableEvents(newData);
 
       fetchOrders(); 
