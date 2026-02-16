@@ -226,53 +226,76 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
- useEffect(() => {
-    if (!mounted || !orders || !selectedEventSlug) return;
+ // --- GROUND ZERO STATS LOGIC ---
+  // --- GROUND ZERO REVENUE FIX ---
+  useEffect(() => {
+    if (!mounted || !orders || !selectedEventSlug) {
+      setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
+      return;
+    }
 
-    // 1. UNIQUE FILTER: Prevents the "Nuts" numbers
-    const orderMap = new Map();
-    orders.forEach(o => {
-      if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
-        orderMap.set(o.id, o);
-      }
-    });
-    const finalOrders = Array.from(orderMap.values());
-
-    let g = 0; let c = 0; const counts = {};
-
-    finalOrders.forEach(order => {
-      const items = Array.isArray(order.cart_data) ? order.cart_data.filter(Boolean) : [];
-      
-      // Revenue calculation
-      if (paymentMode === 'hosted' || !order.total_price) {
-        items.forEach(i => {
-          let p = 30; // Default base price
-          if (i.customizations) {
-            p += (Number(i.customizations.logos?.length || 0) * 5);
-            p += (Number(i.customizations.names?.length || 0) * 5);
-          }
-          g += p;
+    try {
+        // 1. UNIQUE MAP: Uses DB ID as key. Ensures each order is counted ONCE.
+        const orderMap = new Map();
+        orders.forEach(o => {
+            if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
+                orderMap.set(o.id, o);
+            }
         });
-      } else {
-        g += Number(order.total_price || 0);
-      }
+        const activeOrders = Array.from(orderMap.values());
 
-      items.forEach(i => {
-        c += 10; // Simple $10 cost per garment
-        const key = `${i.productName} (${i.size})`;
-        counts[key] = (counts[key] || 0) + 1;
-      });
-    });
+        // 2. HARD RESET: Start from absolute zero
+        let gross = 0;
+        let cogs = 0;
+        const itemCounts = {};
 
-    const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
-    setStats({
-      revenue: g,
-      count: finalOrders.length,
-      net: g - (g * 0.03) - c,
-      topItem: sorted[0] ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
-    });
-  }, [orders, selectedEventSlug, paymentMode, mounted]);
-  
+        activeOrders.forEach(order => {
+            const items = Array.isArray(order.cart_data) ? order.cart_data.filter(Boolean) : [];
+            let orderValue = 0;
+
+            if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
+                // Calculation for Hosted/Free orders
+                items.forEach(item => {
+                    const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                    const prod = products.find(p => p.id === item.productId);
+                    let base = Number(inv?.override_price ?? prod?.base_price ?? 0);
+                    
+                    if (item.customizations) {
+                        base += (Number(item.customizations.logos?.length || 0) * 5);
+                        base += (Number(item.customizations.names?.length || 0) * 5);
+                        if (item.customizations.metallic) base += 5;
+                    }
+                    orderValue += base;
+                });
+            } else {
+                // Actual paid total for Retail
+                orderValue = Number(order.total_price || 0);
+            }
+
+            gross += orderValue;
+
+            // 3. PER-ITEM MATH (COGS & Top Items)
+            items.forEach(item => {
+                const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                cogs += (Number(inv?.cost_price || 8.50) + 1.50);
+                const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
+                itemCounts[key] = (itemCounts[key] || 0) + 1;
+            });
+        });
+
+        const fees = paymentMode === 'hosted' ? 0 : (gross * 0.029) + (activeOrders.length * 0.30);
+        const sorted = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
+
+        setStats({
+            revenue: gross,
+            count: activeOrders.length,
+            net: gross - fees - cogs,
+            topItem: sorted.length > 0 ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
+        });
+
+    } catch (e) { console.error("Stats Error:", e); }
+  }, [orders, inventory, mounted, paymentMode, products, selectedEventSlug]);
+
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
