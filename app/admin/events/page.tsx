@@ -227,71 +227,71 @@ export default function AdminPage() {
   }, [editingOrder, products, mounted]);
 
   // --- GROUND ZERO STATS LOGIC ---
+  // --- GROUND ZERO REVENUE FIX ---
   useEffect(() => {
-    // 1. Reset state to avoid carrying over old numbers
     if (!mounted || !orders || !selectedEventSlug) {
       setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
       return;
     }
 
     try {
-      // 2. STRICT DEDUPLICATION: Use a Map with order.id to ensure each order is counted ONCE.
-      const uniqueOrderMap = new Map();
-      orders.forEach(o => {
-        if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
-          uniqueOrderMap.set(o.id, o);
-        }
-      });
-      const activeOrders = Array.from(uniqueOrderMap.values());
-
-      let totalGross = 0;
-      let totalCost = 0;
-      const counts = {};
-
-      activeOrders.forEach(order => {
-        const items = Array.isArray(order.cart_data) ? order.cart_data.filter(Boolean) : [];
-        let orderWorth = 0;
-
-        // 3. Revenue Logic
-        if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
-          items.forEach(item => {
-            const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-            const prod = products.find(p => p.id === item.productId);
-            
-            // Defaulting to 0 instead of 30 if not found to prevent "nuts" revenue
-            let price = Number(inv?.override_price ?? prod?.base_price ?? 0);
-            
-            if (item.customizations) {
-              price += (Number(item.customizations.logos?.length || 0) * 5);
-              price += (Number(item.customizations.names?.length || 0) * 5);
-              if (item.customizations.metallic) price += 5;
+        // 1. UNIQUE MAP: Uses DB ID as key. Ensures each order is counted ONCE.
+        const orderMap = new Map();
+        orders.forEach(o => {
+            if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
+                orderMap.set(o.id, o);
             }
-            orderWorth += price;
-          });
-        } else {
-          orderWorth = Number(order.total_price || 0);
-        }
-
-        totalGross += orderWorth;
-
-        // 4. COGS & Top Item Tracking
-        items.forEach(item => {
-          const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-          totalCost += (Number(inv?.cost_price || 8.50) + 1.50);
-          const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
-          counts[key] = (counts[key] || 0) + 1;
         });
-      });
+        const activeOrders = Array.from(orderMap.values());
 
-      const stripeFees = paymentMode === 'hosted' ? 0 : (totalGross * 0.029) + (activeOrders.length * 0.30);
-      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        // 2. HARD RESET: Start from absolute zero
+        let gross = 0;
+        let cogs = 0;
+        const itemCounts = {};
 
-      setStats({
-        revenue: totalGross,
-        count: activeOrders.length,
-        net: totalGross - stripeFees - totalCost,
-        topItem: sorted.length > 0 ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
-      });
+        activeOrders.forEach(order => {
+            const items = Array.isArray(order.cart_data) ? order.cart_data.filter(Boolean) : [];
+            let orderValue = 0;
+
+            if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
+                // Calculation for Hosted/Free orders
+                items.forEach(item => {
+                    const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                    const prod = products.find(p => p.id === item.productId);
+                    let base = Number(inv?.override_price ?? prod?.base_price ?? 0);
+                    
+                    if (item.customizations) {
+                        base += (Number(item.customizations.logos?.length || 0) * 5);
+                        base += (Number(item.customizations.names?.length || 0) * 5);
+                        if (item.customizations.metallic) base += 5;
+                    }
+                    orderValue += base;
+                });
+            } else {
+                // Actual paid total for Retail
+                orderValue = Number(order.total_price || 0);
+            }
+
+            gross += orderValue;
+
+            // 3. PER-ITEM MATH (COGS & Top Items)
+            items.forEach(item => {
+                const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                cogs += (Number(inv?.cost_price || 8.50) + 1.50);
+                const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
+                itemCounts[key] = (itemCounts[key] || 0) + 1;
+            });
+        });
+
+        const fees = paymentMode === 'hosted' ? 0 : (gross * 0.029) + (activeOrders.length * 0.30);
+        const sorted = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
+
+        setStats({
+            revenue: gross,
+            count: activeOrders.length,
+            net: gross - fees - cogs,
+            topItem: sorted.length > 0 ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
+        });
 
     } catch (e) { console.error("Stats Error:", e); }
   }, [orders, inventory, mounted, paymentMode, products, selectedEventSlug]);
