@@ -243,7 +243,7 @@ export default function AdminPage() {
                 if (paymentMode === 'hosted' || order.total_price === 0) {
                     items.forEach(item => {
                         const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                        let itemPrice = 30;
+                        let itemPrice = 0;
                         if (invItem && invItem.override_price) {
                             itemPrice = Number(invItem.override_price);
                         } else {
