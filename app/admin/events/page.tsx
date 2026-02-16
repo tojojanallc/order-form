@@ -226,81 +226,76 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
-  // --- STATS LOGIC (THE DEFINITIVE FIX) ---
+  // --- STATS LOGIC: THE DEFINITIVE REVENUE FIX ---
   useEffect(() => {
-    // 1. Reset everything to 0 immediately to prevent carrying over old math
-    if (!mounted || !orders || orders.length === 0) {
-      setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
-      return;
+    if (!mounted || !orders || !selectedEventSlug) {
+        setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
+        return;
     }
 
     try {
-      // 2. Strict Deduplication by DB ID to stop double-counting
-      const uniqueOrderMap = new Map();
-      orders.forEach(o => {
-        if (o.status !== 'refunded') {
-          uniqueOrderMap.set(o.id, o);
-        }
-      });
-      const activeOrders = Array.from(uniqueOrderMap.values());
-
-      let finalGross = 0;
-      let finalCOGS = 0;
-      const itemCounts = {};
-
-      activeOrders.forEach(order => {
-        const items = Array.isArray(order.cart_data) ? order.cart_data.filter(Boolean) : [];
-        let orderWorth = 0;
-
-        // 3. Logic Branching
-        if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
-          // Manual sum for Hosted events
-          items.forEach(item => {
-            const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-            const prod = products.find(p => p.id === item.productId);
-            
-            // Use Inventory Override > Global Product Price > Default 0
-            let price = Number(invItem?.override_price ?? prod?.base_price ?? 0);
-            
-            if (item.customizations) {
-              price += (Number(item.customizations.logos?.length || 0) * 5);
-              price += (Number(item.customizations.names?.length || 0) * 5);
-              if (item.customizations.metallic) price += 5;
+        // 1. HARD DEDUPLICATION: Use a Map to ensure unique Database IDs only
+        const uniqueOrderMap = new Map();
+        orders.forEach(o => {
+            if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
+                uniqueOrderMap.set(o.id, o);
             }
-            orderWorth += price;
-          });
-        } else {
-          // Actual cash received for Retail events
-          orderWorth = Number(order.total_price || 0);
-        }
-
-        finalGross += orderWorth;
-
-        // 4. COGS & Top Items (Always run per item)
-        items.forEach(item => {
-          const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-          finalCOGS += (Number(invItem?.cost_price || 8.50) + 1.50);
-          
-          const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
-          itemCounts[key] = (itemCounts[key] || 0) + 1;
         });
-      });
+        const activeOrders = Array.from(uniqueOrderMap.values());
 
-      // 5. Final Output
-      const fees = paymentMode === 'hosted' ? 0 : (finalGross * 0.029) + (activeOrders.length * 0.30);
-      const sorted = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
+        // 2. RESET MATH VARS
+        let totalRevenueSum = 0;
+        let totalCOGSVal = 0;
+        const itemCounts = {};
 
-      setStats({
-        revenue: finalGross,
-        count: activeOrders.length,
-        net: finalGross - fees - finalCOGS,
-        topItem: sorted.length > 0 ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
-      });
+        activeOrders.forEach(order => {
+            const rawItems = Array.isArray(order.cart_data) ? order.cart_data : [];
+            const items = rawItems.filter(Boolean); // Clear ghost entries
+            let orderRunningWorth = 0;
 
-    } catch (err) {
-      console.error("Critical Revenue Calc Error:", err);
-    }
-  }, [orders, inventory, mounted, paymentMode, products]);
+            if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
+                // Manual value calculation for Hosted
+                items.forEach(item => {
+                    const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                    const prod = products.find(p => p.id === item.productId);
+                    
+                    let base = Number(invItem?.override_price ?? prod?.base_price ?? 0);
+                    
+                    if (item.customizations) {
+                        base += (Number(item.customizations.logos?.length || 0) * 5);
+                        base += (Number(item.customizations.names?.length || 0) * 5);
+                        if (item.customizations.metallic) base += 5;
+                    }
+                    orderRunningWorth += base;
+                });
+            } else {
+                // Use actual retail total paid
+                orderRunningWorth = Number(order.total_price || 0);
+            }
+
+            totalRevenueSum += orderRunningWorth;
+
+            // COGS & Top Items
+            items.forEach(item => {
+                const invItem = inventory.find(i => i.product_id === item.productId && i.size === item.size);
+                totalCOGSVal += (Number(invItem?.cost_price || 8.50) + 1.50);
+                const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
+                itemCounts[key] = (itemCounts[key] || 0) + 1;
+            });
+        });
+
+        const fees = paymentMode === 'hosted' ? 0 : (totalRevenueSum * 0.029) + (activeOrders.length * 0.30);
+        const sorted = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
+
+        setStats({
+            revenue: totalRevenueSum,
+            count: activeOrders.length,
+            net: totalRevenueSum - fees - totalCOGSVal,
+            topItem: sorted.length > 0 ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
+        });
+
+    } catch (e) { console.error("Revenue Stats Error:", e); }
+  }, [orders, inventory, mounted, paymentMode, products, selectedEventSlug]);
   
   const handleLogin = async (e) => { 
       e.preventDefault(); 
