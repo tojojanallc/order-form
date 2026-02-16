@@ -303,6 +303,7 @@ export default function AdminPage() {
         }
     } catch (e) { console.error("Stats Error:", e); }
   }, [orders, inventory, mounted, paymentMode, products]);
+
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
@@ -327,8 +328,21 @@ export default function AdminPage() {
 
   const fetchOrders = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      const { data } = await supabase.from('orders').select('*').eq('event_slug', selectedEventSlug).order('created_at', { ascending: false }); 
-      if (data) setOrders(data); 
+      
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('event_slug', selectedEventSlug) 
+        .order('created_at', { ascending: false }); 
+
+      if (error) {
+          console.error("Fetch Error:", error);
+          return;
+      }
+
+      // Ensure we only have unique orders by ID (Prevents double-loading)
+      const uniqueOrders = Array.from(new Map(data.map(item => [item.id, item])).values());
+      setOrders(uniqueOrders); 
   };
 
   const fetchInventory = async () => { 
