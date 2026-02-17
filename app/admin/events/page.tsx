@@ -37,7 +37,7 @@ export default function AdminPage() {
   const [passcode, setPasscode] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
-  
+   
   // --- NEW: Toggle Financial Visibility ---
   const [showFinancials, setShowFinancials] = useState(false);
 
@@ -235,12 +235,24 @@ export default function AdminPage() {
     }
 
     // 2. THE DEDUPLICATOR (Crucial Step)
-    // We stick every order into a Map using its ID as the key.
-    // If an ID appears twice, the Map just overwrites it. Duplicates are gone.
     const uniqueOrderMap = new Map();
     orders.forEach(o => {
-      // Only count orders for THIS event that aren't refunded
-      if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
+      // STRICT FILTER: Only count explicitly SUCCESSFUL orders.
+      const validStatuses = ['paid', 'complete', 'shipped', 'delivered', 'completed'];
+      const pStatus = (o.payment_status || '').toLowerCase();
+      
+      // Allow 'pending' ONLY if payment_status is explicitly 'paid' (Stripe webhook lag)
+      // Or if it's a Hosted event (where payment_status is irrelevant)
+      const isHosted = paymentMode === 'hosted';
+      const isPaid = pStatus === 'paid' || pStatus === 'succeeded';
+      
+      // If Hosted, we count anything that isn't 'incomplete' or 'refunded'
+      // If Retail, we need validStatus OR isPaid
+      const isValid = isHosted 
+        ? (o.status !== 'incomplete' && o.status !== 'refunded')
+        : (validStatuses.includes(o.status) || isPaid) && o.status !== 'refunded';
+
+      if (o.event_slug === selectedEventSlug && isValid) {
         uniqueOrderMap.set(o.id, o);
       }
     });
@@ -256,6 +268,7 @@ export default function AdminPage() {
     cleanOrders.forEach(order => {
       // Safety: Ensure cart_data is an array
       const cart = Array.isArray(order.cart_data) ? order.cart_data : [];
+      let orderTotal = 0;
       
       // REVENUE MATH:
       if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
@@ -264,6 +277,7 @@ export default function AdminPage() {
           // Find the product to get the price
           const prod = products.find(p => p.id === item.productId);
           let itemPrice = Number(prod?.base_price ?? 30); // Default to $30 if missing
+          if (itemPrice > 500) itemPrice = itemPrice / 100; // Cents guard
           
           // Add Add-ons
           if (item.customizations) {
@@ -271,12 +285,16 @@ export default function AdminPage() {
             itemPrice += (Number(item.customizations.names?.length || 0) * 5);
             if (item.customizations.metallic) itemPrice += 5;
           }
-          calculatedRevenue += itemPrice;
+          orderTotal += itemPrice;
         });
       } else {
         // RETAIL MODE: We use the actual money collected
-        calculatedRevenue += Number(order.total_price || 0);
+        let rawTotal = Number(order.total_price || 0);
+        if (rawTotal > 5000) rawTotal = rawTotal / 100; // Guard against cents being stored as integer
+        orderTotal += rawTotal;
       }
+      
+      calculatedRevenue += orderTotal;
 
       // COGS MATH (Estimate):
       cart.forEach(item => {
@@ -297,11 +315,8 @@ export default function AdminPage() {
       topItem: sortedItems.length > 0 ? `${sortedItems[0][0]} (${sortedItems[0][1]})` : '-'
     });
 
-    // DEBUG: Check your console to see the real numbers
-    console.log(`STATS FIXED: Found ${orders.length} raw orders, cleaned down to ${cleanOrders.length} unique orders.`);
-
   }, [orders, selectedEventSlug, paymentMode, mounted, products]);
-   
+    
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
@@ -697,13 +712,43 @@ export default function AdminPage() {
   
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   
+  // --- NEW: THE "TRUCK" FEATURE ---
+  // Moves an item from the Global Catalog into the Local Event Inventory
+  const addProductToEvent = async (product) => {
+      setLoading(true);
+      const sizes = SIZE_ORDER; // ['Youth XS', ... 'Adult 4XL']
+      
+      // We create a row for every size, defaulting to 0 count and hidden status
+      const inventoryRows = sizes.map(size => ({
+          event_slug: selectedEventSlug,
+          product_id: product.id,
+          size: size,
+          count: 0,
+          active: false, // Default to hidden so you can set price first
+          cost_price: 8.50,
+          override_price: null // Use base price by default
+      }));
+
+      const { error } = await supabase.from('inventory').insert(inventoryRows);
+      
+      if (error) {
+          alert("Error adding to event: " + error.message);
+      } else {
+          // Refresh inventory to show it in the right column
+          fetchInventory();
+      }
+      setLoading(false);
+  };
+
   const deleteProduct = async (id) => { 
       const { data: usage } = await supabase.from('inventory').select('event_slug').eq('product_id', id).neq('event_slug', selectedEventSlug); 
       const isUsedElsewhere = usage && usage.length > 0;
       if (isUsedElsewhere) {
+          // If used elsewhere, only remove from THIS event
           if (!confirm(`Remove "${id}" from ${selectedEventSlug}?\n\n(It will remain in the Global Catalog because other events use it.)`)) return;
           await supabase.from('inventory').delete().eq('product_id', id).eq('event_slug', selectedEventSlug);
       } else {
+          // If not used anywhere, delete globally
           if (!confirm(`Delete "${id}" PERMANENTLY?\n\n(No other events are using this, so it will be gone forever.)`)) return;
           await supabase.from('inventory').delete().eq('product_id', id); 
           await supabase.from('products').delete().eq('id', id); 
@@ -712,10 +757,8 @@ export default function AdminPage() {
   };  
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
   
-  const updateProductInfo = async (pid, field, value) => {
-      setProducts(products.map(p => p.id === pid ? { ...p, [field]: value } : p));
-      await supabase.from('products').update({ [field]: value }).eq('id', pid);
-  };
+  // READ ONLY - No updateProductInfo anymore for events
+  // const updateProductInfo = async (pid, field, value) => { ... } 
 
   const updatePrice = async (pid, v) => { setProducts(products.map(p => p.id === pid ? { ...p, base_price: v } : p)); await supabase.from('products').update({ base_price: v }).eq('id', pid); };
   const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
@@ -753,6 +796,7 @@ export default function AdminPage() {
           sort_order: 99 
       }]); 
       
+      // Auto-add to current event as well
       const sizes = SIZE_ORDER; 
       await supabase.from('inventory').insert(sizes.map(s => ({ 
           product_id: safeId, 
@@ -1119,103 +1163,128 @@ export default function AdminPage() {
                         {uploadLog.length > 0 && (<div className="mt-4 p-2 bg-black text-green-400 text-xs font-mono h-48 overflow-y-auto rounded border border-gray-700">{uploadLog.map((log, i) => <div key={i} className="mb-1 border-b border-gray-800 pb-1">{log}</div>)}</div>)}
                     </div>
                 </div>
+                
+                {/* --- CENTER COLUMN: GLOBAL CATALOG (Read Only / Import) --- */}
                 <div className="md:col-span-2 space-y-6">
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
-                        <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">Manage Product Info</div>
+                        <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0 flex justify-between items-center">
+                            <span>Global Catalog (Master List)</span>
+                            <span className="text-xs bg-gray-700 px-2 py-1 rounded text-gray-300">Read Only</span>
+                        </div>
                         <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left">
-                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img URL</th><th className="p-3">Product Name</th><th className="p-3 w-24">Price ($)</th><th className="p-3 text-right">Action</th></tr></thead>
+                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img</th><th className="p-3">Product Name</th><th className="p-3 w-24">Base $</th><th className="p-3 text-right">Status</th></tr></thead>
                                 <tbody>
-                                    {products.map((prod) => (
-                                        <tr key={prod.id} className="border-b hover:bg-gray-50">
-                                            <td className="p-3">
-                                                <div className="flex flex-col gap-1">
-                                                    {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-gray-50" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px]">No Img</div>}
-                                                    <input className="text-[10px] border p-1 w-full" placeholder="URL" value={prod.image_url || ''} onChange={(e) => updateProductInfo(prod.id, 'image_url', e.target.value)} />
-                                                </div>
-                                            </td>
-                                            <td className="p-3">
-                                                <input className="font-bold text-gray-700 border p-2 w-full rounded" value={prod.name} onChange={(e) => updateProductInfo(prod.id, 'name', e.target.value)} />
-                                                <div className="text-xs text-gray-400 mt-1">ID: {prod.id}</div>
-                                            </td>
-                                            <td className="p-3">
-                                                <input type="number" className="w-20 border border-gray-300 rounded p-1 font-bold text-black" value={prod.base_price || 0} onChange={(e) => updateProductInfo(prod.id, 'base_price', parseFloat(e.target.value))} />
-                                            </td>
-                                            <td className="p-3 text-right"><button onClick={() => deleteProduct(prod.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Product">🗑️</button></td>
-                                        </tr>
-                                    ))}
+                                    {products.map((prod) => {
+                                        // Check if this product is already in the current event's inventory
+                                        const isInEvent = inventory.some(i => i.product_id === prod.id);
+
+                                        return (
+                                            <tr key={prod.id} className={`border-b hover:bg-gray-50 ${isInEvent ? 'bg-green-50' : ''}`}>
+                                                <td className="p-3">
+                                                    {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-white" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px]">No Img</div>}
+                                                </td>
+                                                <td className="p-3">
+                                                    <div className="font-bold text-gray-700">{prod.name}</div>
+                                                    <div className="text-xs text-gray-400">ID: {prod.id}</div>
+                                                </td>
+                                                <td className="p-3 font-mono text-gray-600">
+                                                    ${prod.base_price}
+                                                </td>
+                                                <td className="p-3 text-right">
+                                                    {isInEvent ? (
+                                                        <span className="inline-flex items-center gap-1 text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded border border-green-200">
+                                                            ✅ In Event
+                                                        </span>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={() => addProductToEvent(prod)}
+                                                            className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded shadow"
+                                                            disabled={loading}
+                                                        >
+                                                            🚚 Truck to Event
+                                                        </button>
+                                                    )}
+                                                    {/* Optional Delete from catalog if you really need it */}
+                                                    {/* <button onClick={() => deleteProduct(prod.id)} className="ml-2 text-gray-300 hover:text-red-500">×</button> */}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
                     </div>
+                    
+                    {/* --- RIGHT COLUMN: EVENT STOCK (Local Edits) --- */}
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
-    <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
-        Manage Stock & Prices ({selectedEventSlug})
-    </div>
-    <div className="overflow-y-auto flex-1">
-        <table className="w-full text-left">
-            <thead className="bg-gray-100 border-b sticky top-0">
-                <tr>
-                    <th className="p-4">Product</th>
-                    <th className="p-4">Size</th>
-                    <th className="p-4 text-center">Cost ($)</th>
-                    <th className="p-4 text-center">Event Price ($)</th>
-                    <th className="p-4 text-center">Stock</th>
-                    <th className="p-4 text-center">Active</th>
-                </tr>
-            </thead>
-            <tbody>
-                {inventory.map((item) => {
-                    const globalProd = products.find(p => p.id === item.product_id);
-                    const globalPrice = globalProd ? globalProd.base_price : 0;
-                    return (
-                        <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
-                            <td className="p-4 font-bold text-sm">
-                                {getProductName(item.product_id)}
-                                <div className="text-[10px] text-gray-400">Global: ${globalPrice}</div>
-                            </td>
-                            <td className="p-4 text-sm">{item.size}</td>
-                            <td className="p-4">
-                                <input 
-                                    type="number" 
-                                    className="mx-auto block w-16 border rounded text-center text-sm" 
-                                    value={item.cost_price || ''} 
-                                    placeholder="8.50"
-                                    onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} 
-                                />
-                            </td>
-                            <td className="p-4">
-                                <input 
-                                    type="number" 
-                                    className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`}
-                                    value={item.override_price || ''} 
-                                    placeholder={globalPrice}
-                                    onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} 
-                                />
-                            </td>
-                            <td className="p-4">
-                                <input 
-                                    type="number" 
-                                    className="mx-auto block w-16 border text-center font-bold" 
-                                    value={item.count} 
-                                    onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} 
-                                />
-                            </td>
-                            <td className="p-4 text-center">
-                                <input 
-                                    type="checkbox" 
-                                    checked={item.active ?? true} 
-                                    onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} 
-                                    className="w-5 h-5 cursor-pointer" 
-                                />
-                            </td>
-                        </tr>
-                    );
-                })}
-            </tbody>
-        </table>
-    </div>
-</div>
+                        <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
+                            Manage Stock & Prices ({selectedEventSlug})
+                        </div>
+                        <div className="overflow-y-auto flex-1">
+                            <table className="w-full text-left">
+                                <thead className="bg-gray-100 border-b sticky top-0">
+                                    <tr>
+                                        <th className="p-4">Product</th>
+                                        <th className="p-4">Size</th>
+                                        <th className="p-4 text-center">Cost ($)</th>
+                                        <th className="p-4 text-center">Event Price ($)</th>
+                                        <th className="p-4 text-center">Stock</th>
+                                        <th className="p-4 text-center">Active</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {inventory.map((item) => {
+                                        const globalProd = products.find(p => p.id === item.product_id);
+                                        const globalPrice = globalProd ? globalProd.base_price : 0;
+                                        return (
+                                            <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
+                                                <td className="p-4 font-bold text-sm">
+                                                    {getProductName(item.product_id)}
+                                                    <div className="text-[10px] text-gray-400">Global: ${globalPrice}</div>
+                                                </td>
+                                                <td className="p-4 text-sm">{item.size}</td>
+                                                <td className="p-4">
+                                                    <input 
+                                                        type="number" 
+                                                        className="mx-auto block w-16 border rounded text-center text-sm" 
+                                                        value={item.cost_price || ''} 
+                                                        placeholder="8.50"
+                                                        onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} 
+                                                    />
+                                                </td>
+                                                <td className="p-4">
+                                                    <input 
+                                                        type="number" 
+                                                        className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`}
+                                                        value={item.override_price || ''} 
+                                                        placeholder={globalPrice}
+                                                        onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} 
+                                                    />
+                                                </td>
+                                                <td className="p-4">
+                                                    <input 
+                                                        type="number" 
+                                                        className="mx-auto block w-16 border text-center font-bold" 
+                                                        value={item.count} 
+                                                        onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} 
+                                                    />
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={item.active ?? true} 
+                                                        onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} 
+                                                        className="w-5 h-5 cursor-pointer" 
+                                                    />
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         )}
