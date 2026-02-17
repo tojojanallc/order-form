@@ -523,6 +523,57 @@ export default function AdminPage() {
       setLoading(false);
   };
 
+  // --- NEW: RETURN TO WAREHOUSE LOGIC ---
+  const returnToWarehouse = async (item) => {
+      // Prevent returning if no stock (optional)
+      if (!item.count || item.count <= 0) {
+          if (!confirm(`This item has 0 stock. Do you just want to hide it from this event?`)) return;
+      } else {
+          if (!confirm(`Move ${item.count} items back to Main Warehouse?`)) return;
+      }
+      
+      setLoading(true);
+      try {
+          if (item.count > 0) {
+              // 1. Find Warehouse Row
+              const { data: warehouseItem } = await supabase
+                  .from('inventory')
+                  .select('*')
+                  .eq('event_slug', 'warehouse')
+                  .eq('product_id', item.product_id)
+                  .eq('size', item.size)
+                  .maybeSingle();
+
+              if (warehouseItem) {
+                  // 2. Add to Warehouse
+                  await supabase.from('inventory')
+                      .update({ count: warehouseItem.count + item.count })
+                      .eq('id', warehouseItem.id);
+              } else {
+                  // Create if missing in warehouse
+                  await supabase.from('inventory').insert([{
+                      event_slug: 'warehouse',
+                      product_id: item.product_id,
+                      size: item.size,
+                      count: item.count,
+                      active: true,
+                      cost_price: item.cost_price || 8.50
+                  }]);
+              }
+          }
+
+          // 3. Zero out Event Stock & Hide
+          await supabase.from('inventory')
+              .update({ count: 0, active: false })
+              .eq('id', item.id);
+
+          fetchInventory();
+      } catch (e) {
+          alert("Error moving stock: " + e.message);
+      }
+      setLoading(false);
+  };
+
   const deleteProduct = async (id) => { 
       if (!confirm(`Delete "${id}" PERMANENTLY from Global Catalog?\n\n(This will delete it from ALL events!)`)) return;
       await supabase.from('inventory').delete().eq('product_id', id); 
@@ -726,6 +777,7 @@ export default function AdminPage() {
                                     <th className="p-4 text-center">Event Price ($)</th>
                                     <th className="p-4 text-center">Stock</th>
                                     <th className="p-4 text-center">Active</th>
+                                    <th className="p-4 text-center">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -750,6 +802,15 @@ export default function AdminPage() {
                                             </td>
                                             <td className="p-4 text-center">
                                                 <input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5 cursor-pointer" />
+                                            </td>
+                                            <td className="p-4 text-center">
+                                                <button 
+                                                    onClick={() => returnToWarehouse(item)}
+                                                    className="text-xs bg-gray-100 hover:bg-gray-200 border border-gray-300 px-3 py-1 rounded shadow text-gray-700 font-bold whitespace-nowrap"
+                                                    title="Send Stock Back to Warehouse"
+                                                >
+                                                    ↩️ Return
+                                                </button>
                                             </td>
                                         </tr>
                                     );
