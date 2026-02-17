@@ -52,7 +52,11 @@ export default function AdminPage() {
 
   const [newGuestName, setNewGuestName] = useState(''); 
   const [orders, setOrders] = useState([]);
-  const [inventory, setInventory] = useState([]);
+  
+  // Inventory State
+  const [inventory, setInventory] = useState([]); // Local Event Inventory
+  const [warehouseStock, setWarehouseStock] = useState([]); // GLOBAL Warehouse Inventory
+
   const [products, setProducts] = useState([]);
   const [logos, setLogos] = useState([]);
   const [guests, setGuests] = useState([]); 
@@ -133,7 +137,7 @@ export default function AdminPage() {
     // 1. Initial Data Load
     fetchOrders();
     fetchSettings();
-    fetchInventory();
+    fetchInventory(); // Fetches BOTH local and warehouse
     fetchLogos();
     fetchGuests();
     fetchTerminals();
@@ -141,7 +145,6 @@ export default function AdminPage() {
     // 2. THE TRIPLE LISTENER
     const channel = supabase.channel('global_updates')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-            console.log("🔔 ORDER UPDATE:", payload.eventType);
             fetchOrders(); 
             fetchGuests(); 
             fetchInventory(); 
@@ -150,18 +153,15 @@ export default function AdminPage() {
             }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
-            console.log("📦 INVENTORY UPDATE:", payload.eventType);
             fetchInventory();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, (payload) => {
-            console.log("👥 GUEST UPDATE:", payload.eventType);
             fetchGuests();
         })
         .subscribe((status) => {
             console.log("📡 Connection Status:", status);
         });
 
-    // 3. Backup Timer
     const timer = setInterval(() => {
         fetchOrders();
         fetchInventory();
@@ -206,7 +206,6 @@ export default function AdminPage() {
           if (Array.isArray(editingOrder.cart_data)) {
               editingOrder.cart_data.forEach(item => {
                   if(!item) return;
-                  // Try to find product by ID first, then loose name match
                   const productRef = products.find(p => 
                       (item.productId && p.id === item.productId) || 
                       (p.name && item.productName && p.name.toLowerCase() === item.productName.toLowerCase())
@@ -228,26 +227,18 @@ export default function AdminPage() {
 
  // --- REVENUE REPAIR LOGIC ---
   useEffect(() => {
-    // 1. Safety Checks
     if (!mounted || !orders || !selectedEventSlug) {
       setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
       return;
     }
 
-    // 2. THE DEDUPLICATOR (Crucial Step)
     const uniqueOrderMap = new Map();
     orders.forEach(o => {
-      // STRICT FILTER: Only count explicitly SUCCESSFUL orders.
       const validStatuses = ['paid', 'complete', 'shipped', 'delivered', 'completed'];
       const pStatus = (o.payment_status || '').toLowerCase();
-      
-      // Allow 'pending' ONLY if payment_status is explicitly 'paid' (Stripe webhook lag)
-      // Or if it's a Hosted event (where payment_status is irrelevant)
       const isHosted = paymentMode === 'hosted';
       const isPaid = pStatus === 'paid' || pStatus === 'succeeded';
       
-      // If Hosted, we count anything that isn't 'incomplete' or 'refunded'
-      // If Retail, we need validStatus OR isPaid
       const isValid = isHosted 
         ? (o.status !== 'incomplete' && o.status !== 'refunded')
         : (validStatuses.includes(o.status) || isPaid) && o.status !== 'refunded';
@@ -257,29 +248,22 @@ export default function AdminPage() {
       }
     });
     
-    // Convert back to a clean list of unique orders
     const cleanOrders = Array.from(uniqueOrderMap.values());
 
-    // 3. CALCULATE FRESH TOTALS
     let calculatedRevenue = 0;
     let calculatedCOGS = 0;
     const itemCounts = {};
 
     cleanOrders.forEach(order => {
-      // Safety: Ensure cart_data is an array
       const cart = Array.isArray(order.cart_data) ? order.cart_data : [];
       let orderTotal = 0;
       
-      // REVENUE MATH:
       if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
-        // HOSTED MODE: We calculate what the items are "worth"
         cart.forEach(item => {
-          // Find the product to get the price
           const prod = products.find(p => p.id === item.productId);
-          let itemPrice = Number(prod?.base_price ?? 30); // Default to $30 if missing
-          if (itemPrice > 500) itemPrice = itemPrice / 100; // Cents guard
+          let itemPrice = Number(prod?.base_price ?? 30); 
+          if (itemPrice > 500) itemPrice = itemPrice / 100; 
           
-          // Add Add-ons
           if (item.customizations) {
             itemPrice += (Number(item.customizations.logos?.length || 0) * 5);
             itemPrice += (Number(item.customizations.names?.length || 0) * 5);
@@ -288,30 +272,26 @@ export default function AdminPage() {
           orderTotal += itemPrice;
         });
       } else {
-        // RETAIL MODE: We use the actual money collected
         let rawTotal = Number(order.total_price || 0);
-        if (rawTotal > 5000) rawTotal = rawTotal / 100; // Guard against cents being stored as integer
+        if (rawTotal > 5000) rawTotal = rawTotal / 100; 
         orderTotal += rawTotal;
       }
       
       calculatedRevenue += orderTotal;
 
-      // COGS MATH (Estimate):
       cart.forEach(item => {
-        calculatedCOGS += 10; // Est. $10 cost per item
+        calculatedCOGS += 10; 
         const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
         itemCounts[key] = (itemCounts[key] || 0) + 1;
       });
     });
 
-    // 4. SORT TOP ITEMS
     const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
 
-    // 5. UPDATE STATE
     setStats({
       revenue: calculatedRevenue,
       count: cleanOrders.length,
-      net: calculatedRevenue - (calculatedRevenue * 0.03) - calculatedCOGS, // Subtract 3% fees + COGS
+      net: calculatedRevenue - (calculatedRevenue * 0.03) - calculatedCOGS, 
       topItem: sortedItems.length > 0 ? `${sortedItems[0][0]} (${sortedItems[0][1]})` : '-'
     });
 
@@ -352,18 +332,24 @@ export default function AdminPage() {
           console.error("Fetch Error:", error);
           return;
       }
-
-      // Ensure we only have unique orders by ID (Prevents double-loading)
       const uniqueOrders = Array.from(new Map(data.map(item => [item.id, item])).values());
       setOrders(uniqueOrders); 
   };
 
   const fetchInventory = async () => { 
       if (!supabase || !selectedEventSlug) return; 
+      // 1. Get Global Products
       const { data: p } = await supabase.from('products').select('*').order('sort_order'); 
-      const { data: i } = await supabase.from('inventory').select('*').eq('event_slug', selectedEventSlug).order('product_id', { ascending: true }); 
       if (p) setProducts(p); 
-      if (i) setInventory(i); 
+
+      // 2. Get Local Event Inventory
+      const { data: localInv } = await supabase.from('inventory').select('*').eq('event_slug', selectedEventSlug).order('product_id', { ascending: true }); 
+      if (localInv) setInventory(localInv); 
+
+      // 3. Get WAREHOUSE Inventory (Assume slug is 'warehouse')
+      // This lets us see total available stock
+      const { data: warehouseInv } = await supabase.from('inventory').select('*').eq('event_slug', 'warehouse');
+      if (warehouseInv) setWarehouseStock(warehouseInv);
   };
 
   const fetchLogos = async () => { 
@@ -442,7 +428,6 @@ export default function AdminPage() {
       if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; 
       setLoading(true); 
       
-      // 1. Update the Event Status
       const { data: updateData, error: updateError } = await supabase
         .from('event_settings')
         .update({ status: 'archived' }) 
@@ -461,7 +446,6 @@ export default function AdminPage() {
         return;
       }
 
-      // 2. Mark orders as completed for this specific event
       await supabase.from('orders')
         .update({ status: 'completed' })
         .eq('event_slug', selectedEventSlug)
@@ -470,7 +454,6 @@ export default function AdminPage() {
 
       alert("SUCCESS: Event Archived!"); 
       
-      // 3. Refresh the dropdown list (Fetch ONLY active events)
       const { data: refreshedEvents } = await supabase
           .from('event_settings')
           .select('*')
@@ -479,7 +462,6 @@ export default function AdminPage() {
 
       if (refreshedEvents) {
           setAvailableEvents(refreshedEvents);
-          // Auto-switch to the first active event if available
           if (refreshedEvents.length > 0) {
               setSelectedEventSlug(refreshedEvents[0].slug);
           } else {
@@ -757,9 +739,6 @@ export default function AdminPage() {
   };  
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
   
-  // READ ONLY - No updateProductInfo anymore for events
-  // const updateProductInfo = async (pid, field, value) => { ... } 
-
   const updatePrice = async (pid, v) => { setProducts(products.map(p => p.id === pid ? { ...p, base_price: v } : p)); await supabase.from('products').update({ base_price: v }).eq('id', pid); };
   const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
@@ -1179,6 +1158,12 @@ export default function AdminPage() {
                                         // Check if this product is already in the current event's inventory
                                         const isInEvent = inventory.some(i => i.product_id === prod.id);
 
+                                        // Calculate Total Warehouse Stock
+                                        // Sum up the 'count' of all sizes in the 'warehouse' inventory for this product
+                                        const totalWarehouseStock = warehouseStock
+                                            .filter(w => w.product_id === prod.id)
+                                            .reduce((sum, item) => sum + (item.count || 0), 0);
+
                                         return (
                                             <tr key={prod.id} className={`border-b hover:bg-gray-50 ${isInEvent ? 'bg-green-50' : ''}`}>
                                                 <td className="p-3">
@@ -1186,7 +1171,12 @@ export default function AdminPage() {
                                                 </td>
                                                 <td className="p-3">
                                                     <div className="font-bold text-gray-700">{prod.name}</div>
-                                                    <div className="text-xs text-gray-400">ID: {prod.id}</div>
+                                                    <div className="flex gap-2 text-xs mt-1">
+                                                        <span className="text-gray-400">ID: {prod.id}</span>
+                                                        <span className="bg-gray-200 text-gray-700 px-1 rounded font-bold">
+                                                            🏭 Warehouse: {totalWarehouseStock}
+                                                        </span>
+                                                    </div>
                                                 </td>
                                                 <td className="p-3 font-mono text-gray-600">
                                                     ${prod.base_price}
@@ -1205,8 +1195,6 @@ export default function AdminPage() {
                                                             🚚 Truck to Event
                                                         </button>
                                                     )}
-                                                    {/* Optional Delete from catalog if you really need it */}
-                                                    {/* <button onClick={() => deleteProduct(prod.id)} className="ml-2 text-gray-300 hover:text-red-500">×</button> */}
                                                 </td>
                                             </tr>
                                         );
