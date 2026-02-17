@@ -292,7 +292,7 @@ export default function AdminPage() {
             net: gross - fees - cogs,
             topItem: sorted.length > 0 ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
         });
- 
+  
     } catch (e) { console.error("Stats Error:", e); }
   }, [orders, inventory, mounted, paymentMode, products, selectedEventSlug]);
   const handleLogin = async (e) => { 
