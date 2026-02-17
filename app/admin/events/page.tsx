@@ -535,8 +535,7 @@ export default function AdminPage() {
     setLoading(true);
     try {
         if (item.count > 0) {
-            // 2. Add to INVENTORY_MASTER (The separate master table)
-            // We use item.product_id to match the 'sku' in inventory_master
+            // 2. Add to INVENTORY_MASTER (Matching SKU and Size)
             const { data: masterItem, error: fetchError } = await supabase
                 .from('inventory_master')
                 .select('*')
@@ -550,9 +549,10 @@ export default function AdminPage() {
                 // Update existing Master stock
                 await supabase.from('inventory_master')
                     .update({ quantity_on_hand: masterItem.quantity_on_hand + item.count })
-                    .eq('id', masterItem.id);
+                    .eq('sku', item.product_id)
+                    .eq('size', item.size);
             } else {
-                // If it somehow doesn't exist in master, we create it
+                // Create if missing in master
                 await supabase.from('inventory_master').insert([{
                     sku: item.product_id,
                     item_name: getProductName(item.product_id),
@@ -562,12 +562,14 @@ export default function AdminPage() {
             }
         }
 
-        // 3. Delete or Zero out the EVENT row (in the inventory table)
-        // Since the event is over or the truck is unloaded, we remove the connection
+        // 3. THE FIX: Delete using the unique combination of columns
+        // Since 'id' doesn't exist, we target the specific row this way:
         const { error: deleteError } = await supabase
             .from('inventory')
             .delete()
-            .eq('id', item.id);
+            .eq('event_slug', selectedEventSlug)
+            .eq('product_id', item.product_id)
+            .eq('size', item.size);
 
         if (deleteError) throw deleteError;
 
