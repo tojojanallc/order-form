@@ -17,7 +17,7 @@ export default function InventoryTransferPage() {
   
   // Selection State
   const [targetSlug, setTargetSlug] = useState('');
-  const [moveQuantities, setMoveQuantities] = useState<{[key: string]: string}>({}); // Stores inputs
+  const [moveQuantities, setMoveQuantities] = useState<{[key: string]: string}>({}); 
   const [searchTerm, setSearchTerm] = useState('');
 
   // 1. Initial Data Fetch
@@ -31,9 +31,7 @@ export default function InventoryTransferPage() {
         .eq('status', 'active');
       
       // B. Get Global Products (for names/images)
-      const { data: prodData } = await supabase
-        .from('products')
-        .select('*');
+      const { data: prodData } = await supabase.from('products').select('*');
 
       // C. Get Warehouse Inventory (Source)
       const { data: invData } = await supabase
@@ -58,11 +56,11 @@ export default function InventoryTransferPage() {
   const handleTransfer = async (item: any) => {
     const qtyToMove = parseInt(moveQuantities[item.id] || '0');
 
-    if (!targetSlug) return alert("⚠️ SELECT A DESTINATION EVENT FIRST");
-    if (!qtyToMove || qtyToMove <= 0) return alert("⚠️ ENTER A VALID QUANTITY");
-    if (qtyToMove > item.count) return alert("⚠️ NOT ENOUGH STOCK IN WAREHOUSE");
+    if (!targetSlug) return alert("Please select a destination event first.");
+    if (!qtyToMove || qtyToMove <= 0) return alert("Please enter a valid quantity.");
+    if (qtyToMove > item.count) return alert("Not enough stock in warehouse.");
 
-    const confirmMsg = `🚚 MOVE ${qtyToMove}x ${getProductDetails(item.product_id).name} (${item.size}) \n➡️ TO: ${targetSlug.toUpperCase()}?`;
+    const confirmMsg = `Confirm Move:\n\n${qtyToMove}x ${getProductDetails(item.product_id).name} (${item.size})\n➡️ ${targetSlug.toUpperCase()}`;
     if (!confirm(confirmMsg)) return;
 
     setLoading(true);
@@ -77,7 +75,6 @@ export default function InventoryTransferPage() {
       if (subError) throw subError;
 
       // B. Add to Target Event
-      // Check if row exists first
       const { data: existingTarget } = await supabase
         .from('inventory')
         .select('id, count')
@@ -87,29 +84,27 @@ export default function InventoryTransferPage() {
         .maybeSingle();
 
       if (existingTarget) {
-        // Update existing row
         await supabase
           .from('inventory')
-          .update({ count: existingTarget.count + qtyToMove, active: true }) // Force active
+          .update({ count: existingTarget.count + qtyToMove, active: true }) 
           .eq('id', existingTarget.id);
       } else {
-        // Insert new row
         await supabase.from('inventory').insert({
           event_slug: targetSlug,
           product_id: item.product_id,
           size: item.size,
           count: qtyToMove,
-          active: true, // Auto-activate
+          active: true, // Auto-activate so it shows up in their list
           cost_price: item.cost_price || 8.50,
-          override_price: null // Use global price
+          override_price: null
         });
       }
 
-      // C. Optimistic UI Update (Update local state without refetching)
+      // C. Optimistic UI Update
       setWarehouseStock(prev => prev.map(i => 
         i.id === item.id ? { ...i, count: i.count - qtyToMove } : i
       ));
-      setMoveQuantities(prev => ({ ...prev, [item.id]: '' })); // Clear input
+      setMoveQuantities(prev => ({ ...prev, [item.id]: '' })); 
       
     } catch (e: any) {
       alert("Error: " + e.message);
@@ -124,106 +119,123 @@ export default function InventoryTransferPage() {
   });
 
   return (
-    <div className="min-h-screen bg-white text-black p-6 font-sans">
-      {/* HEADER */}
-      <div className="max-w-6xl mx-auto mb-8 border-b-4 border-black pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="min-h-screen bg-gray-50 p-8 font-sans">
+      {/* HEADER SECTION */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
         <div>
-          <Link href="/admin" className="text-blue-600 font-black uppercase text-xs hover:underline mb-2 block">← Back to Dashboard</Link>
-          <h1 className="text-5xl font-black uppercase italic tracking-tighter">Inventory Transfer</h1>
-          <p className="text-gray-500 font-bold uppercase tracking-widest text-sm">Warehouse ➔ Event Truck</p>
+            <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase hover:underline mb-1 inline-block">
+                ← Dashboard
+            </Link>
+            <h1 className="text-4xl font-black text-gray-900">Load Truck</h1>
+            <p className="text-gray-500 mt-1">Transfer inventory from Warehouse to Event Kiosks.</p>
         </div>
         
-        {/* DESTINATION SELECTOR */}
-        <div className="w-full md:w-auto bg-yellow-100 p-4 border-4 border-black shadow-[4px_4px_0px_0px_black]">
-          <label className="block text-xs font-black uppercase mb-1">Destination Event</label>
-          <select 
-            className="w-full md:w-64 p-2 border-2 border-black font-bold text-lg outline-none bg-white cursor-pointer"
-            onChange={e => setTargetSlug(e.target.value)}
-            value={targetSlug}
-          >
-            <option value="">-- SELECT DESTINATION --</option>
-            {events.map(e => <option key={e.slug} value={e.slug}>{e.event_name}</option>)}
-          </select>
+        {/* DESTINATION CARD */}
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-5 w-full md:w-auto">
+            <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 flex-shrink-0">
+                <span className="text-2xl">🚛</span>
+            </div>
+            <div className="flex-1">
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Destination Event</label>
+                <select 
+                    className="block w-full md:w-64 p-2.5 text-sm font-bold text-gray-900 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 cursor-pointer transition-all hover:bg-gray-100"
+                    onChange={e => setTargetSlug(e.target.value)}
+                    value={targetSlug}
+                >
+                    <option value="">-- Select Destination --</option>
+                    {events.map(e => <option key={e.slug} value={e.slug}>{e.event_name}</option>)}
+                </select>
+            </div>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto">
-        {/* SEARCH BAR */}
-        <div className="mb-6">
-          <input 
-            placeholder="🔍 SEARCH WAREHOUSE..." 
-            className="w-full p-4 border-4 border-black font-bold text-xl outline-none placeholder:text-gray-300"
+      {/* SEARCH BAR */}
+      <div className="mb-8">
+        <input 
+            placeholder="🔍 Search warehouse items by name or size..." 
+            className="w-full p-4 pl-6 rounded-2xl border border-gray-200 shadow-sm text-lg focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-          />
-        </div>
+        />
+      </div>
 
-        {/* INVENTORY GRID */}
-        {loading ? (
-          <div className="p-10 text-center font-black text-2xl animate-pulse">LOADING WAREHOUSE DATA...</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* INVENTORY GRID */}
+      {loading ? (
+          <div className="text-center py-20">
+              <div className="inline-block animate-spin text-4xl mb-4">🔄</div>
+              <p className="text-gray-400 font-bold">Loading Warehouse Inventory...</p>
+          </div>
+      ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredStock.map(item => {
-              const product = getProductDetails(item.product_id);
-              const inputVal = moveQuantities[item.id] || '';
-              
-              return (
-                <div key={item.id} className="border-4 border-black p-4 bg-white shadow-[4px_4px_0px_0px_black] hover:-translate-y-1 transition-transform flex flex-col justify-between">
-                  
-                  {/* CARD HEADER */}
-                  <div className="flex gap-4 mb-4">
-                    <div className="w-16 h-16 bg-gray-100 border-2 border-black flex-shrink-0 flex items-center justify-center">
-                      {product.image_url ? 
-                        <img src={product.image_url} className="w-full h-full object-contain" /> :
-                        <span className="text-xs font-bold text-gray-400">NO IMG</span>
-                      }
-                    </div>
-                    <div>
-                      <h3 className="font-black text-lg leading-tight uppercase">{product.name}</h3>
-                      <div className="inline-block bg-black text-white text-xs px-2 py-1 font-bold uppercase mt-1">
-                        Size: {item.size}
-                      </div>
-                    </div>
-                  </div>
+                const product = getProductDetails(item.product_id);
+                const inputVal = moveQuantities[item.id] || '';
+                
+                return (
+                    <div key={item.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all flex flex-col justify-between h-full group">
+                        
+                        {/* TOP: Image & Name */}
+                        <div className="flex gap-4 items-start mb-6">
+                            <div className="w-16 h-16 bg-gray-50 rounded-xl border border-gray-100 flex-shrink-0 flex items-center justify-center p-1">
+                                {product.image_url ? (
+                                    <img src={product.image_url} className="w-full h-full object-contain mix-blend-multiply" alt={product.name} />
+                                ) : (
+                                    <span className="text-2xl grayscale opacity-50">👕</span>
+                                )}
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-900 leading-tight mb-2 text-lg">{product.name}</h3>
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-600 uppercase tracking-wide">
+                                    Size: {item.size}
+                                </span>
+                            </div>
+                        </div>
 
-                  {/* STOCK DISPLAY */}
-                  <div className="bg-gray-100 p-3 border-2 border-black mb-4 flex justify-between items-center">
-                    <span className="text-xs font-bold text-gray-500 uppercase">On Hand</span>
-                    <span className="text-2xl font-black">{item.count}</span>
-                  </div>
+                        {/* MIDDLE: Stock Info */}
+                        <div className="flex justify-between items-end border-b border-gray-50 pb-4 mb-4">
+                            <div>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Warehouse Stock</p>
+                                <p className="text-3xl font-black text-gray-900">{item.count}</p>
+                            </div>
+                        </div>
 
-                  {/* ACTIONS */}
-                  <div className="flex gap-2">
-                    <input 
-                      type="number" 
-                      placeholder="QTY"
-                      className="w-20 border-2 border-black p-2 font-bold text-center outline-none focus:bg-blue-50"
-                      value={inputVal}
-                      onChange={(e) => setMoveQuantities({...moveQuantities, [item.id]: e.target.value})}
-                    />
-                    <button 
-                      onClick={() => handleTransfer(item)}
-                      disabled={!targetSlug}
-                      className={`flex-1 border-2 border-black font-black uppercase text-sm py-2 transition-all 
-                        ${targetSlug ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-[2px_2px_0px_0px_black]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
-                      `}
-                    >
-                      {targetSlug ? 'Load Truck 🚚' : 'Select Event'}
-                    </button>
-                  </div>
-                </div>
-              );
+                        {/* BOTTOM: Input & Button */}
+                        <div className="flex gap-3">
+                            <input 
+                                type="number" 
+                                placeholder="Qty"
+                                className="w-24 p-3 bg-gray-50 border border-gray-200 rounded-xl text-center font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all text-gray-900"
+                                value={inputVal}
+                                onChange={(e) => setMoveQuantities({...moveQuantities, [item.id]: e.target.value})}
+                            />
+                            <button 
+                                onClick={() => handleTransfer(item)}
+                                disabled={!targetSlug}
+                                className={`flex-1 rounded-xl font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2
+                                    ${targetSlug 
+                                        ? 'bg-gray-900 text-white hover:bg-gray-800 hover:shadow-md' 
+                                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
+                                `}
+                            >
+                                {targetSlug ? (
+                                    <>Load Truck <span className="text-gray-400">→</span></>
+                                ) : (
+                                    'Select Event'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                );
             })}
           </div>
-        )}
-        
-        {!loading && filteredStock.length === 0 && (
-          <div className="p-12 border-4 border-black border-dashed text-center">
-            <h2 className="text-2xl font-black text-gray-400 uppercase">Warehouse is Empty (or no match)</h2>
-            <p className="font-bold text-gray-400 mt-2">Go to Global Catalog to add stock to Warehouse.</p>
+      )}
+      
+      {!loading && filteredStock.length === 0 && (
+          <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-300">
+            <h2 className="text-2xl font-bold text-gray-400 mb-2">Warehouse is Empty</h2>
+            <p className="text-gray-400">Receive stock via "Purchasing" to add items here.</p>
           </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
