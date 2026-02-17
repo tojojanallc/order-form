@@ -38,14 +38,9 @@ export default function AdminPage() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
    
-  // --- NEW: Toggle Financial Visibility ---
   const [showFinancials, setShowFinancials] = useState(false);
-
-  // --- NEW: State for editing Name/Phone/Email only ---
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
-
-  // --- STATE FOR ORDER/CART EDITING ---
   const [editingOrder, setEditingOrder] = useState(null);
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
@@ -53,23 +48,23 @@ export default function AdminPage() {
   const [newGuestName, setNewGuestName] = useState(''); 
   const [orders, setOrders] = useState([]);
   
-  // Inventory State
+  // --- INVENTORY STATE ---
   const [inventory, setInventory] = useState([]); // Local Event Inventory
-  const [warehouseStock, setWarehouseStock] = useState([]); // GLOBAL Warehouse Inventory
-
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState([]); // Global Master List
   const [logos, setLogos] = useState([]);
+  
+  // --- TRUCKING STATE ---
+  const [truckTargetEvent, setTruckTargetEvent] = useState(''); 
+
   const [guests, setGuests] = useState([]); 
   const [terminals, setTerminals] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState({ revenue: 0, count: 0, net: 0, topItem: '-' });
   const [uploadLog, setUploadLog] = useState([]); 
 
-  // --- MULTI-EVENT STATE ---
   const [availableEvents, setAvailableEvents] = useState([]);
   const [selectedEventSlug, setSelectedEventSlug] = useState(''); 
 
-  // --- AUTO PRINT STATE ---
   const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
   const [hideUnpaid, setHideUnpaid] = useState(true); 
   const audioRef = useRef(null);
@@ -87,7 +82,6 @@ export default function AdminPage() {
   const [newLogoUrl, setNewLogoUrl] = useState('');
   const [newLogoCategory, setNewLogoCategory] = useState('accent'); 
   const [newLogoPlacement, setNewLogoPlacement] = useState('large'); 
-  // Terminal Form
   const [newTermLabel, setNewTermLabel] = useState('');
   const [newTermId, setNewTermId] = useState('');
   const [eventName, setEventName] = useState('');
@@ -107,7 +101,6 @@ export default function AdminPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- AUTH PERSISTENCE ---
   useEffect(() => {
       const sessionAuth = sessionStorage.getItem('admin_auth');
       if (sessionAuth === 'true') {
@@ -115,7 +108,6 @@ export default function AdminPage() {
       }
   }, []);
 
-  // --- ENGINE: LOAD EVENTS ---
   useEffect(() => {
       if (isAuthorized && mounted) {
           const loadEvents = async () => {
@@ -123,26 +115,24 @@ export default function AdminPage() {
               if (data && data.length > 0) {
                   setAvailableEvents(data);
                   if (!selectedEventSlug) setSelectedEventSlug(data[0].slug);
+                  // Default truck target to first event
+                  setTruckTargetEvent(data[0].slug);
               }
           };
           loadEvents();
       }
   }, [isAuthorized, mounted]);
 
-  // --- ENGINE: SYNC DATA (Live Guests + Orders + Inventory) ---
   useEffect(() => {
     if (!isAuthorized || !mounted) return;
-    console.log("🔌 Connecting to Realtime...");
-
-    // 1. Initial Data Load
+    
     fetchOrders();
     fetchSettings();
-    fetchInventory(); // Fetches BOTH local and warehouse
+    fetchInventory(); 
     fetchLogos();
     fetchGuests();
     fetchTerminals();
 
-    // 2. THE TRIPLE LISTENER
     const channel = supabase.channel('global_updates')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
             fetchOrders(); 
@@ -158,9 +148,7 @@ export default function AdminPage() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, (payload) => {
             fetchGuests();
         })
-        .subscribe((status) => {
-            console.log("📡 Connection Status:", status);
-        });
+        .subscribe();
 
     const timer = setInterval(() => {
         fetchOrders();
@@ -174,7 +162,6 @@ export default function AdminPage() {
     };
   }, [isAuthorized, mounted, selectedEventSlug]);
 
-  // --- AUTO-PRINT LOGIC ---
   useEffect(() => {
     if (lastOrderCount.current === 0 && orders.length > 0) {
       lastOrderCount.current = orders.length;
@@ -199,7 +186,6 @@ export default function AdminPage() {
     lastOrderCount.current = orders.length;
   }, [orders, autoPrintEnabled, mounted, paymentMode]);
 
-  // --- RECALCULATE TOTALS ---
   useEffect(() => {
       if (editingOrder && mounted) {
           let total = 0;
@@ -225,7 +211,6 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
- // --- REVENUE REPAIR LOGIC ---
   useEffect(() => {
     if (!mounted || !orders || !selectedEventSlug) {
       setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
@@ -263,7 +248,6 @@ export default function AdminPage() {
           const prod = products.find(p => p.id === item.productId);
           let itemPrice = Number(prod?.base_price ?? 30); 
           if (itemPrice > 500) itemPrice = itemPrice / 100; 
-          
           if (item.customizations) {
             itemPrice += (Number(item.customizations.logos?.length || 0) * 5);
             itemPrice += (Number(item.customizations.names?.length || 0) * 5);
@@ -313,43 +297,26 @@ export default function AdminPage() {
           } else { 
               alert("Wrong password"); 
           } 
-      } catch (err) { 
-          alert("Login failed"); 
-      } 
+      } catch (err) { alert("Login failed"); } 
       setLoading(false); 
   };
 
   const fetchOrders = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('event_slug', selectedEventSlug) 
-        .order('created_at', { ascending: false }); 
-
-      if (error) {
-          console.error("Fetch Error:", error);
-          return;
-      }
+      const { data, error } = await supabase.from('orders').select('*').eq('event_slug', selectedEventSlug).order('created_at', { ascending: false }); 
+      if (error) return;
       const uniqueOrders = Array.from(new Map(data.map(item => [item.id, item])).values());
       setOrders(uniqueOrders); 
   };
 
   const fetchInventory = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      // 1. Get Global Products
+      // 1. Master Product List
       const { data: p } = await supabase.from('products').select('*').order('sort_order'); 
       if (p) setProducts(p); 
-
-      // 2. Get Local Event Inventory
-      const { data: localInv } = await supabase.from('inventory').select('*').eq('event_slug', selectedEventSlug).order('product_id', { ascending: true }); 
-      if (localInv) setInventory(localInv); 
-
-      // 3. Get WAREHOUSE Inventory (Assume slug is 'warehouse')
-      // This lets us see total available stock
-      const { data: warehouseInv } = await supabase.from('inventory').select('*').eq('event_slug', 'warehouse');
-      if (warehouseInv) setWarehouseStock(warehouseInv);
+      // 2. Local Event Stock
+      const { data: i } = await supabase.from('inventory').select('*').eq('event_slug', selectedEventSlug).order('product_id', { ascending: true }); 
+      if (i) setInventory(i); 
   };
 
   const fetchLogos = async () => { 
@@ -361,8 +328,7 @@ export default function AdminPage() {
   const fetchGuests = async () => { 
       if (!supabase || !selectedEventSlug) return; 
       const { data } = await supabase.from('guests').select('*').eq('event_slug', selectedEventSlug).order('name'); 
-      if (data) setGuests(data); 
-      else setGuests([]);
+      if (data) setGuests(data); else setGuests([]);
   };
 
   const fetchTerminals = async () => { 
@@ -398,10 +364,7 @@ export default function AdminPage() {
   };
 
   const deleteTerminal = async (id) => { 
-      if(confirm("Remove?")) { 
-          await supabase.from('terminals').delete().eq('id', id); 
-          fetchTerminals(); 
-      } 
+      if(confirm("Remove?")) { await supabase.from('terminals').delete().eq('id', id); fetchTerminals(); } 
   };
 
   const saveSettings = async () => { 
@@ -423,75 +386,37 @@ export default function AdminPage() {
   };
 
   const closeEvent = async () => { 
-      console.log("Attempting to close:", selectedEventSlug); 
-
       if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; 
       setLoading(true); 
-      
-      const { data: updateData, error: updateError } = await supabase
-        .from('event_settings')
-        .update({ status: 'archived' }) 
-        .eq('slug', selectedEventSlug)
-        .select();
-
-      if (updateError) {
-        alert("Error: " + updateError.message);
-        setLoading(false);
-        return;
-      }
-
-      if (!updateData || updateData.length === 0) {
-        alert("⚠️ COMMAND FAILED: Database returned 0 updated rows.");
-        setLoading(false);
-        return;
-      }
-
-      await supabase.from('orders')
-        .update({ status: 'completed' })
-        .eq('event_slug', selectedEventSlug)
-        .neq('status', 'completed')
-        .neq('status', 'refunded');
-
+      const { data: updateData, error: updateError } = await supabase.from('event_settings').update({ status: 'archived' }).eq('slug', selectedEventSlug).select();
+      if (updateError || !updateData.length) { alert("Error archiving"); setLoading(false); return; }
+      await supabase.from('orders').update({ status: 'completed' }).eq('event_slug', selectedEventSlug).neq('status', 'completed').neq('status', 'refunded');
       alert("SUCCESS: Event Archived!"); 
       
-      const { data: refreshedEvents } = await supabase
-          .from('event_settings')
-          .select('*')
-          .eq('status', 'active') 
-          .order('id');
-
+      const { data: refreshedEvents } = await supabase.from('event_settings').select('*').eq('status', 'active').order('id');
       if (refreshedEvents) {
           setAvailableEvents(refreshedEvents);
-          if (refreshedEvents.length > 0) {
-              setSelectedEventSlug(refreshedEvents[0].slug);
-          } else {
-              setSelectedEventSlug('');
-          }
+          if (refreshedEvents.length > 0) setSelectedEventSlug(refreshedEvents[0].slug);
+          else setSelectedEventSlug('');
       }
-
       fetchOrders(); 
       setLoading(false); 
   };
+
   const handleStatusChange = async (orderId, newStatus) => {
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
-
       if (newStatus === 'ready') {
           try {
               const { data: orderData } = await supabase.from('orders').select('customer_name, phone').eq('id', orderId).single();
               if (orderData && orderData.phone) {
                   const message = `Hi ${orderData.customer_name}! Your order is ready for pickup. Please head to the Lev Custom Merch team and start wearing your new gear!`;
-                  await fetch('/api/send-sms', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ phone: orderData.phone, message: message })
-                  });
+                  await fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: orderData.phone, message: message }) });
               }
           } catch (err) { console.error("Error sending text:", err); }
       }
   };
 
-  // --- NEW: Mark as Paid ---
   const markOrderPaid = async (orderId) => {
       if(!confirm("Mark this order as PAID?")) return;
       setOrders(orders.map(o => o.id === orderId ? { ...o, payment_status: 'paid' } : o));
@@ -506,15 +431,10 @@ export default function AdminPage() {
       if (!order) return;
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
       try { await supabase.from('orders').update({ printed: true }).eq('id', order.id); } catch (e) {}
-
       const isCloud = pnEnabled && pnApiKey && pnPrinterId;
       const mode = isCloud ? 'cloud' : 'download';
       try {
-          const res = await fetch('/api/printnode', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ order, mode, apiKey: pnApiKey, printerId: pnPrinterId })
-          });
+          const res = await fetch('/api/printnode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order, mode, apiKey: pnApiKey, printerId: pnPrinterId }) });
           const result = await res.json();
           if (!result.success) { console.error("Print API Error:", result.error); return; }
           if (!isCloud) {
@@ -525,139 +445,32 @@ export default function AdminPage() {
       } catch (e) { console.error(e); }
   };
 
-  // --- NEW: EDIT CUSTOMER INFO FUNCTIONS ---
   const saveCustomerInfo = async () => {
       if (!editingCustomer) return;
       try {
-          const { error } = await supabase.from('orders').update({
-              customer_name: customerForm.name,
-              phone: customerForm.phone,
-              email: customerForm.email
-          }).eq('id', editingCustomer.id);
-
+          const { error } = await supabase.from('orders').update({ customer_name: customerForm.name, phone: customerForm.phone, email: customerForm.email }).eq('id', editingCustomer.id);
           if (error) throw error;
-          setOrders(orders.map(o => o.id === editingCustomer.id ? { 
-              ...o, 
-              customer_name: customerForm.name, 
-              phone: customerForm.phone, 
-              email: customerForm.email 
-          } : o));
+          setOrders(orders.map(o => o.id === editingCustomer.id ? { ...o, customer_name: customerForm.name, phone: customerForm.phone, email: customerForm.email } : o));
           setEditingCustomer(null); 
           alert("Customer updated!");
-      } catch (err) {
-          alert("Update failed: " + err.message);
-      }
+      } catch (err) { alert("Update failed: " + err.message); }
   };
 
-  // --- EDIT ORDER/CART FUNCTIONS ---
   const openEditModal = (order) => { 
       const rawCart = Array.isArray(order.cart_data) ? order.cart_data : [];
-      const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({
-            ...item,
-            productName: item.productName || 'Unknown',
-            size: item.size || 'N/A',
-            customizations: {
-                mainDesign: item.customizations?.mainDesign || '',
-                logos: Array.isArray(item.customizations?.logos) ? item.customizations.logos : [],
-                names: Array.isArray(item.customizations?.names) ? item.customizations.names : [],
-                backList: !!item.customizations?.backList,
-                metallic: !!item.customizations?.metallic
-            }
-      }));
+      const cleanCart = rawCart.filter(item => item !== null && item !== undefined).map(item => ({ ...item, productName: item.productName || 'Unknown', size: item.size || 'N/A', customizations: { mainDesign: item.customizations?.mainDesign || '', logos: Array.isArray(item.customizations?.logos) ? item.customizations.logos : [], names: Array.isArray(item.customizations?.names) ? item.customizations.names : [], backList: !!item.customizations?.backList, metallic: !!item.customizations?.metallic } }));
       setEditingOrder({ ...order, cart_data: cleanCart }); 
       setOriginalOrderTotal(order.total_price || 0);
   };
-
   const closeEditModal = () => { setEditingOrder(null); };
   const handleEditChange = (f, v) => setEditingOrder(p => ({ ...p, [f]: v }));
-  const handleEditItem = (index, field, value) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          newCart[index] = { ...newCart[index], [field]: value };
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleUpdateMainDesign = (index, value) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[index] };
-          const newCust = { ...newItem.customizations, mainDesign: value };
-          newItem.customizations = newCust;
-          newCart[index] = newItem;
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleEditName = (idx, nIdx, val) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newNames = [...newCust.names];
-          if(newNames[nIdx]) {
-              newNames[nIdx] = { ...newNames[nIdx], text: val };
-              newCust.names = newNames;
-              newItem.customizations = newCust;
-              newCart[idx] = newItem;
-          }
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleAddAccent = (idx) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newLogos = [...(newCust.logos || [])];
-          newLogos.push({ type: logos[0]?.label || 'Logo', position: 'Left Sleeve' });
-          newCust.logos = newLogos;
-          newItem.customizations = newCust;
-          newCart[idx] = newItem;
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleAddName = (idx) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newNames = [...(newCust.names || [])];
-          newNames.push({ text: '', position: 'Hood' });
-          newCust.names = newNames;
-          newItem.customizations = newCust;
-          newCart[idx] = newItem;
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleUpdateAccent = (idx, lIdx, field, val) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newLogos = [...newCust.logos];
-          if(newLogos[lIdx]) {
-              newLogos[lIdx] = { ...newLogos[lIdx], [field]: val };
-              newCust.logos = newLogos;
-              newItem.customizations = newCust;
-              newCart[idx] = newItem;
-          }
-          return { ...prev, cart_data: newCart };
-      });
-  };
-  const handleUpdateNamePos = (idx, nIdx, val) => {
-      setEditingOrder(prev => {
-          const newCart = [...prev.cart_data];
-          const newItem = { ...newCart[idx] };
-          const newCust = { ...newItem.customizations };
-          const newNames = [...newCust.names];
-          if(newNames[nIdx]) {
-              newNames[nIdx] = { ...newNames[nIdx], position: val };
-              newCust.names = newNames;
-              newItem.customizations = newCust;
-              newCart[idx] = newItem;
-          }
-          return { ...prev, cart_data: newCart };
-      });
-  };
+  const handleEditItem = (index, field, value) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[index] = { ...newCart[index], [field]: value }; return { ...prev, cart_data: newCart }; }); };
+  const handleUpdateMainDesign = (index, value) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[index].customizations.mainDesign = value; return { ...prev, cart_data: newCart }; }); };
+  const handleEditName = (idx, nIdx, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; if(newCart[idx].customizations.names[nIdx]) newCart[idx].customizations.names[nIdx].text = val; return { ...prev, cart_data: newCart }; }); };
+  const handleAddAccent = (idx) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.logos.push({ type: logos[0]?.label || 'Logo', position: 'Left Sleeve' }); return { ...prev, cart_data: newCart }; }); };
+  const handleAddName = (idx) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.names.push({ text: '', position: 'Hood' }); return { ...prev, cart_data: newCart }; }); };
+  const handleUpdateAccent = (idx, lIdx, field, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; if(newCart[idx].customizations.logos[lIdx]) newCart[idx].customizations.logos[lIdx][field] = val; return { ...prev, cart_data: newCart }; }); };
+  const handleUpdateNamePos = (idx, nIdx, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; if(newCart[idx].customizations.names[nIdx]) newCart[idx].customizations.names[nIdx].position = val; return { ...prev, cart_data: newCart }; }); };
 
   const saveOrderEdits = async () => { 
       if(!editingOrder) return; 
@@ -680,35 +493,24 @@ export default function AdminPage() {
   const addLogo = async (e) => { 
       e.preventDefault(); 
       if (!newLogoName) return; 
-      await supabase.from('logos').insert([{ 
-          label: newLogoName, 
-          image_url: newLogoUrl, 
-          category: newLogoCategory, 
-          placement: newLogoPlacement, 
-          sort_order: logos.length + 1,
-          event_slug: selectedEventSlug 
-      }]); 
-      setNewLogoName(''); setNewLogoUrl(''); 
-      fetchLogos(); 
+      await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, category: newLogoCategory, placement: newLogoPlacement, sort_order: logos.length + 1, event_slug: selectedEventSlug }]); 
+      setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); 
   };
-  
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   
-  // --- NEW: THE "TRUCK" FEATURE ---
-  // Moves an item from the Global Catalog into the Local Event Inventory
+  // --- TRUCK FUNCTIONALITY ---
   const addProductToEvent = async (product) => {
+      if (!truckTargetEvent) return alert("Select an event first!");
       setLoading(true);
-      const sizes = SIZE_ORDER; // ['Youth XS', ... 'Adult 4XL']
-      
-      // We create a row for every size, defaulting to 0 count and hidden status
+      const sizes = SIZE_ORDER; 
       const inventoryRows = sizes.map(size => ({
-          event_slug: selectedEventSlug,
+          event_slug: truckTargetEvent,
           product_id: product.id,
           size: size,
           count: 0,
-          active: false, // Default to hidden so you can set price first
+          active: false, 
           cost_price: 8.50,
-          override_price: null // Use base price by default
+          override_price: null
       }));
 
       const { error } = await supabase.from('inventory').insert(inventoryRows);
@@ -716,257 +518,53 @@ export default function AdminPage() {
       if (error) {
           alert("Error adding to event: " + error.message);
       } else {
-          // Refresh inventory to show it in the right column
-          fetchInventory();
+          alert(`Success! Sent ${product.name} to ${truckTargetEvent}. Go to 'Event Stock' to manage it.`);
       }
       setLoading(false);
   };
 
   const deleteProduct = async (id) => { 
-      const { data: usage } = await supabase.from('inventory').select('event_slug').eq('product_id', id).neq('event_slug', selectedEventSlug); 
-      const isUsedElsewhere = usage && usage.length > 0;
-      if (isUsedElsewhere) {
-          // If used elsewhere, only remove from THIS event
-          if (!confirm(`Remove "${id}" from ${selectedEventSlug}?\n\n(It will remain in the Global Catalog because other events use it.)`)) return;
-          await supabase.from('inventory').delete().eq('product_id', id).eq('event_slug', selectedEventSlug);
-      } else {
-          // If not used anywhere, delete globally
-          if (!confirm(`Delete "${id}" PERMANENTLY?\n\n(No other events are using this, so it will be gone forever.)`)) return;
-          await supabase.from('inventory').delete().eq('product_id', id); 
-          await supabase.from('products').delete().eq('id', id); 
-      }
+      if (!confirm(`Delete "${id}" PERMANENTLY from Global Catalog?\n\n(This will delete it from ALL events!)`)) return;
+      await supabase.from('inventory').delete().eq('product_id', id); 
+      await supabase.from('products').delete().eq('id', id); 
       fetchInventory(); 
   };  
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
   
-  const updatePrice = async (pid, v) => { setProducts(products.map(p => p.id === pid ? { ...p, base_price: v } : p)); await supabase.from('products').update({ base_price: v }).eq('id', pid); };
+  const updateProductInfo = async (pid, field, value) => {
+    setProducts(products.map(p => p.id === pid ? { ...p, [field]: value } : p));
+    await supabase.from('products').update({ [field]: value }).eq('id', pid);
+  };
+
   const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   
-  const downloadTemplate = () => { 
-      try { 
-          const data = inventory.map(item => ({ 
-              product_id: item.product_id, 
-              size: item.size, 
-              count: item.count, 
-              cost_price: item.cost_price || 8.50, 
-              override_price: item.override_price || '', 
-              _Reference_Name: getProductName(item.product_id) || item.product_id 
-          })); 
-          const ws = XLSX.utils.json_to_sheet(data); 
-          const wb = XLSX.utils.book_new(); 
-          XLSX.utils.book_append_sheet(wb, ws, "Inventory"); 
-          XLSX.writeFile(wb, `${selectedEventSlug}_Inventory.xlsx`); 
-      } catch (e) { console.error(e); } 
-  };
-  const downloadCSV = () => { if (!orders.length) return; const headers = ['ID', 'Event', 'Date', 'Customer', 'Phone', 'Address', 'Status', 'Total', 'Items']; const rows = orders.map(o => { const addr = o.shipping_address ? `"${o.shipping_address}, ${o.shipping_city}, ${o.shipping_state}"` : "Pickup"; const items = (Array.isArray(o.cart_data) ? o.cart_data : []).map(i => `${i?.productName} (${i?.size})`).join(' | '); return [o.id, `"${o.event_name || ''}"`, new Date(o.created_at).toLocaleDateString(), `"${o.customer_name}"`, o.phone, addr, o.status, o.total_price, `"${items}"`].join(','); }); const link = document.createElement("a"); link.href = "data:text/csv;charset=utf-8," + encodeURI([headers.join(','), ...rows].join('\n')); link.download = "orders.csv"; link.click(); };
-  
-  const handleAddProductWithSizeUpdates = async (e) => { 
+  const handleAddProduct = async (e) => { 
       e.preventDefault(); 
       if (!newProdId || !newProdName) return alert("Missing Info"); 
       const safeId = newProdId.toLowerCase().replace(/\s/g, '_');
-      
-      await supabase.from('products').insert([{ 
-          id: safeId, 
-          name: newProdName, 
-          base_price: parseFloat(newProdPrice), 
-          image_url: newProdImage, 
-          type: newProdType, 
-          sort_order: 99 
-      }]); 
-      
-      // Auto-add to current event as well
-      const sizes = SIZE_ORDER; 
-      await supabase.from('inventory').insert(sizes.map(s => ({ 
-          product_id: safeId, 
-          size: s, 
-          count: 0, 
-          cost_price: parseFloat(newProdCost), 
-          active: true,
-          event_slug: selectedEventSlug 
-      }))); 
-      
-      alert("Created!"); 
+      await supabase.from('products').insert([{ id: safeId, name: newProdName, base_price: parseFloat(newProdPrice), image_url: newProdImage, type: newProdType, sort_order: 99 }]); 
+      alert("Created Global Product!"); 
       setNewProdId(''); setNewProdName(''); fetchInventory(); 
   };
 
-  const handleGuestUpload = (e) => { 
-      const f = e.target.files[0]; 
-      if (!f) return; 
-      setLoading(true); 
-      const r = new FileReader(); 
-      r.onload = async (evt) => { 
-          try { 
-              const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
-              for (const row of d) { 
-                  const n = row['Name'] || row['name'] || row['Guest']; 
-                  const s = row['Size'] || row['size']; 
-                  if (n) await supabase.from('guests').insert([{ 
-                      name: String(n).trim(), 
-                      size: s ? String(s).trim() : null, 
-                      has_ordered: false,
-                      event_slug: selectedEventSlug 
-                  }]); 
-              } 
-              alert(`Imported!`); 
-              fetchGuests(); 
-          } catch (e) {} 
-          setLoading(false); 
-      }; 
-      r.readAsBinaryString(f); 
-  };
-  
-  const addSingleGuest = async (e) => {
-      e.preventDefault();
-      if (!newGuestName.trim()) return;
-      setLoading(true);
-      try {
-          const { error } = await supabase.from('guests').insert([{
-              name: newGuestName.trim(),
-              event_slug: selectedEventSlug,
-              has_ordered: false
-          }]);
-          if (error) throw error;
-          setNewGuestName(''); 
-          fetchGuests(); 
-          alert("Guest Added!");
-      } catch (err) { alert("Error adding guest: " + err.message); }
-      setLoading(false);
-  };
+  const handleGuestUpload = (e) => { const f = e.target.files[0]; if (!f) return; setLoading(true); const r = new FileReader(); r.onload = async (evt) => { try { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); for (const row of d) { const n = row['Name'] || row['name'] || row['Guest']; const s = row['Size'] || row['size']; if (n) await supabase.from('guests').insert([{ name: String(n).trim(), size: s ? String(s).trim() : null, has_ordered: false, event_slug: selectedEventSlug }]); } alert(`Imported!`); fetchGuests(); } catch (e) {} setLoading(false); }; r.readAsBinaryString(f); };
+  const addSingleGuest = async (e) => { e.preventDefault(); if (!newGuestName.trim()) return; setLoading(true); try { await supabase.from('guests').insert([{ name: newGuestName.trim(), event_slug: selectedEventSlug, has_ordered: false }]); setNewGuestName(''); fetchGuests(); alert("Guest Added!"); } catch (err) { alert("Error adding guest: " + err.message); } setLoading(false); };
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
-  const deleteGuest = async (id, name) => {
-      if (!confirm(`Permanently remove "${name}" from the list?`)) return;
-      setLoading(true);
-      try {
-          const { error } = await supabase.from('guests').delete().eq('id', id);
-          if (error) throw error;
-          fetchGuests(); 
-      } catch (err) { alert("Error deleting guest: " + err.message); }
-      setLoading(false);
-  }; 
+  const deleteGuest = async (id, name) => { if (!confirm(`Permanently remove "${name}" from the list?`)) return; setLoading(true); try { await supabase.from('guests').delete().eq('id', id); fetchGuests(); } catch (err) { alert("Error deleting guest: " + err.message); } setLoading(false); }; 
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
-  const handleBulkUpload = (e) => { 
-      const f = e.target.files[0]; 
-      if (!f) return; 
-      setUploadLog(["Reading..."]); 
-      setLoading(true); 
-      const r = new FileReader(); 
-      r.onload = async (evt) => { 
-          try { 
-              const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); 
-              if (!d.length) { setLoading(false); return; } 
-              const logs = []; 
-              const productIdsSeen = new Set();
-
-              for (const row of d) { 
-                  const clean = {}; 
-                  Object.keys(row).forEach(k => clean[k.toLowerCase().trim()] = row[k]); 
-                  
-                  const pid = String(clean['product_id']).trim(); 
-                  const sz = String(clean['size']).trim(); 
-                  const cnt = parseInt(clean['count']); 
-                  const cst = clean['cost_price'] ? parseFloat(clean['cost_price']) : 8.50; 
-                  
-                  let ovr = null;
-                  if (clean['override_price']) ovr = parseFloat(clean['override_price']);
-                  else if (clean['price']) ovr = parseFloat(clean['price']);
-                  
-                  if (!productIdsSeen.has(pid)) {
-                      productIdsSeen.add(pid);
-                      const { data: existingProd } = await supabase.from('products').select('id').eq('id', pid).single();
-                      if (!existingProd) {
-                          await supabase.from('products').insert([{
-                              id: pid,
-                              name: clean['_reference_name'] || pid.replace(/_/g, ' ').toUpperCase(),
-                              base_price: 30, 
-                              type: 'top', 
-                              sort_order: 99
-                          }]);
-                          logs.push(`✅ Created Parent: ${pid}`);
-                      }
-                  }
-
-                  const { data: ex } = await supabase.from('inventory').select('product_id').eq('product_id', pid).eq('size', sz).eq('event_slug', selectedEventSlug).maybeSingle(); 
-                  
-                  if (ex) { 
-                      await supabase.from('inventory').update({ 
-                          count: cnt, 
-                          cost_price: cst,
-                          override_price: ovr 
-                      }).eq('product_id', pid).eq('size', sz).eq('event_slug', selectedEventSlug); 
-                      
-                      logs.push(`Updated: ${pid} ${sz} (Stock: ${cnt}, Price: ${ovr || 'Default'})`); 
-                  } else { 
-                      await supabase.from('inventory').insert([{ 
-                          product_id: pid, 
-                          size: sz, 
-                          count: cnt, 
-                          cost_price: cst, 
-                          override_price: ovr, 
-                          active: true,
-                          event_slug: selectedEventSlug
-                      }]); 
-                      logs.push(`Created: ${pid} ${sz}`); 
-                  } 
-              } 
-              setUploadLog(logs); 
-              fetchInventory(); 
-          } catch (e) { 
-              setUploadLog([e.message]); 
-          } 
-          setLoading(false); 
-      }; 
-      r.readAsBinaryString(f); 
-  };
-
-  const fixOrphanedProducts = async () => {
-      setLoading(true);
-      const { data: inv } = await supabase.from('inventory').select('product_id');
-      const { data: prods } = await supabase.from('products').select('id');
-      
-      const invIds = [...new Set(inv.map(i => i.product_id))];
-      const prodIds = prods.map(p => p.id);
-      const missing = invIds.filter(id => !prodIds.includes(id));
-
-      if(missing.length > 0) {
-          const newProds = missing.map(id => ({
-              id: id,
-              name: id.replace(/_/g, ' ').toUpperCase(),
-              base_price: 30,
-              type: 'top',
-              sort_order: 99
-          }));
-          await supabase.from('products').insert(newProds);
-          alert(`Fixed ${missing.length} missing products!`);
-          fetchInventory();
-      } else {
-          alert("All data is healthy!");
-      }
-      setLoading(false);
-  };
-
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
   const visibleOrders = orders.filter(o => {
-      // 1. Always hide Refunded (move to history)
       if (o.status === 'refunded') return false;
-
-      // 2. Logic for "Hide Unpaid" Toggle
-      if (!hideUnpaid) return true; // Shows Pending, Completed, Ready, etc.
-
-      // 3. Logic for Paid Check
+      if (!hideUnpaid) return true; 
       const pStatus = (o.payment_status || '').toLowerCase();
       const isHostedEvent = paymentMode === 'hosted';
-      const isPaid = isHostedEvent 
-          ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') 
-          : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0 || (pStatus === '' && o.status === 'pending'));
-      
+      const isPaid = isHostedEvent ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0 || (pStatus === '' && o.status === 'pending'));
       return isPaid;
   });
-
-  const historyOrders = Array.isArray(orders) ? orders.filter(o => o.status === 'completed' || o.status === 'refunded') : [];
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-black font-sans">
@@ -991,128 +589,55 @@ export default function AdminPage() {
               </div>
           </div>
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
-            {['orders', 'history', 'inventory', 'guests', 'logos', 'terminals', 'settings'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded font-bold ${activeTab === tab ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>{tab}</button>
+            {['orders', 'global catalog', 'event stock', 'guests', 'logos', 'terminals', 'settings'].map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded font-bold uppercase text-xs ${activeTab === tab ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>{tab}</button>
             ))}
           </div>
         </div>
 
         {activeTab === 'orders' && ( <div className="space-y-6"> 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
-            {/* --- REVENUE CARD (TOGGLE) --- */}
-            <div 
-                onClick={() => setShowFinancials(!showFinancials)} 
-                className="bg-white p-4 rounded shadow border-l-4 border-green-500 cursor-pointer hover:bg-gray-50 transition-colors"
-                title="Click to Toggle"
-            >
-                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">
-                    Gross Revenue {showFinancials ? '👁️' : '🔒'}
-                </p>
-                <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>
-                    {showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}
-                </p>
+            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-green-500 cursor-pointer hover:bg-gray-50 transition-colors">
+                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Gross Revenue {showFinancials ? '👁️' : '🔒'}</p>
+                <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}</p>
             </div>
-            
-            <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500">
-                <p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p>
-                <p className="text-3xl font-black text-blue-900">{stats.count}</p>
-            </div> 
-            
-            {/* --- NET PROFIT CARD (TOGGLE) --- */}
-            <div 
-                onClick={() => setShowFinancials(!showFinancials)} 
-                className="bg-white p-4 rounded shadow border-l-4 border-pink-500 cursor-pointer hover:bg-gray-50 transition-colors"
-                title="Click to Toggle"
-            >
-                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">
-                    Est. Net Profit {showFinancials ? '👁️' : '🔒'}
-                </p>
-                <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>
-                    {showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}
-                </p>
+            <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
+            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-pink-500 cursor-pointer hover:bg-gray-50 transition-colors">
+                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Est. Net Profit {showFinancials ? '👁️' : '🔒'}</p>
+                <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}</p>
             </div>
-            
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
-                <div className="flex items-center gap-2 mb-2">
-                    <input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4 accent-blue-900 cursor-pointer" />
-                    <label htmlFor="autoPrint" className="text-xs font-black text-gray-800 cursor-pointer uppercase">Auto-Print Paid</label>
-                </div>
-                <div className="flex items-center gap-2 border-t pt-2">
-                    <input type="checkbox" id="hideUnpaid" checked={hideUnpaid} onChange={(e) => setHideUnpaid(e.target.checked)} className="w-4 h-4 accent-red-600 cursor-pointer" />
-                    <label htmlFor="hideUnpaid" className="text-xs font-bold text-red-600 cursor-pointer uppercase">Hide Unpaid</label>
-                </div>
+                <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4 accent-blue-900 cursor-pointer" /><label htmlFor="autoPrint" className="text-xs font-black text-gray-800 cursor-pointer uppercase">Auto-Print Paid</label></div>
+                <div className="flex items-center gap-2 border-t pt-2"><input type="checkbox" id="hideUnpaid" checked={hideUnpaid} onChange={(e) => setHideUnpaid(e.target.checked)} className="w-4 h-4 accent-red-600 cursor-pointer" /><label htmlFor="hideUnpaid" className="text-xs font-bold text-red-600 cursor-pointer uppercase">Hide Unpaid</label></div>
             </div> 
           </div> 
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
-                
                 const pStatus = (order.payment_status || '').toLowerCase();
                 const isHostedEvent = paymentMode === 'hosted';
-                const isPaid = isHostedEvent
-                    ? (order.status !== 'incomplete' && order.status !== 'awaiting_payment')
-                    : (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0 || (pStatus === '' && order.status === 'pending'));
-                
+                const isPaid = isHostedEvent ? (order.status !== 'incomplete' && order.status !== 'awaiting_payment') : (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0 || (pStatus === '' && order.status === 'pending'));
                 const displayPaymentLabel = isPaid ? (isHostedEvent ? 'HOSTED' : 'PAID') : 'UNPAID';
                 const displayColor = isPaid ? 'text-green-600' : 'text-red-500';
-
                 return (
                 <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
-                    <td className="p-4 align-top">
-                        <select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-                        <div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div>
-                    </td>
+                    <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select><div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div></td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                    
-                    <td className="p-4 align-top">
-                        <div className="font-bold">{order.customer_name}</div>
-                        <div className="text-sm">{order.phone}</div>
-                        <div className="text-xs text-gray-400">{order.email}</div>
-                        <button 
-                            onClick={() => {
-                                setEditingCustomer(order);
-                                setCustomerForm({
-                                    name: order.customer_name || '',
-                                    phone: order.phone || '',
-                                    email: order.email || '' 
-                                });
-                            }}
-                            className="text-blue-600 hover:text-blue-800 text-xs font-bold underline mt-1"
-                        >
-                            ✏️ Edit Info
-                        </button>
-                    </td>
-
-                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => {
-                        const customs = item?.customizations || {};
-                        return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> );
-                    })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                    <td className="p-4 align-top text-right">
-                        {!isPaid && (
-                            <button 
-                                onClick={() => markOrderPaid(order.id)}
-                                className="p-2 rounded mr-2 bg-green-50 text-green-600 hover:bg-green-100 font-bold text-xs uppercase"
-                                title="Mark as Paid"
-                            >
-                                💵 Pay
-                            </button>
-                        )}
-                        <button onClick={() => openEditModal(order)} className="p-2 rounded mr-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold">✏️</button>
-                        {order.status !== 'refunded' && order.payment_intent_id && ( <button onClick={() => handleRefund(order.id, order.payment_intent_id)} className="p-2 rounded mr-2 bg-red-50 text-red-500 hover:bg-red-100 font-bold">💸</button> )}
-                        <button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 font-bold ${order.printed ? 'bg-gray-100 text-gray-400' : 'bg-gray-200 text-black hover:bg-blue-100'}`}>🖨️</button>
-                        <button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg">🗑️</button>
-                    </td>
+                    <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div><div className="text-xs text-gray-400">{order.email}</div><button onClick={() => { setEditingCustomer(order); setCustomerForm({ name: order.customer_name || '', phone: order.phone || '', email: order.email || '' }); }} className="text-blue-600 hover:text-blue-800 text-xs font-bold underline mt-1">✏️ Edit Info</button></td>
+                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => { const customs = item?.customizations || {}; return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> ); })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
+                    <td className="p-4 align-top text-right">{!isPaid && (<button onClick={() => markOrderPaid(order.id)} className="p-2 rounded mr-2 bg-green-50 text-green-600 hover:bg-green-100 font-bold text-xs uppercase" title="Mark as Paid">💵 Pay</button>)}<button onClick={() => openEditModal(order)} className="p-2 rounded mr-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold">✏️</button>{order.status !== 'refunded' && order.payment_intent_id && ( <button onClick={() => handleRefund(order.id, order.payment_intent_id)} className="p-2 rounded mr-2 bg-red-50 text-red-500 hover:bg-red-100 font-bold">💸</button> )}<button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 font-bold ${order.printed ? 'bg-gray-100 text-gray-400' : 'bg-gray-200 text-black hover:bg-blue-100'}`}>🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg">🗑️</button></td>
                 </tr>
             )})}</tbody></table> 
           </div> 
         </div> )}
 
-        {activeTab === 'inventory' && (
+        {/* --- GLOBAL CATALOG TAB (THE COMMAND CENTER) --- */}
+        {activeTab === 'global catalog' && (
             <div className="grid md:grid-cols-3 gap-6">
-                <div className="md:col-span-1 space-y-6">
-                    <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
-                        <h2 className="font-bold text-xl mb-4">Add New Item</h2>
-                        <form onSubmit={handleAddProductWithSizeUpdates} className="space-y-3">
+                <div className="md:col-span-1">
+                    <div className="bg-white p-6 rounded-lg shadow border border-gray-200 sticky top-4">
+                        <h2 className="font-bold text-xl mb-4">Create Master Product</h2>
+                        <form onSubmit={handleAddProduct} className="space-y-3">
                             <div><label className="text-xs font-bold uppercase">ID (Unique)</label><input className="w-full border p-2 rounded" placeholder="e.g. jogger_grey" value={newProdId} onChange={e => setNewProdId(e.target.value)} /></div>
                             <div><label className="text-xs font-bold uppercase">Display Name</label><input className="w-full border p-2 rounded" placeholder="e.g. Grey Joggers" value={newProdName} onChange={e => setNewProdName(e.target.value)} /></div>
                             <div>
@@ -1122,156 +647,115 @@ export default function AdminPage() {
                                     <option value="bottom">Bottom (Joggers, Shorts)</option>
                                 </select>
                             </div>
-                            <div><label className="text-xs font-bold uppercase">Image URL (Optional)</label><input className="w-full border p-2 rounded" placeholder="https://..." value={newProdImage} onChange={e => setNewProdImage(e.target.value)} /></div>
-                            
+                            <div><label className="text-xs font-bold uppercase">Image URL</label><input className="w-full border p-2 rounded" placeholder="https://..." value={newProdImage} onChange={e => setNewProdImage(e.target.value)} /></div>
                             <div className="grid grid-cols-2 gap-2">
-                                <div><label className="text-xs font-bold uppercase">Price ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div>
-                                <div><label className="text-xs font-bold uppercase">Unit Cost ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdCost} onChange={e => setNewProdCost(e.target.value)} /></div>
+                                <div><label className="text-xs font-bold uppercase">Base Price ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div>
                             </div>
-
                             <button className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700">Create Product</button>
                         </form>
                     </div>
-                    <div className="bg-blue-50 p-6 rounded-lg shadow border border-blue-200">
-                        <h2 className="font-bold text-lg mb-2 text-blue-900">📦 Bulk Stock Update</h2>
-                        <div className="flex gap-2 mb-4">
-                            <button onClick={downloadTemplate} className="text-xs bg-white border border-blue-300 px-3 py-1 rounded text-blue-700 font-bold hover:bg-blue-50">⬇️ Download Current Stock</button>
-                            <button onClick={fixOrphanedProducts} className="text-xs bg-red-100 border border-red-300 px-3 py-1 rounded text-red-700 font-bold hover:bg-red-200">🛠️ Fix Missing Items</button>
-                        </div>
-                        <input type="file" accept=".xlsx, .xls" onChange={handleBulkUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200" />
-                        {uploadLog.length > 0 && (<div className="mt-4 p-2 bg-black text-green-400 text-xs font-mono h-48 overflow-y-auto rounded border border-gray-700">{uploadLog.map((log, i) => <div key={i} className="mb-1 border-b border-gray-800 pb-1">{log}</div>)}</div>)}
-                    </div>
                 </div>
                 
-                {/* --- CENTER COLUMN: GLOBAL CATALOG (Read Only / Import) --- */}
-                <div className="md:col-span-2 space-y-6">
-                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
+                <div className="md:col-span-2">
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
                         <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0 flex justify-between items-center">
-                            <span>Global Catalog (Master List)</span>
-                            <span className="text-xs bg-gray-700 px-2 py-1 rounded text-gray-300">Read Only</span>
+                            <span>Global Master List</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-400">Truck to:</span>
+                                <select 
+                                    className="text-black text-xs rounded p-1 font-bold"
+                                    value={truckTargetEvent}
+                                    onChange={(e) => setTruckTargetEvent(e.target.value)}
+                                >
+                                    <option value="">-- Select Event --</option>
+                                    {availableEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.event_name}</option>)}
+                                </select>
+                            </div>
                         </div>
                         <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left">
-                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img</th><th className="p-3">Product Name</th><th className="p-3 w-24">Base $</th><th className="p-3 text-right">Status</th></tr></thead>
+                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img</th><th className="p-3">Product Name</th><th className="p-3 w-24">Base $</th><th className="p-3 text-right">Action</th></tr></thead>
                                 <tbody>
-                                    {products.map((prod) => {
-                                        // Check if this product is already in the current event's inventory
-                                        const isInEvent = inventory.some(i => i.product_id === prod.id);
-
-                                        // Calculate Total Warehouse Stock
-                                        // Sum up the 'count' of all sizes in the 'warehouse' inventory for this product
-                                        const totalWarehouseStock = warehouseStock
-                                            .filter(w => w.product_id === prod.id)
-                                            .reduce((sum, item) => sum + (item.count || 0), 0);
-
-                                        return (
-                                            <tr key={prod.id} className={`border-b hover:bg-gray-50 ${isInEvent ? 'bg-green-50' : ''}`}>
-                                                <td className="p-3">
-                                                    {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-white" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px]">No Img</div>}
-                                                </td>
-                                                <td className="p-3">
-                                                    <div className="font-bold text-gray-700">{prod.name}</div>
-                                                    <div className="flex gap-2 text-xs mt-1">
-                                                        <span className="text-gray-400">ID: {prod.id}</span>
-                                                        <span className="bg-gray-200 text-gray-700 px-1 rounded font-bold">
-                                                            🏭 Warehouse: {totalWarehouseStock}
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                <td className="p-3 font-mono text-gray-600">
-                                                    ${prod.base_price}
-                                                </td>
-                                                <td className="p-3 text-right">
-                                                    {isInEvent ? (
-                                                        <span className="inline-flex items-center gap-1 text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded border border-green-200">
-                                                            ✅ In Event
-                                                        </span>
-                                                    ) : (
-                                                        <button 
-                                                            onClick={() => addProductToEvent(prod)}
-                                                            className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded shadow"
-                                                            disabled={loading}
-                                                        >
-                                                            🚚 Truck to Event
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
+                                    {products.map((prod) => (
+                                        <tr key={prod.id} className="border-b hover:bg-gray-50">
+                                            <td className="p-3">
+                                                {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-white" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px]">No Img</div>}
+                                            </td>
+                                            <td className="p-3">
+                                                <input className="font-bold text-gray-700 border-none bg-transparent w-full focus:bg-white focus:border focus:p-1" value={prod.name} onChange={(e) => updateProductInfo(prod.id, 'name', e.target.value)} />
+                                                <div className="text-xs text-gray-400">ID: {prod.id}</div>
+                                            </td>
+                                            <td className="p-3 font-mono text-gray-600">
+                                                <input type="number" className="w-16 border rounded text-center" value={prod.base_price} onChange={(e) => updateProductInfo(prod.id, 'base_price', e.target.value)} />
+                                            </td>
+                                            <td className="p-3 text-right">
+                                                <button 
+                                                    onClick={() => addProductToEvent(prod)}
+                                                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded shadow disabled:opacity-50"
+                                                    disabled={loading || !truckTargetEvent}
+                                                    title={!truckTargetEvent ? "Select an event top right first" : `Send to ${truckTargetEvent}`}
+                                                >
+                                                    🚚 Truck It
+                                                </button>
+                                                <button onClick={() => deleteProduct(prod.id)} className="ml-4 text-red-300 hover:text-red-500 font-bold" title="Delete from Global Catalog">×</button>
+                                            </td>
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
                     </div>
-                    
-                    {/* --- RIGHT COLUMN: EVENT STOCK (Local Edits) --- */}
-                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[600px]">
-                        <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
-                            Manage Stock & Prices ({selectedEventSlug})
-                        </div>
-                        <div className="overflow-y-auto flex-1">
-                            <table className="w-full text-left">
-                                <thead className="bg-gray-100 border-b sticky top-0">
-                                    <tr>
-                                        <th className="p-4">Product</th>
-                                        <th className="p-4">Size</th>
-                                        <th className="p-4 text-center">Cost ($)</th>
-                                        <th className="p-4 text-center">Event Price ($)</th>
-                                        <th className="p-4 text-center">Stock</th>
-                                        <th className="p-4 text-center">Active</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {inventory.map((item) => {
-                                        const globalProd = products.find(p => p.id === item.product_id);
-                                        const globalPrice = globalProd ? globalProd.base_price : 0;
-                                        return (
-                                            <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
-                                                <td className="p-4 font-bold text-sm">
-                                                    {getProductName(item.product_id)}
-                                                    <div className="text-[10px] text-gray-400">Global: ${globalPrice}</div>
-                                                </td>
-                                                <td className="p-4 text-sm">{item.size}</td>
-                                                <td className="p-4">
-                                                    <input 
-                                                        type="number" 
-                                                        className="mx-auto block w-16 border rounded text-center text-sm" 
-                                                        value={item.cost_price || ''} 
-                                                        placeholder="8.50"
-                                                        onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} 
-                                                    />
-                                                </td>
-                                                <td className="p-4">
-                                                    <input 
-                                                        type="number" 
-                                                        className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`}
-                                                        value={item.override_price || ''} 
-                                                        placeholder={globalPrice}
-                                                        onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} 
-                                                    />
-                                                </td>
-                                                <td className="p-4">
-                                                    <input 
-                                                        type="number" 
-                                                        className="mx-auto block w-16 border text-center font-bold" 
-                                                        value={item.count} 
-                                                        onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} 
-                                                    />
-                                                </td>
-                                                <td className="p-4 text-center">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={item.active ?? true} 
-                                                        onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} 
-                                                        className="w-5 h-5 cursor-pointer" 
-                                                    />
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- EVENT STOCK TAB (LOCAL MANAGER) --- */}
+        {activeTab === 'event stock' && (
+            <div className="max-w-4xl mx-auto">
+                <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
+                    <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
+                        Manage Stock & Prices ({selectedEventSlug})
+                    </div>
+                    <div className="overflow-y-auto flex-1">
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-100 border-b sticky top-0">
+                                <tr>
+                                    <th className="p-4">Product</th>
+                                    <th className="p-4">Size</th>
+                                    <th className="p-4 text-center">Cost ($)</th>
+                                    <th className="p-4 text-center">Event Price ($)</th>
+                                    <th className="p-4 text-center">Stock</th>
+                                    <th className="p-4 text-center">Active</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {inventory.map((item) => {
+                                    const globalProd = products.find(p => p.id === item.product_id);
+                                    const globalPrice = globalProd ? globalProd.base_price : 0;
+                                    return (
+                                        <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
+                                            <td className="p-4 font-bold text-sm">
+                                                {getProductName(item.product_id)}
+                                                <div className="text-[10px] text-gray-400">Global: ${globalPrice}</div>
+                                            </td>
+                                            <td className="p-4 text-sm">{item.size}</td>
+                                            <td className="p-4">
+                                                <input type="number" className="mx-auto block w-16 border rounded text-center text-sm" value={item.cost_price || ''} placeholder="8.50" onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} />
+                                            </td>
+                                            <td className="p-4">
+                                                <input type="number" className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`} value={item.override_price || ''} placeholder={globalPrice} onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} />
+                                            </td>
+                                            <td className="p-4">
+                                                <input type="number" className="mx-auto block w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} />
+                                            </td>
+                                            <td className="p-4 text-center">
+                                                <input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5 cursor-pointer" />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1282,141 +766,30 @@ export default function AdminPage() {
                 <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
                     <h2 className="font-bold text-xl mb-4">Manage Guest List</h2>
                     <form onSubmit={addSingleGuest} className="flex gap-4 mb-6 pb-6 border-b border-gray-100">
-                        <input 
-                            className="flex-1 border p-2 rounded text-lg" 
-                            placeholder="Type Name (e.g. John Doe)" 
-                            value={newGuestName} 
-                            onChange={e => setNewGuestName(e.target.value)} 
-                        />
-                        <button className="bg-green-600 text-white font-bold px-6 py-2 rounded hover:bg-green-700">
-                            ➕ Add Guest
-                        </button>
+                        <input className="flex-1 border p-2 rounded text-lg" placeholder="Type Name (e.g. John Doe)" value={newGuestName} onChange={e => setNewGuestName(e.target.value)} />
+                        <button className="bg-green-600 text-white font-bold px-6 py-2 rounded hover:bg-green-700">➕ Add Guest</button>
                     </form>
                     <div className="flex gap-4 items-center">
-                        <div className="flex-1">
-                            <p className="text-xs font-bold text-gray-500 uppercase mb-1">Bulk Upload (Excel)</p>
-                            <input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-                        </div>
-                        <button onClick={clearGuestList} className="text-red-600 font-bold text-sm whitespace-nowrap border border-red-200 px-3 py-2 rounded hover:bg-red-50">
-                            🗑️ Clear All Guests
-                        </button>
+                        <div className="flex-1"><p className="text-xs font-bold text-gray-500 uppercase mb-1">Bulk Upload (Excel)</p><input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /></div>
+                        <button onClick={clearGuestList} className="text-red-600 font-bold text-sm whitespace-nowrap border border-red-200 px-3 py-2 rounded hover:bg-red-50">🗑️ Clear All Guests</button>
                     </div>
                 </div>
                 <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                     <table className="w-full text-left">
-                        <thead className="bg-gray-100 border-b">
-                            <tr>
-                                <th className="p-4">Guest Name</th>
-                                <th className="p-4">Pre-Size</th>
-                                <th className="p-4 text-center">Status</th>
-                                <th className="p-4 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {Array.isArray(guests) && guests.length === 0 ? (
-                                <tr><td colSpan="4" className="p-8 text-center text-gray-500">No guests found.</td></tr>
-                            ) : (
-                                Array.isArray(guests) && guests.map((guest) => (
-                                    <tr key={guest.id} className="border-b hover:bg-gray-50">
-                                        <td className="p-4 font-bold">{guest.name}</td>
-                                        <td className="p-4 font-mono text-sm text-blue-800">{guest.size || '-'}</td>
-                                        <td className="p-4 text-center">
-                                            {guest.has_ordered ? 
-                                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">REDEEMED</span> : 
-                                                <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Waiting</span>
-                                            }
-                                        </td>
-                                        <td className="p-4 text-right">
-                                            <div className="flex justify-end gap-3">
-                                                <button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline" title="Reset status to 'Waiting'">Reset</button>
-                                                <button onClick={() => deleteGuest(guest.id, guest.name)} className="text-red-500 hover:text-red-700 font-bold text-lg leading-none" title="Remove Guest">🗑️</button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
+                        <thead className="bg-gray-100 border-b"><tr><th className="p-4">Guest Name</th><th className="p-4">Pre-Size</th><th className="p-4 text-center">Status</th><th className="p-4 text-right">Action</th></tr></thead>
+                        <tbody>{Array.isArray(guests) && guests.length === 0 ? (<tr><td colSpan="4" className="p-8 text-center text-gray-500">No guests found.</td></tr>) : (Array.isArray(guests) && guests.map((guest) => (<tr key={guest.id} className="border-b hover:bg-gray-50"><td className="p-4 font-bold">{guest.name}</td><td className="p-4 font-mono text-sm text-blue-800">{guest.size || '-'}</td><td className="p-4 text-center">{guest.has_ordered ? <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">REDEEMED</span> : <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Waiting</span>}</td><td className="p-4 text-right"><div className="flex justify-end gap-3"><button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline" title="Reset status to 'Waiting'">Reset</button><button onClick={() => deleteGuest(guest.id, guest.name)} className="text-red-500 hover:text-red-700 font-bold text-lg leading-none" title="Remove Guest">🗑️</button></div></td></tr>)))}</tbody>
                     </table>
                 </div>
             </div>
-        )}        {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><div className="col-span-2 flex items-center gap-6 bg-gray-50 p-2 rounded border border-gray-200"><span className="font-bold text-gray-700 text-sm">Type:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'main'} onChange={() => setNewLogoCategory('main')} className="w-4 h-4" /><span className="text-sm">Main Design (Free)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'accent'} onChange={() => setNewLogoCategory('accent')} className="w-4 h-4" /><span className="text-sm">Accent (+$5.00)</span></label></div><div className="col-span-2 flex items-center gap-6 bg-blue-50 p-2 rounded border border-blue-100">
+        )}        
+        {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><div className="col-span-2 flex items-center gap-6 bg-gray-50 p-2 rounded border border-gray-200"><span className="font-bold text-gray-700 text-sm">Type:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'main'} onChange={() => setNewLogoCategory('main')} className="w-4 h-4" /><span className="text-sm">Main Design (Free)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'accent'} onChange={() => setNewLogoCategory('accent')} className="w-4 h-4" /><span className="text-sm">Accent (+$5.00)</span></label></div><div className="col-span-2 flex items-center gap-6 bg-blue-50 p-2 rounded border border-blue-100">
     <span className="font-bold text-blue-900 text-sm">Visual Size:</span>
-    <label className="flex items-center gap-2 cursor-pointer">
-        <input type="radio" name="place" checked={newLogoPlacement === 'large'} onChange={() => setNewLogoPlacement('large')} className="w-4 h-4" />
-        <span className="text-sm">Large (Full Front/Center)</span>
-    </label>
-    <label className="flex items-center gap-2 cursor-pointer">
-        <input type="radio" name="place" checked={newLogoPlacement === 'small'} onChange={() => setNewLogoPlacement('small')} className="w-4 h-4" />
-        <span className="text-sm">Small (Pocket/Chest)</span>
-    </label>
-</div>
-<button className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Logo</button></form></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Label</th><th className="p-4">Type</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b hover:bg-gray-50"><td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td><td className="p-4 font-bold text-lg">{logo.label}</td><td className="p-4"><span className={`text-xs font-bold px-2 py-1 rounded uppercase ${logo.category === 'main' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{logo.category || 'accent'}</span></td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td></tr>))}</tbody></table></div></div>)}
+    <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="place" checked={newLogoPlacement === 'large'} onChange={() => setNewLogoPlacement('large')} className="w-4 h-4" /><span className="text-sm">Large (Full Front/Center)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="place" checked={newLogoPlacement === 'small'} onChange={() => setNewLogoPlacement('small')} className="w-4 h-4" /><span className="text-sm">Small (Pocket/Chest)</span></label></div><button className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Logo</button></form></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Label</th><th className="p-4">Type</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b hover:bg-gray-50"><td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td><td className="p-4 font-bold text-lg">{logo.label}</td><td className="p-4"><span className={`text-xs font-bold px-2 py-1 rounded uppercase ${logo.category === 'main' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{logo.category || 'accent'}</span></td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td></tr>))}</tbody></table></div></div>)}
         {activeTab === 'terminals' && (
-            <div className="max-w-4xl mx-auto">
-                <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
-                    <h2 className="font-bold text-xl mb-4">Manage Terminals</h2>
-                    <div className="grid md:grid-cols-2 gap-4">
-                        <input className="border p-2 rounded" placeholder="Kiosk Label (e.g. Front Desk Left)" value={newTermLabel} onChange={e => setNewTermLabel(e.target.value)} />
-                        <input className="border p-2 rounded" placeholder="Square Device ID (tm_...)" value={newTermId} onChange={e => setNewTermId(e.target.value)} />
-                        <button onClick={addTerminal} className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Terminal</button>
-                    </div>
-                </div>
-                <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-800 text-white"><tr><th className="p-4">Label</th><th className="p-4">Device ID</th><th className="p-4 text-right">Action</th></tr></thead>
-                        <tbody>
-                            {terminals.map((t) => (
-                                <tr key={t.id} className="border-b hover:bg-gray-50">
-                                    <td className="p-4 font-bold">{t.label}</td>
-                                    <td className="p-4 font-mono text-sm text-gray-600">{t.device_id}</td>
-                                    <td className="p-4 text-right"><button onClick={() => deleteTerminal(t.id)} className="text-red-500 hover:text-red-700 font-bold">🗑️</button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Manage Terminals</h2><div className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Kiosk Label (e.g. Front Desk Left)" value={newTermLabel} onChange={e => setNewTermLabel(e.target.value)} /><input className="border p-2 rounded" placeholder="Square Device ID (tm_...)" value={newTermId} onChange={e => setNewTermId(e.target.value)} /><button onClick={addTerminal} className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Terminal</button></div></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Label</th><th className="p-4">Device ID</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{terminals.map((t) => (<tr key={t.id} className="border-b hover:bg-gray-50"><td className="p-4 font-bold">{t.label}</td><td className="p-4 font-mono text-sm text-gray-600">{t.device_id}</td><td className="p-4 text-right"><button onClick={() => deleteTerminal(t.id)} className="text-red-500 hover:text-red-700 font-bold">🗑️</button></td></tr>))}</tbody></table></div></div>
         )}
         {activeTab === 'settings' && (
-            <div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2>
-            
-            <div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div>
-            <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div>
-            <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Header Color</label><div className="flex gap-4 items-center"><input type="color" className="w-16 h-10 cursor-pointer border rounded" value={headerColor} onChange={e => setHeaderColor(e.target.value)} /><span className="text-sm text-gray-500">{headerColor}</span></div></div>
-            
-            <div className="mb-6 bg-purple-50 p-4 rounded border border-purple-200"><label className="block text-purple-900 font-bold mb-3 border-b border-purple-200 pb-2">Cloud Printing (PrintNode)</label><div className="flex items-center justify-between mb-3"><span className="text-gray-800">Enable Cloud Print?</span><input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)} className="w-5 h-5" /></div>{pnEnabled && (<div className="space-y-3"><input className="w-full p-2 border rounded text-sm" placeholder="API Key" value={pnApiKey} onChange={e => setPnApiKey(e.target.value)} /><div className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" placeholder="Printer ID" value={pnPrinterId} onChange={e => setPnPrinterId(e.target.value)} /><button onClick={discoverPrinters} className="bg-purple-600 text-white px-3 text-xs rounded font-bold">Find</button></div>{availablePrinters.length > 0 && (<div className="bg-white border p-2 rounded max-h-32 overflow-y-auto">{availablePrinters.map(p => (<div key={p.id} className="text-xs p-1 hover:bg-gray-100 cursor-pointer flex justify-between" onClick={() => setPnPrinterId(p.id)}><span>{p.name}</span><span className="font-mono text-gray-500">{p.id}</span></div>))}</div>)}</div>)}</div>
-            <div className="mb-6 bg-gray-100 p-4 rounded border border-gray-200"><label className="block text-gray-800 font-bold mb-3 border-b border-gray-300 pb-2">Printer Output (Local)</label><div className="space-y-2"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="label" checked={printerType === 'label'} onChange={() => setPrinterType('label')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Thermal Label (4x6)</span><span className="text-xs text-gray-500">Standard for fast packing.</span></div></label><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="standard" checked={printerType === 'standard'} onChange={() => setPrinterType('standard')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Standard Sheet (8.5x11)</span><span className="text-xs text-gray-500">Large font packing slip for laser printers.</span></div></label></div></div>
-            
-            <div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200">
-                <label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label>
-                <div className="space-y-4">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                        <input type="radio" name="payment_mode" value="retail" checked={paymentMode === 'retail'} onChange={() => setPaymentMode('retail')} className="w-5 h-5 text-blue-900" />
-                        <div><span className="font-bold block text-gray-800">Retail (Stripe / Square)</span><span className="text-xs text-gray-500">Collect credit card payments from guests.</span></div>
-                    </label>
-                    
-                    {paymentMode === 'retail' && (
-                        <div className="ml-8 bg-white p-3 rounded border border-blue-100 flex gap-4">
-                            <span className="text-sm font-bold text-gray-600">Checkout Method:</span>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input type="radio" name="retail_method" value="stripe" checked={retailPaymentMethod === 'stripe'} onChange={() => setRetailPaymentMethod('stripe')} className="w-4 h-4 text-purple-600" />
-                                <span className="text-sm font-bold">Stripe Link (SMS/Email)</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input type="radio" name="retail_method" value="terminal" checked={retailPaymentMethod === 'terminal'} onChange={() => setRetailPaymentMethod('terminal')} className="w-4 h-4 text-green-600" />
-                                <span className="text-sm font-bold">Square Terminal</span>
-                            </label>
-                        </div>
-                    )}
-
-                    <label className="flex items-center gap-3 cursor-pointer">
-                        <input type="radio" name="payment_mode" value="hosted" checked={paymentMode === 'hosted'} onChange={() => setPaymentMode('hosted')} className="w-5 h-5 text-blue-900" />
-                        <div><span className="font-bold block text-gray-800">Hosted (Party Mode)</span><span className="text-xs text-gray-500">Guests pay $0. Value is tracked for host invoice.</span></div>
-                    </label>
-                </div>
-            </div>
-            
-            <div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Custom Names?</span><input type="checkbox" checked={offerPersonalization} onChange={(e) => setOfferPersonalization(e.target.checked)} className="w-6 h-6" /></div></div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>
+            <div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Header Color</label><div className="flex gap-4 items-center"><input type="color" className="w-16 h-10 cursor-pointer border rounded" value={headerColor} onChange={e => setHeaderColor(e.target.value)} /><span className="text-sm text-gray-500">{headerColor}</span></div></div><div className="mb-6 bg-purple-50 p-4 rounded border border-purple-200"><label className="block text-purple-900 font-bold mb-3 border-b border-purple-200 pb-2">Cloud Printing (PrintNode)</label><div className="flex items-center justify-between mb-3"><span className="text-gray-800">Enable Cloud Print?</span><input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)} className="w-5 h-5" /></div>{pnEnabled && (<div className="space-y-3"><input className="w-full p-2 border rounded text-sm" placeholder="API Key" value={pnApiKey} onChange={e => setPnApiKey(e.target.value)} /><div className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" placeholder="Printer ID" value={pnPrinterId} onChange={e => setPnPrinterId(e.target.value)} /><button onClick={discoverPrinters} className="bg-purple-600 text-white px-3 text-xs rounded font-bold">Find</button></div>{availablePrinters.length > 0 && (<div className="bg-white border p-2 rounded max-h-32 overflow-y-auto">{availablePrinters.map(p => (<div key={p.id} className="text-xs p-1 hover:bg-gray-100 cursor-pointer flex justify-between" onClick={() => setPnPrinterId(p.id)}><span>{p.name}</span><span className="font-mono text-gray-500">{p.id}</span></div>))}</div>)}</div>)}</div><div className="mb-6 bg-gray-100 p-4 rounded border border-gray-200"><label className="block text-gray-800 font-bold mb-3 border-b border-gray-300 pb-2">Printer Output (Local)</label><div className="space-y-2"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="label" checked={printerType === 'label'} onChange={() => setPrinterType('label')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Thermal Label (4x6)</span><span className="text-xs text-gray-500">Standard for fast packing.</span></div></label><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="standard" checked={printerType === 'standard'} onChange={() => setPrinterType('standard')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Standard Sheet (8.5x11)</span><span className="text-xs text-gray-500">Large font packing slip for laser printers.</span></div></label></div></div><div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200"><label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label><div className="space-y-4"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="retail" checked={paymentMode === 'retail'} onChange={() => setPaymentMode('retail')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Retail (Stripe / Square)</span><span className="text-xs text-gray-500">Collect credit card payments from guests.</span></div></label>{paymentMode === 'retail' && (<div className="ml-8 bg-white p-3 rounded border border-blue-100 flex gap-4"><span className="text-sm font-bold text-gray-600">Checkout Method:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="retail_method" value="stripe" checked={retailPaymentMethod === 'stripe'} onChange={() => setRetailPaymentMethod('stripe')} className="w-4 h-4 text-purple-600" /><span className="text-sm font-bold">Stripe Link (SMS/Email)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="retail_method" value="terminal" checked={retailPaymentMethod === 'terminal'} onChange={() => setRetailPaymentMethod('terminal')} className="w-4 h-4 text-green-600" /><span className="text-sm font-bold">Square Terminal</span></label></div>)}<label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="hosted" checked={paymentMode === 'hosted'} onChange={() => setPaymentMode('hosted')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Hosted (Party Mode)</span><span className="text-xs text-gray-500">Guests pay $0. Value is tracked for host invoice.</span></div></label></div></div><div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Custom Names?</span><input type="checkbox" checked={offerPersonalization} onChange={(e) => setOfferPersonalization(e.target.checked)} className="w-6 h-6" /></div></div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>
         )}
 
         {editingOrder && (
@@ -1426,15 +799,9 @@ export default function AdminPage() {
                     <div className="p-6 space-y-6">
                         <div className="bg-blue-50 p-4 rounded border border-blue-100"><label className="block text-xs font-bold uppercase text-blue-900 mb-1">Customer Name</label><input className="w-full p-2 border rounded font-bold" value={editingOrder.customer_name} onChange={(e) => handleEditChange('customer_name', e.target.value)} /></div>
                         {editingOrder.cart_data.map((item, idx) => {
-                            // --- NEW LOGIC: DETECT BOTTOMS & FILTER LOGOS ---
-                            const productRef = products.find(p => 
-                                (item.productId && p.id === item.productId) || 
-                                (p.name && item.productName && p.name.toLowerCase() === item.productName.toLowerCase())
-                            );
+                            const productRef = products.find(p => (item.productId && p.id === item.productId) || (p.name && item.productName && p.name.toLowerCase() === item.productName.toLowerCase()));
                             const isBottom = productRef?.type === 'bottom';
                             const allowedLogos = logos.filter(l => isBottom ? l.placement !== 'large' : true);
-                            // --------------------------------------------------
-
                             return (
                             <div key={idx} className="bg-white p-4 border rounded-lg shadow-sm">
                                 <div className="flex justify-between items-center mb-4 pb-2 border-b">
@@ -1473,48 +840,10 @@ export default function AdminPage() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-white p-6 rounded-lg shadow-xl w-96">
                   <h2 className="text-xl font-bold mb-4">Edit Customer Info</h2>
-                  
-                  <div className="mb-4">
-                      <label className="block text-sm font-bold mb-1">Name</label>
-                      <input 
-                          value={customerForm.name}
-                          onChange={e => setCustomerForm({...customerForm, name: e.target.value})}
-                          className="w-full border p-2 rounded"
-                      />
-                  </div>
-
-                  <div className="mb-4">
-                      <label className="block text-sm font-bold mb-1">Phone</label>
-                      <input 
-                          value={customerForm.phone}
-                          onChange={e => setCustomerForm({...customerForm, phone: e.target.value})}
-                          className="w-full border p-2 rounded"
-                      />
-                  </div>
-
-                  <div className="mb-6">
-                      <label className="block text-sm font-bold mb-1">Email</label>
-                      <input 
-                          value={customerForm.email}
-                          onChange={e => setCustomerForm({...customerForm, email: e.target.value})}
-                          className="w-full border p-2 rounded"
-                      />
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                      <button 
-                          onClick={() => setEditingCustomer(null)}
-                          className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
-                      >
-                          Cancel
-                      </button>
-                      <button 
-                          onClick={saveCustomerInfo}
-                          className="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700"
-                      >
-                          Save Changes
-                      </button>
-                  </div>
+                  <div className="mb-4"><label className="block text-sm font-bold mb-1">Name</label><input value={customerForm.name} onChange={e => setCustomerForm({...customerForm, name: e.target.value})} className="w-full border p-2 rounded" /></div>
+                  <div className="mb-4"><label className="block text-sm font-bold mb-1">Phone</label><input value={customerForm.phone} onChange={e => setCustomerForm({...customerForm, phone: e.target.value})} className="w-full border p-2 rounded" /></div>
+                  <div className="mb-6"><label className="block text-sm font-bold mb-1">Email</label><input value={customerForm.email} onChange={e => setCustomerForm({...customerForm, email: e.target.value})} className="w-full border p-2 rounded" /></div>
+                  <div className="flex justify-end gap-2"><button onClick={() => setEditingCustomer(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button><button onClick={saveCustomerInfo} className="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Save Changes</button></div>
               </div>
           </div>
         )}
