@@ -525,45 +525,38 @@ export default function AdminPage() {
 
   // --- NEW: RETURN TO WAREHOUSE LOGIC ---
   const returnToWarehouse = async (item) => {
-    // 1. Validation
-    if (!item.count || item.count <= 0) {
-      if (!confirm(`This item has 0 stock. Remove it from the event kiosk?`)) return;
-    } else {
-      if (!confirm(`Move ${item.count} items from ${selectedEventSlug} back to MASTER WAREHOUSE?`)) return;
-    }
+    if (!confirm(`Move ${item.count} units of ${item.product_id} (${item.size}) back to Master Inventory?`)) return;
     
     setLoading(true);
     try {
-        if (item.count > 0) {
-            // 2. Add to INVENTORY_MASTER (Matching SKU and Size)
-            const { data: masterItem, error: fetchError } = await supabase
-                .from('inventory_master')
-                .select('*')
+        // 1. Update the Master Inventory Table
+        const { data: masterItem, error: fetchError } = await supabase
+            .from('inventory_master')
+            .select('*')
+            .eq('sku', item.product_id)
+            .eq('size', item.size)
+            .maybeSingle();
+
+        if (fetchError) throw fetchError;
+
+        if (masterItem) {
+            // Add event stock back to master stock
+            await supabase.from('inventory_master')
+                .update({ quantity_on_hand: masterItem.quantity_on_hand + item.count })
                 .eq('sku', item.product_id)
-                .eq('size', item.size)
-                .maybeSingle();
-
-            if (fetchError) throw fetchError;
-
-            if (masterItem) {
-                // Update existing Master stock
-                await supabase.from('inventory_master')
-                    .update({ quantity_on_hand: masterItem.quantity_on_hand + item.count })
-                    .eq('sku', item.product_id)
-                    .eq('size', item.size);
-            } else {
-                // Create if missing in master
-                await supabase.from('inventory_master').insert([{
-                    sku: item.product_id,
-                    item_name: getProductName(item.product_id),
-                    size: item.size,
-                    quantity_on_hand: item.count
-                }]);
-            }
+                .eq('size', item.size);
+        } else {
+            // Create in master if it somehow went missing
+            await supabase.from('inventory_master').insert([{
+                sku: item.product_id,
+                item_name: getProductName(item.product_id),
+                size: item.size,
+                quantity_on_hand: item.count
+            }]);
         }
 
-        // 3. THE FIX: Delete using the unique combination of columns
-        // Since 'id' doesn't exist, we target the specific row this way:
+        // 2. Remove from Active Inventory Table
+        // We use the composite key (slug, pid, size) since 'id' might not exist
         const { error: deleteError } = await supabase
             .from('inventory')
             .delete()
@@ -573,12 +566,10 @@ export default function AdminPage() {
 
         if (deleteError) throw deleteError;
 
-        // 4. Refresh local UI
         fetchInventory();
-        alert("↩️ Stock successfully returned to Master Inventory.");
+        alert("↩️ Stock returned to Master and removed from Event.");
 
     } catch (e) {
-        console.error(e);
         alert("Transfer Error: " + e.message);
     }
     setLoading(false);
