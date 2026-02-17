@@ -226,75 +226,82 @@ export default function AdminPage() {
       }
   }, [editingOrder, products, mounted]);
 
-  // --- GROUND ZERO STATS LOGIC ---
-  // --- GROUND ZERO REVENUE FIX ---
+ // --- REVENUE REPAIR LOGIC ---
   useEffect(() => {
+    // 1. Safety Checks
     if (!mounted || !orders || !selectedEventSlug) {
       setStats({ revenue: 0, count: 0, net: 0, topItem: '-' });
       return;
     }
 
-    try {
-        // 1. UNIQUE MAP: Uses DB ID as key. Ensures each order is counted ONCE.
-        const orderMap = new Map();
-        orders.forEach(o => {
-            if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
-                orderMap.set(o.id, o);
-            }
+    // 2. THE DEDUPLICATOR (Crucial Step)
+    // We stick every order into a Map using its ID as the key.
+    // If an ID appears twice, the Map just overwrites it. Duplicates are gone.
+    const uniqueOrderMap = new Map();
+    orders.forEach(o => {
+      // Only count orders for THIS event that aren't refunded
+      if (o.event_slug === selectedEventSlug && o.status !== 'refunded') {
+        uniqueOrderMap.set(o.id, o);
+      }
+    });
+    
+    // Convert back to a clean list of unique orders
+    const cleanOrders = Array.from(uniqueOrderMap.values());
+
+    // 3. CALCULATE FRESH TOTALS
+    let calculatedRevenue = 0;
+    let calculatedCOGS = 0;
+    const itemCounts = {};
+
+    cleanOrders.forEach(order => {
+      // Safety: Ensure cart_data is an array
+      const cart = Array.isArray(order.cart_data) ? order.cart_data : [];
+      
+      // REVENUE MATH:
+      if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
+        // HOSTED MODE: We calculate what the items are "worth"
+        cart.forEach(item => {
+          // Find the product to get the price
+          const prod = products.find(p => p.id === item.productId);
+          let itemPrice = Number(prod?.base_price ?? 30); // Default to $30 if missing
+          
+          // Add Add-ons
+          if (item.customizations) {
+            itemPrice += (Number(item.customizations.logos?.length || 0) * 5);
+            itemPrice += (Number(item.customizations.names?.length || 0) * 5);
+            if (item.customizations.metallic) itemPrice += 5;
+          }
+          calculatedRevenue += itemPrice;
         });
-        const activeOrders = Array.from(orderMap.values());
+      } else {
+        // RETAIL MODE: We use the actual money collected
+        calculatedRevenue += Number(order.total_price || 0);
+      }
 
-        // 2. HARD RESET: Start from absolute zero
-        let gross = 0;
-        let cogs = 0;
-        const itemCounts = {};
+      // COGS MATH (Estimate):
+      cart.forEach(item => {
+        calculatedCOGS += 10; // Est. $10 cost per item
+        const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
+        itemCounts[key] = (itemCounts[key] || 0) + 1;
+      });
+    });
 
-        activeOrders.forEach(order => {
-            const items = Array.isArray(order.cart_data) ? order.cart_data.filter(Boolean) : [];
-            let orderValue = 0;
+    // 4. SORT TOP ITEMS
+    const sortedItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
 
-            if (paymentMode === 'hosted' || Number(order.total_price || 0) === 0) {
-                // Calculation for Hosted/Free orders
-                items.forEach(item => {
-                    const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                    const prod = products.find(p => p.id === item.productId);
-                    let base = Number(inv?.override_price ?? prod?.base_price ?? 0);
-                    
-                    if (item.customizations) {
-                        base += (Number(item.customizations.logos?.length || 0) * 5);
-                        base += (Number(item.customizations.names?.length || 0) * 5);
-                        if (item.customizations.metallic) base += 5;
-                    }
-                    orderValue += base;
-                });
-            } else {
-                // Actual paid total for Retail
-                orderValue = Number(order.total_price || 0);
-            }
+    // 5. UPDATE STATE
+    setStats({
+      revenue: calculatedRevenue,
+      count: cleanOrders.length,
+      net: calculatedRevenue - (calculatedRevenue * 0.03) - calculatedCOGS, // Subtract 3% fees + COGS
+      topItem: sortedItems.length > 0 ? `${sortedItems[0][0]} (${sortedItems[0][1]})` : '-'
+    });
 
-            gross += orderValue;
+    // DEBUG: Check your console to see the real numbers
+    console.log(`STATS FIXED: Found ${orders.length} raw orders, cleaned down to ${cleanOrders.length} unique orders.`);
 
-            // 3. PER-ITEM MATH (COGS & Top Items)
-            items.forEach(item => {
-                const inv = inventory.find(i => i.product_id === item.productId && i.size === item.size);
-                cogs += (Number(inv?.cost_price || 8.50) + 1.50);
-                const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
-                itemCounts[key] = (itemCounts[key] || 0) + 1;
-            });
-        });
-
-        const fees = paymentMode === 'hosted' ? 0 : (gross * 0.029) + (activeOrders.length * 0.30);
-        const sorted = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]);
-
-        setStats({
-            revenue: gross,
-            count: activeOrders.length,
-            net: gross - fees - cogs,
-            topItem: sorted.length > 0 ? `${sorted[0][0]} (${sorted[0][1]})` : '-'
-        });
-  
-    } catch (e) { console.error("Stats Error:", e); }
-  }, [orders, inventory, mounted, paymentMode, products, selectedEventSlug]);
+  }, [orders, selectedEventSlug, paymentMode, mounted, products]);
+   
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
