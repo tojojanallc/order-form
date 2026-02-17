@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../../../supabase'; // Adjusted path to your client
+import { supabase } from '@/supabase';
 import Link from 'next/link';
 
 export default function InventoryTransferPage() {
