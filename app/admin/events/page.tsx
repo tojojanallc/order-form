@@ -525,53 +525,61 @@ export default function AdminPage() {
 
   // --- NEW: RETURN TO WAREHOUSE LOGIC ---
   const returnToWarehouse = async (item) => {
-      // Prevent returning if no stock (optional)
-      if (!item.count || item.count <= 0) {
-          if (!confirm(`This item has 0 stock. Do you just want to hide it from this event?`)) return;
-      } else {
-          if (!confirm(`Move ${item.count} items back to Main Warehouse?`)) return;
-      }
-      
-      setLoading(true);
-      try {
-          if (item.count > 0) {
-              // 1. Find Warehouse Row
-              const { data: warehouseItem } = await supabase
-                  .from('inventory')
-                  .select('*')
-                  .eq('event_slug', 'warehouse')
-                  .eq('product_id', item.product_id)
-                  .eq('size', item.size)
-                  .maybeSingle();
+    // 1. Validation
+    if (!item.count || item.count <= 0) {
+      if (!confirm(`This item has 0 stock. Remove it from the event kiosk?`)) return;
+    } else {
+      if (!confirm(`Move ${item.count} items from ${selectedEventSlug} back to MASTER WAREHOUSE?`)) return;
+    }
+    
+    setLoading(true);
+    try {
+        if (item.count > 0) {
+            // 2. Add to INVENTORY_MASTER (The separate master table)
+            // We use item.product_id to match the 'sku' in inventory_master
+            const { data: masterItem, error: fetchError } = await supabase
+                .from('inventory_master')
+                .select('*')
+                .eq('sku', item.product_id)
+                .eq('size', item.size)
+                .maybeSingle();
 
-              if (warehouseItem) {
-                  // 2. Add to Warehouse
-                  await supabase.from('inventory')
-                      .update({ count: warehouseItem.count + item.count })
-                      .eq('id', warehouseItem.id);
-              } else {
-                  // Create if missing in warehouse
-                  await supabase.from('inventory').insert([{
-                      event_slug: 'warehouse',
-                      product_id: item.product_id,
-                      size: item.size,
-                      count: item.count,
-                      active: true,
-                      cost_price: item.cost_price || 8.50
-                  }]);
-              }
-          }
+            if (fetchError) throw fetchError;
 
-          // 3. Zero out Event Stock & Hide
-          await supabase.from('inventory')
-              .update({ count: 0, active: false })
-              .eq('id', item.id);
+            if (masterItem) {
+                // Update existing Master stock
+                await supabase.from('inventory_master')
+                    .update({ quantity_on_hand: masterItem.quantity_on_hand + item.count })
+                    .eq('id', masterItem.id);
+            } else {
+                // If it somehow doesn't exist in master, we create it
+                await supabase.from('inventory_master').insert([{
+                    sku: item.product_id,
+                    item_name: getProductName(item.product_id),
+                    size: item.size,
+                    quantity_on_hand: item.count
+                }]);
+            }
+        }
 
-          fetchInventory();
-      } catch (e) {
-          alert("Error moving stock: " + e.message);
-      }
-      setLoading(false);
+        // 3. Delete or Zero out the EVENT row (in the inventory table)
+        // Since the event is over or the truck is unloaded, we remove the connection
+        const { error: deleteError } = await supabase
+            .from('inventory')
+            .delete()
+            .eq('id', item.id);
+
+        if (deleteError) throw deleteError;
+
+        // 4. Refresh local UI
+        fetchInventory();
+        alert("↩️ Stock successfully returned to Master Inventory.");
+
+    } catch (e) {
+        console.error(e);
+        alert("Transfer Error: " + e.message);
+    }
+    setLoading(false);
   };
 
   const deleteProduct = async (id) => { 
