@@ -80,7 +80,7 @@ export default function MasterAdmin() {
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
   
         {/* ROW 1: CORE DATA & LOGISTICS */}
-        <Link href="/admin/warehouse" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
+        <Link href="/admin/inventory/warehouse" className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-md transition-all border border-gray-100 flex flex-col justify-between h-full group">
           <div>
             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform text-2xl">🏬</div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">Warehouse Master</h2>
