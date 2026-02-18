@@ -17,9 +17,10 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
+          // Explicitly setting name, value, and spreading options
           request.cookies.set({
-            name,
-            value,
+            name: name,
+            value: value,
             ...options,
           })
           response = NextResponse.next({
@@ -28,15 +29,16 @@ export async function middleware(request: NextRequest) {
             },
           })
           response.cookies.set({
-            name,
-            value,
+            name: name,
+            value: value,
             ...options,
           })
         },
         remove(name: string, options: CookieOptions) {
+          // Explicitly setting name and spreading options
           request.cookies.set({
-            name,
-            value,
+            name: name,
+            value: '',
             ...options,
           })
           response = NextResponse.next({
@@ -45,8 +47,7 @@ export async function middleware(request: NextRequest) {
             },
           })
           response.cookies.delete({
-            name,
-            value,
+            name: name,
             ...options,
           })
         },
@@ -54,18 +55,15 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // This refreshes the session if it's expired
   const { data: { user } } = await supabase.auth.getUser();
 
   const isLoginPage = request.nextUrl.pathname === '/admin/login';
   const isAdminPath = request.nextUrl.pathname.startsWith('/admin');
 
-  // 1. If no user and trying to hit admin (except login page), kick them to login
   if (!user && isAdminPath && !isLoginPage) {
     return NextResponse.redirect(new URL('/admin/login', request.url));
   }
 
-  // 2. If user IS logged in and trying to go to login page, send to dashboard
   if (user && isLoginPage) {
     return NextResponse.redirect(new URL('/admin', request.url));
   }
