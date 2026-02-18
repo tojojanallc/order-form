@@ -127,7 +127,7 @@ export default function AdminDashboard() {
             </Link>
 
              {/* 3. SHOP ORDERS (NEW) */}
-             <Link href="/admin/shop/new" className="bg-white p-8 rounded-[40px] border border-purple-200 shadow-sm hover:shadow-xl hover:border-purple-300 transition-all group relative overflow-hidden">
+             <Link href="/admin/shop/" className="bg-white p-8 rounded-[40px] border border-purple-200 shadow-sm hover:shadow-xl hover:border-purple-300 transition-all group relative overflow-hidden">
                 <div className="absolute top-0 right-0 bg-purple-600 text-white text-[9px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-widest">QB Sync</div>
                 <div className="h-14 w-14 bg-purple-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🛍️</div>
                 <h3 className="text-2xl font-black text-slate-900 mb-2">Shop Orders</h3>
