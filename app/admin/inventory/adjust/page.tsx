@@ -1,136 +1,208 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../../../../supabase'; // Adjust dots based on your folder depth
+import { supabase } from '@/supabase'; 
+import Link from 'next/link';
 
-export default function AdjustStock() {
-  const [items, setItems] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
+// --- TYPES TO MATCH YOUR OTHER PAGES ---
+interface WarehouseItem {
+  id: string;
+  item_name: string;
+  sku: string;
+  size: string;
+  color: string;
+  category: string;
+  quantity_on_hand: number;
+}
+
+export default function AdjustStockPage() {
+  const [items, setItems] = useState<WarehouseItem[]>([]);
+  const [filteredItems, setFilteredItems] = useState<WarehouseItem[]>([]);
+  const [search, setSearch] = useState('');
   const [reason, setReason] = useState('Damaged / Spoilage');
-  const [customAdj, setCustomAdj] = useState({}); // Stores the number you type
+  const [adjustments, setAdjustments] = useState<Record<string, string>>({}); // Stores input as string to allow negative signs
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchInventory();
   }, []);
 
+  // Filter logic
+  useEffect(() => {
+    const term = search.toLowerCase();
+    const filtered = items.filter(i => 
+      i.item_name?.toLowerCase().includes(term) || 
+      i.sku?.toLowerCase().includes(term) ||
+      i.color?.toLowerCase().includes(term)
+    );
+    setFilteredItems(filtered);
+  }, [search, items]);
+
   const fetchInventory = async () => {
+    setLoading(true);
     const { data } = await supabase.from('inventory_master').select('*').order('item_name');
-    setItems(data || []);
+    if (data) setItems(data);
+    setLoading(false);
   };
 
-  const handleAdjust = async (sku, currentQty, adjustmentAmount) => {
-    const change = Number(adjustmentAmount);
-    if (change === 0) return;
+  const handleAdjustmentChange = (id: string, value: string) => {
+    setAdjustments(prev => ({ ...prev, [id]: value }));
+  };
 
-    const newTotal = currentQty + change;
-    if (newTotal < 0) return alert("Cannot have negative stock.");
+  const executeAdjustment = async (item: WarehouseItem) => {
+    const changeAmount = parseInt(adjustments[item.id]);
+    
+    if (!changeAmount || changeAmount === 0) return alert("Please enter a valid number (e.g. -5 or 10)");
+    
+    const newTotal = item.quantity_on_hand + changeAmount;
+    if (newTotal < 0) return alert("Error: Stock cannot go below zero.");
 
-    if (!confirm(`Confirm: Change stock by ${change} items?\nReason: ${reason}`)) return;
+    const confirmMsg = `⚠️ CONFIRM ADJUSTMENT\n\nItem: ${item.item_name} (${item.size})\nChange: ${changeAmount > 0 ? '+' : ''}${changeAmount}\nReason: ${reason}\n\nNew Stock Level will be: ${newTotal}`;
+    
+    if (!confirm(confirmMsg)) return;
 
     // 1. Update Database
     const { error } = await supabase
       .from('inventory_master')
       .update({ quantity_on_hand: newTotal })
-      .eq('sku', sku);
+      .eq('id', item.id);
 
     if (error) {
-      alert("Error updating stock: " + error.message);
+      alert("Failed to update: " + error.message);
     } else {
-      alert("Stock Updated");
-      setCustomAdj({ ...customAdj, [sku]: '' }); // Clear input
-      fetchInventory();
+      // Optional: Log this action to a 'logs' table if you want an audit trail later
+      alert("✅ Stock Updated Successfully");
+      setAdjustments(prev => {
+        const next = { ...prev };
+        delete next[item.id]; // Clear the input box
+        return next;
+      });
+      fetchInventory(); // Refresh data
     }
   };
 
-  // Search Filter
-  const filteredItems = items.filter(i => 
-    (i.item_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || 
-    (i.sku?.toLowerCase() || '').includes(searchTerm.toLowerCase())
-  );
-
   return (
-    <div className="p-8 max-w-6xl mx-auto min-h-screen bg-white text-gray-900">
-      <h1 className="text-3xl font-black mb-2 text-red-600">Stock Adjustments & Write-Offs</h1>
-      <p className="mb-8 text-gray-500 font-bold">Fix counting errors, remove damaged goods, or manually correct inventory.</p>
-
-      {/* Controls */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6 bg-gray-100 p-6 rounded-xl border-2 border-gray-200">
-        <div className="flex-1">
-          <label className="block text-xs font-black uppercase text-gray-500 mb-1">Search Item</label>
-          <input 
-            placeholder="Type name or SKU..." 
-            className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold"
-            onChange={e => setSearchTerm(e.target.value)}
-          />
+    <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
+      <div className="max-w-[1600px] mx-auto">
+        
+        {/* HEADER */}
+        <div className="flex justify-between items-end mb-10">
+          <div>
+            <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline">← Dashboard</Link>
+            <h1 className="text-4xl font-black tracking-tight text-slate-900">Stock Adjustments</h1>
+            <p className="text-gray-500 font-medium">Write-offs, donations, and manual inventory corrections.</p>
+          </div>
+          
+          <div className="bg-white px-6 py-3 rounded-2xl border border-gray-200 shadow-sm text-right">
+              <label className="block text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Reason Code</label>
+              <select 
+                className="bg-gray-50 border-none font-bold text-slate-900 outline-none cursor-pointer rounded-lg p-1"
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+              >
+                <option>Damaged / Spoilage</option>
+                <option>Lost / Theft</option>
+                <option>Inventory Correction (Count Error)</option>
+                <option>Donation / Promo</option>
+                <option>Return to Vendor</option>
+              </select>
+          </div>
         </div>
-        <div className="w-full md:w-64">
-          <label className="block text-xs font-black uppercase text-gray-500 mb-1">Reason for Change</label>
-          <select 
-            className="w-full p-3 border-2 border-gray-300 rounded-lg font-bold bg-white"
-            onChange={e => setReason(e.target.value)}
-          >
-            <option>Damaged / Spoilage</option>
-            <option>Lost / Theft</option>
-            <option>Inventory Correction (Count Error)</option>
-            <option>Donation / Promo</option>
-          </select>
+
+        {/* MAIN CARD */}
+        <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden min-h-[600px] flex flex-col">
+          
+          {/* TOOLBAR */}
+          <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+             <div className="flex items-center gap-4">
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Inventory Search</span>
+                <input 
+                    placeholder="Search Name, SKU, or Color..." 
+                    className="bg-white border border-gray-200 p-2 px-4 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 w-80 shadow-sm"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                />
+             </div>
+             <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                Showing {filteredItems.length} Items
+             </div>
+          </div>
+
+          {/* TABLE */}
+          <div className="overflow-y-auto flex-1">
+            <table className="w-full text-left">
+              <thead className="sticky top-0 bg-white shadow-sm z-10">
+                <tr className="text-[10px] font-black uppercase text-gray-400 tracking-widest border-b border-gray-100">
+                  <th className="p-6">Product Details</th>
+                  <th className="p-6 text-center">Current Stock</th>
+                  <th className="p-6 text-right w-48">Adjustment (+/-)</th>
+                  <th className="p-6 text-right w-32">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading ? (
+                    <tr><td colSpan={4} className="p-20 text-center font-bold text-gray-300 animate-pulse">LOADING INVENTORY...</td></tr>
+                ) : filteredItems.map(item => {
+                  const inputVal = parseInt(adjustments[item.id] || '0');
+                  const predictedStock = item.quantity_on_hand + inputVal;
+                  const isNegative = inputVal < 0;
+                  const hasChange = inputVal !== 0 && !isNaN(inputVal);
+
+                  return (
+                    <tr key={item.id} className={`group hover:bg-blue-50/30 transition-all ${hasChange ? 'bg-blue-50/20' : ''}`}>
+                      <td className="p-6">
+                        <div className="font-bold text-sm uppercase text-slate-800 leading-tight">{item.item_name}</div>
+                        <div className="flex gap-2 mt-1.5 items-center">
+                           <span className="text-[10px] font-mono font-bold text-blue-500 uppercase">{item.sku}</span>
+                           <span className="bg-slate-900 text-white px-2 py-0.5 rounded text-[9px] font-black uppercase">{item.size}</span>
+                           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{item.color}</span>
+                        </div>
+                      </td>
+                      
+                      <td className="p-6 text-center">
+                        <span className="text-xl font-black text-slate-900">{item.quantity_on_hand}</span>
+                      </td>
+
+                      <td className="p-6 text-right">
+                         <div className="flex items-center justify-end gap-2">
+                            {hasChange && (
+                                <span className={`text-[10px] font-black mr-2 ${predictedStock < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                    New: {predictedStock}
+                                </span>
+                            )}
+                            <input 
+                                type="number" 
+                                placeholder="0"
+                                className={`w-20 p-2 text-right font-black border-2 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all
+                                    ${isNegative ? 'border-red-100 text-red-600 bg-red-50' : 'border-gray-100 text-slate-900 bg-gray-50'}
+                                `}
+                                value={adjustments[item.id] || ''}
+                                onChange={e => handleAdjustmentChange(item.id, e.target.value)}
+                            />
+                         </div>
+                      </td>
+
+                      <td className="p-6 text-right">
+                        <button 
+                            onClick={() => executeAdjustment(item)}
+                            disabled={!hasChange}
+                            className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-sm
+                                ${hasChange 
+                                    ? isNegative 
+                                        ? 'bg-red-500 text-white hover:bg-red-600' 
+                                        : 'bg-green-500 text-white hover:bg-green-600'
+                                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'}
+                            `}
+                        >
+                            {isNegative ? 'Deduct' : 'Add'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-
-      {/* Inventory Table */}
-      <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-gray-100 border-b-2 border-gray-200">
-            <tr>
-              <th className="p-4 font-black uppercase text-xs">Item Name</th>
-              <th className="p-4 font-black uppercase text-xs">Size</th>
-              <th className="p-4 font-black uppercase text-xs text-center">Current Stock</th>
-              <th className="p-4 font-black uppercase text-xs text-right">Adjustment</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filteredItems.map(item => (
-              <tr key={item.sku} className="hover:bg-gray-50 transition-colors">
-                <td className="p-4 font-bold">{item.item_name}</td>
-                <td className="p-4 text-sm font-bold text-gray-500">{item.size}</td>
-                <td className="p-4 text-center text-xl font-mono font-black">{item.quantity_on_hand}</td>
-                <td className="p-4 flex justify-end gap-2 items-center">
-                  
-                  {/* Manual Input */}
-                  <input 
-                      type="number" 
-                      placeholder="+/-" 
-                      className="w-24 p-2 border-2 border-gray-300 rounded text-right font-mono font-bold"
-                      value={customAdj[item.sku] || ''}
-                      onChange={(e) => setCustomAdj({ ...customAdj, [item.sku]: e.target.value })}
-                  />
-                  
-                  {/* Apply Button */}
-                  <button 
-                      className="bg-black text-white font-black uppercase text-xs px-4 py-3 rounded hover:bg-gray-800 shadow-md"
-                      onClick={() => handleAdjust(item.sku, item.quantity_on_hand, Number(customAdj[item.sku] || 0))}
-                  >
-                      Apply
-                  </button>
-
-                  {/* Quick Delete Button */}
-                  <button 
-                      className="ml-2 text-red-500 hover:text-red-700 font-bold text-xs underline"
-                      onClick={() => {
-                          setCustomAdj({ ...customAdj, [item.sku]: '-1' });
-                          handleAdjust(item.sku, item.quantity_on_hand, -1);
-                      }}
-                  >
-                      Trash 1
-                  </button>
-
-                </td>
-              </tr>
-            ))}
-            {filteredItems.length === 0 && (
-                <tr><td colSpan={4} className="p-8 text-center text-gray-400 font-bold italic">No items found.</td></tr>
-            )}
-          </tbody>
-        </table>
       </div>
     </div>
   );
