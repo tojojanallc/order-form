@@ -100,8 +100,8 @@ export default function AdminDashboard() {
                     <p className="text-xs text-gray-500 font-medium">Manage 1,300+ SKUs.</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-8">
-                    <Link href="/admin/inventory" className="bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-colors">View Stock</Link>
-                    <Link href="/admin/inventory?action=add" className="bg-gray-50 text-slate-600 py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-colors">Add Item</Link>
+                    <Link href="/admin/inventory/warehouse" className="bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-colors">View Stock</Link>
+                    <Link href="/admin/inventory/warehouse/?action=add" className="bg-gray-50 text-slate-600 py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-colors">Add Item</Link>
                 </div>
             </div>
 
