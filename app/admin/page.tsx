@@ -4,6 +4,7 @@ import { supabase } from '@/supabase';
 import Link from 'next/link';
 
 export default function AdminDashboard() {
+  // 1. DATE STATE: Default to Today
   const todayStr = new Date().toISOString().split('T')[0];
   const [startDate, setStartDate] = useState(todayStr);
   const [endDate, setEndDate] = useState(todayStr);
@@ -24,22 +25,23 @@ export default function AdminDashboard() {
 
   async function fetchUnifiedSales() {
     try {
-      // 1. Fetch Direct Shop Sales
+      // A. Fetch Direct Shop Sales (uses total_amount)
       const { data: shopSales } = await supabase
         .from('shop_orders')
         .select('total_amount')
         .gte('created_at', `${startDate}T00:00:00.000Z`)
         .lte('created_at', `${endDate}T23:59:59.999Z`);
 
-      // 2. Fetch Event Sales (Now pointing to the 'orders' table)
+      // B. Fetch Event/Kiosk Orders (uses total_price)
       const { data: eventSales } = await supabase
         .from('orders') 
-        .select('total_amount')
+        .select('total_price') 
         .gte('created_at', `${startDate}T00:00:00.000Z`)
         .lte('created_at', `${endDate}T23:59:59.999Z`);
 
+      // Summing with Number() conversion to handle string-type database values
       const shopTotal = shopSales?.reduce((sum, order) => sum + (Number(order.total_amount) || 0), 0) || 0;
-      const eventTotal = eventSales?.reduce((sum, order) => sum + (Number(order.total_amount) || 0), 0) || 0;
+      const eventTotal = eventSales?.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0) || 0;
 
       setStats(prev => ({ ...prev, salesValue: shopTotal + eventTotal }));
     } catch (err) {
@@ -48,12 +50,18 @@ export default function AdminDashboard() {
   }
 
   async function fetchDashboardStats() {
+    // Warehouse Stats - Based on cost_price for true asset value
     const { data: inventory } = await supabase.from('inventory_master').select('quantity_on_hand, cost_price');
     const warehouseValue = inventory?.reduce((sum, i) => sum + ((i.quantity_on_hand || 0) * (i.cost_price || 0)), 0) || 0;
     const lowStock = inventory?.filter(i => (i.quantity_on_hand || 0) < 10).length || 0;
 
+    // Active Events
     const { count: eventCount } = await supabase.from('event_settings').select('*', { count: 'exact', head: true }).eq('status', 'active');
+
+    // Today's Volume Count (Shop Only)
     const { count: shopCount } = await supabase.from('shop_orders').select('*', { count: 'exact', head: true }).gte('created_at', `${todayStr}T00:00:00.000Z`);
+
+    // Open POs
     const { count: poCount } = await supabase.from('purchases').select('*', { count: 'exact', head: true }).eq('status', 'ordered');
 
     setStats(prev => ({
@@ -95,16 +103,16 @@ export default function AdminDashboard() {
                 />
               </div>
 
-              {/* UNIFIED SALES CARD (BLUE) */}
+              {/* REVENUE CARD (BLUE) */}
               <div className="bg-slate-900 px-6 py-4 rounded-3xl shadow-xl text-right min-w-[200px]">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Revenue</p>
-                  <p className="text-3xl font-black text-blue-400">${stats.salesValue.toLocaleString()}</p>
+                  <p className="text-3xl font-black text-blue-400">${stats.salesValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
               </div>
 
               {/* ASSET CARD (GREEN) */}
               <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right min-w-[200px]">
                   <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Asset Value</p>
-                  <p className="text-3xl font-black text-green-500">${stats.warehouseValue.toLocaleString()}</p>
+                  <p className="text-3xl font-black text-green-500">${stats.warehouseValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
               </div>
           </div>
         </div>
