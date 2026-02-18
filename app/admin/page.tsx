@@ -36,15 +36,18 @@ export default function AdminDashboard() {
       .select('*', { count: 'exact', head: true })
       .gte('created_at', today.toISOString());
 
-    // 4. Open POs (Placeholder if you have a purchases table)
-    // const { count: poCount } = await supabase.from('purchases').select('*', { count: 'exact', head: true }).eq('status', 'ordered');
+    // 4. Open POs
+    const { count: poCount } = await supabase
+      .from('purchases')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'ordered');
 
     setStats({
       warehouseValue,
       lowStock,
       activeEvents: eventCount || 0,
       todaysShopSales: shopCount || 0,
-      openPOs: 0 // poCount || 0
+      openPOs: poCount || 0
     });
   }
 
@@ -59,11 +62,9 @@ export default function AdminDashboard() {
             <p className="text-gray-500 font-medium">Lev Custom Merch Operations</p>
           </div>
           
-          <div className="flex gap-4">
-            <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right">
-                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Asset Value</p>
-                <p className="text-3xl font-black text-green-500">${stats.warehouseValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
-            </div>
+          <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right">
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Asset Value</p>
+              <p className="text-3xl font-black text-green-500">${stats.warehouseValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
           </div>
         </div>
 
@@ -106,34 +107,73 @@ export default function AdminDashboard() {
             </Link>
         </div>
 
-        {/* OPERATIONS GRID */}
+        {/* OPERATIONS GRID - NOW 2x2 */}
         <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-6 ml-2">Core Logistics</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
             
             {/* 1. WAREHOUSE MASTER */}
-            <Link href="/admin/inventory/warehouse/" className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all group">
-                <div className="h-14 w-14 bg-blue-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">📦</div>
-                <h3 className="text-2xl font-black text-slate-900 mb-2">Warehouse Master</h3>
-                <p className="text-sm text-gray-500 font-medium">Manage 1,300+ SKUs, pricing, and stock levels.</p>
-                <div className="mt-8 text-blue-600 font-black text-xs uppercase tracking-widest group-hover:translate-x-2 transition-transform">Manage Stock →</div>
-            </Link>
+            <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all group flex flex-col justify-between">
+                <div>
+                    <div className="h-14 w-14 bg-blue-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">📦</div>
+                    <h3 className="text-2xl font-black text-slate-900 mb-2">Warehouse</h3>
+                    <p className="text-xs text-gray-500 font-medium">Manage 1,300+ SKUs, pricing, and stock levels.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-8">
+                    <Link href="/admin/inventory" className="bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-colors">
+                        View Stock
+                    </Link>
+                    <Link href="/admin/inventory?action=add" className="bg-gray-50 text-slate-600 py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-colors">
+                        Add Item
+                    </Link>
+                </div>
+            </div>
 
             {/* 2. TRUCK LOAD-OUT */}
-            <Link href="/admin/inventory/transfer" className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-green-200 transition-all group">
-                <div className="h-14 w-14 bg-green-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🚛</div>
-                <h3 className="text-2xl font-black text-slate-900 mb-2">Load Truck</h3>
-                <p className="text-sm text-gray-500 font-medium">Bulk transfer stock to active swim meets.</p>
-                <div className="mt-8 text-green-600 font-black text-xs uppercase tracking-widest group-hover:translate-x-2 transition-transform">Start Loading →</div>
-            </Link>
+            <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-green-200 transition-all group flex flex-col justify-between">
+                <div>
+                    <div className="h-14 w-14 bg-green-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🚛</div>
+                    <h3 className="text-2xl font-black text-slate-900 mb-2">Load Truck</h3>
+                    <p className="text-xs text-gray-500 font-medium">Bulk transfer stock to active swim meets.</p>
+                </div>
+                <Link href="/admin/inventory/transfer" className="mt-8 block w-full bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-green-600 transition-colors">
+                    Start Loading →
+                </Link>
+            </div>
 
-             {/* 3. SHOP ORDERS (NEW) */}
-             <Link href="/admin/shop/" className="bg-white p-8 rounded-[40px] border border-purple-200 shadow-sm hover:shadow-xl hover:border-purple-300 transition-all group relative overflow-hidden">
+             {/* 3. SHOP ORDERS */}
+             <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-purple-300 transition-all group relative overflow-hidden flex flex-col justify-between">
                 <div className="absolute top-0 right-0 bg-purple-600 text-white text-[9px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-widest">QB Sync</div>
-                <div className="h-14 w-14 bg-purple-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🛍️</div>
-                <h3 className="text-2xl font-black text-slate-900 mb-2">Shop Orders</h3>
-                <p className="text-sm text-gray-500 font-medium">Process invoices and walk-in sales.</p>
-                <div className="mt-8 text-purple-600 font-black text-xs uppercase tracking-widest group-hover:translate-x-2 transition-transform">New Order →</div>
-            </Link>
+                <div>
+                    <div className="h-14 w-14 bg-purple-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🛍️</div>
+                    <h3 className="text-2xl font-black text-slate-900 mb-2">Shop Orders</h3>
+                    <p className="text-xs text-gray-500 font-medium">Process invoices and walk-in sales.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-8">
+                    <Link href="/admin/shop" className="bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-purple-600 transition-colors">
+                        New Order
+                    </Link>
+                    <Link href="/admin/shop/history" className="bg-gray-50 text-slate-600 py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-colors">
+                        History
+                    </Link>
+                </div>
+            </div>
+
+            {/* 4. PURCHASE ORDERS (NEW CARD) */}
+            <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-orange-300 transition-all group flex flex-col justify-between">
+                <div>
+                    <div className="h-14 w-14 bg-orange-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">📋</div>
+                    <h3 className="text-2xl font-black text-slate-900 mb-2">Purchasing</h3>
+                    <p className="text-xs text-gray-500 font-medium">Order stock from vendors like OneStop & SanMar.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-8">
+                    <Link href="/admin/purchasing/create" className="bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-orange-500 transition-colors">
+                        + Create PO
+                    </Link>
+                    <Link href="/admin/purchasing/manage" className="bg-gray-50 text-slate-600 py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-colors">
+                        Manage
+                    </Link>
+                </div>
+            </div>
         </div>
 
         {/* SECONDARY ACTIONS GRID */}
