@@ -4,8 +4,14 @@ import { supabase } from '@/supabase';
 import Link from 'next/link';
 
 export default function AdminDashboard() {
+  // 1. DATE STATE: Default to Today
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [startDate, setStartDate] = useState(todayStr);
+  const [endDate, setEndDate] = useState(todayStr);
+
   const [stats, setStats] = useState({
     warehouseValue: 0,
+    salesValue: 0,
     lowStock: 0,
     activeEvents: 0,
     todaysShopSales: 0,
@@ -14,47 +20,85 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchDashboardStats();
-  }, []);
+    fetchSalesValue();
+  }, [startDate, endDate]); // Recalculate whenever dates change
+
+  async function fetchSalesValue() {
+    const { data: sales } = await supabase
+      .from('shop_orders')
+      .select('total_amount')
+      .gte('created_at', `${startDate}T00:00:00`)
+      .lte('created_at', `${endDate}T23:59:59`);
+
+    const total = sales?.reduce((sum, order) => sum + (order.total_amount || 0), 0) || 0;
+    setStats(prev => ({ ...prev, salesValue: total }));
+  }
 
   async function fetchDashboardStats() {
-    // 1. Warehouse Stats - Based on cost_price for true asset value
+    // Warehouse Stats
     const { data: inventory } = await supabase.from('inventory_master').select('quantity_on_hand, cost_price');
     const warehouseValue = inventory?.reduce((sum, i) => sum + ((i.quantity_on_hand || 0) * (i.cost_price || 0)), 0) || 0;
     const lowStock = inventory?.filter(i => (i.quantity_on_hand || 0) < 10).length || 0;
 
-    // 2. Active Events
+    // Active Events
     const { count: eventCount } = await supabase.from('event_settings').select('*', { count: 'exact', head: true }).eq('status', 'active');
 
-    // 3. Shop Sales (Today)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const { count: shopCount } = await supabase.from('shop_orders').select('*', { count: 'exact', head: true }).gte('created_at', today.toISOString());
+    // Order Count (Volume)
+    const { count: shopCount } = await supabase.from('shop_orders').select('*', { count: 'exact', head: true }).gte('created_at', `${todayStr}T00:00:00`);
 
-    // 4. Open POs
+    // Open POs
     const { count: poCount } = await supabase.from('purchases').select('*', { count: 'exact', head: true }).eq('status', 'ordered');
 
-    setStats({
+    setStats(prev => ({
+      ...prev,
       warehouseValue,
       lowStock,
       activeEvents: eventCount || 0,
       todaysShopSales: shopCount || 0,
       openPOs: poCount || 0
-    });
+    }));
   }
 
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-[1600px] mx-auto">
         
-        {/* HEADER */}
-        <div className="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
+        {/* HEADER & DYNAMIC METRICS */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-10 gap-6">
           <div>
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Command Center</h1>
             <p className="text-gray-500 font-medium text-xs uppercase tracking-widest font-black">Lev Custom Merch Operations</p>
           </div>
-          <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right">
-              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Asset Value</p>
-              <p className="text-3xl font-black text-green-500">${stats.warehouseValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto">
+              {/* DATE PICKERS */}
+              <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-gray-100 gap-2">
+                <input 
+                    type="date" 
+                    className="text-[10px] font-black uppercase bg-gray-50 p-2 rounded-xl outline-none"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                />
+                <span className="text-gray-300 font-bold">→</span>
+                <input 
+                    type="date" 
+                    className="text-[10px] font-black uppercase bg-gray-50 p-2 rounded-xl outline-none"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+
+              {/* REVENUE CARD (BLUE) */}
+              <div className="bg-slate-900 px-6 py-4 rounded-3xl shadow-xl text-right min-w-[200px]">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Sales</p>
+                  <p className="text-3xl font-black text-blue-400">${stats.salesValue.toLocaleString()}</p>
+              </div>
+
+              {/* ASSET CARD (GREEN) */}
+              <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right min-w-[200px]">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Asset Value</p>
+                  <p className="text-3xl font-black text-green-500">${stats.warehouseValue.toLocaleString()}</p>
+              </div>
           </div>
         </div>
 
@@ -156,7 +200,6 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-400 font-medium mt-1">Return & Reconcile.</p>
             </Link>
 
-            {/* NEW: RETURN TO VENDOR CARD */}
             <Link href="/admin/inventory/return-to-vendor" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-red-300 transition-all group">
                 <div className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center mb-4 text-xl">📤</div>
                 <h4 className="font-black text-slate-900">Return to Vendor</h4>
