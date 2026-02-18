@@ -2,21 +2,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase'; 
 import Link from 'next/link';
-import * as XLSX from 'xlsx'; // You might need to run: npm install xlsx
-
-interface EventSummary {
-  id: string;
-  slug: string;
-  event_name: string;
-  start_date: string;
-  status: string;
-  total_revenue: number;
-  orders_count: number;
-}
+import * as XLSX from 'xlsx';
 
 export default function EventHistoryPage() {
-  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     fetchHistory();
@@ -24,25 +15,56 @@ export default function EventHistoryPage() {
 
   async function fetchHistory() {
     setLoading(true);
+    setErrorMsg('');
     
-    // 1. Get all events
-    const { data: eventData } = await supabase
+    // 1. Try fetching 'event_settings' (Most likely correct based on your past code)
+    let { data: eventData, error: eventError } = await supabase
       .from('event_settings')
       .select('*')
       .order('start_date', { ascending: false });
 
-    if (!eventData) return setLoading(false);
+    // 2. Fallback: If 'event_settings' fails, try 'events'
+    if (eventError) {
+        console.warn("event_settings failed, trying 'events' table...");
+        const retry = await supabase
+            .from('events')
+            .select('*')
+            .order('start_date', { ascending: false });
+        
+        if (retry.error) {
+            setErrorMsg(`Database Error: ${retry.error.message}`);
+            setLoading(false);
+            return;
+        }
+        eventData = retry.data;
+    }
 
-    // 2. Calculate Revenue (Fixing the table name to 'orders')
+    if (!eventData || eventData.length === 0) {
+        setEvents([]);
+        setLoading(false);
+        return;
+    }
+
+    // 3. SAFE Revenue Calculation
+    // We wrap this in a try/catch so it doesn't crash the page if 'orders' table is missing
     const summaries = await Promise.all(eventData.map(async (ev) => {
-        // ERROR WAS HERE: changed .from('order') to .from('orders')
-        const { data: orderData } = await supabase
-            .from('orders') 
-            .select('total_price')
-            .eq('event_slug', ev.slug);
+        let revenue = 0;
+        let count = 0;
 
-        const revenue = orderData?.reduce((sum, o) => sum + (o.total_price || 0), 0) || 0;
-        const count = orderData?.length || 0;
+        try {
+            // Try fetching from 'orders' table
+            const { data: orders, error: orderErr } = await supabase
+                .from('orders')
+                .select('total_price')
+                .eq('event_slug', ev.slug);
+            
+            if (!orderErr && orders) {
+                revenue = orders.reduce((sum, o) => sum + (o.total_price || 0), 0);
+                count = orders.length;
+            }
+        } catch (e) {
+            console.error("Revenue calc failed for", ev.slug);
+        }
 
         return {
             ...ev,
@@ -55,35 +77,33 @@ export default function EventHistoryPage() {
     setLoading(false);
   }
 
-  // --- NEW: DOWNLOAD EXCEL FUNCTION ---
+  // --- EXCEL DOWNLOAD (Safe Version) ---
   const downloadReport = async (eventSlug: string, eventName: string) => {
-    // 1. Fetch full order details for this event
+    // We try to grab the data. If 'orders' doesn't exist, this returns an error.
     const { data: fullOrders, error } = await supabase
-        .from('orders') // Targeted plural 'orders'
+        .from('orders') 
         .select(`
-            id, 
-            created_at, 
-            customer_name, 
-            customer_email, 
-            total_price,
-            order_items (
-                sku, 
-                item_name, 
-                size, 
-                color, 
-                quantity, 
-                price
-            )
+            id, created_at, customer_name, customer_email, total_price,
+            order_items ( sku, item_name, size, color, quantity, price )
         `)
         .eq('event_slug', eventSlug);
 
-    if (error) return alert("Error loading orders: " + error.message);
-    if (!fullOrders || fullOrders.length === 0) return alert("No orders found for this event.");
+    if (error) return alert(`Export Error: ${error.message}\n(Check if table 'orders' exists)`);
+    if (!fullOrders || fullOrders.length === 0) return alert("No orders found to export.");
 
-    // 2. Flatten Data for Excel (One row per item)
-    const excelRows = fullOrders.flatMap(order => 
-        order.order_items.map((item: any) => ({
-            "Order Date": new Date(order.created_at).toLocaleDateString(),
+    // Flatten Data
+    const excelRows = fullOrders.flatMap(order => {
+        // Handle cases where order_items might be null
+        const items = order.order_items || [];
+        if (items.length === 0) return [{
+            "Date": new Date(order.created_at).toLocaleDateString(),
+            "Customer": order.customer_name,
+            "Total": order.total_price,
+            "Note": "No Items"
+        }];
+
+        return items.map((item: any) => ({
+            "Date": new Date(order.created_at).toLocaleDateString(),
             "Customer": order.customer_name || 'Walk-in',
             "Email": order.customer_email,
             "SKU": item.sku,
@@ -92,16 +112,14 @@ export default function EventHistoryPage() {
             "Color": item.color,
             "Qty": item.quantity,
             "Unit Price": item.price,
-            "Line Total": item.quantity * item.price,
-            "Order Total": order.total_price // helpful for validation
-        }))
-    );
+            "Line Total": item.quantity * item.price
+        }));
+    });
 
-    // 3. Generate File
     const worksheet = XLSX.utils.json_to_sheet(excelRows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sales Data");
-    XLSX.writeFile(workbook, `${eventName}_Sales_Report.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Sales");
+    XLSX.writeFile(workbook, `${eventName}_Report.xlsx`);
   };
 
   return (
@@ -115,13 +133,25 @@ export default function EventHistoryPage() {
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Event Archive</h1>
             <p className="text-gray-500 font-medium">Performance history for Schroeder, Nicolet, and other meets.</p>
           </div>
+          {/* Refresh Button */}
+          <button onClick={fetchHistory} className="bg-white border border-gray-200 px-4 py-2 rounded-xl text-xs font-bold uppercase hover:bg-gray-100">
+            Refresh Data
+          </button>
         </div>
 
+        {/* ERROR MESSAGE DISPLAY */}
+        {errorMsg && (
+            <div className="bg-red-50 border border-red-200 p-4 rounded-xl mb-6 flex items-center gap-4">
+                <span className="text-2xl">⚠️</span>
+                <div>
+                    <h3 className="font-black text-red-600 uppercase text-xs">Connection Error</h3>
+                    <p className="text-sm text-red-800">{errorMsg}</p>
+                </div>
+            </div>
+        )}
+
         {/* LIST */}
-        <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden">
-             <div className="p-6 border-b border-gray-100 flex gap-4 bg-gray-50/50">
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Past & Current Events</span>
-             </div>
+        <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden min-h-[400px]">
              
              <table className="w-full text-left">
                 <thead className="text-[10px] font-black uppercase text-gray-400 tracking-widest border-b border-gray-100 bg-white">
@@ -131,12 +161,14 @@ export default function EventHistoryPage() {
                         <th className="p-6 text-center">Status</th>
                         <th className="p-6 text-right">Orders</th>
                         <th className="p-6 text-right">Total Revenue</th>
-                        <th className="p-6 text-right">Actions</th>
+                        <th className="p-6 text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                     {loading ? (
                         <tr><td colSpan={6} className="p-20 text-center font-bold text-gray-300 animate-pulse">LOADING HISTORY...</td></tr>
+                    ) : events.length === 0 ? (
+                        <tr><td colSpan={6} className="p-20 text-center font-bold text-gray-400 italic">No events found in database.</td></tr>
                     ) : events.map(ev => (
                         <tr key={ev.id} className="group hover:bg-blue-50/30 transition-all">
                             <td className="p-6">
@@ -144,20 +176,20 @@ export default function EventHistoryPage() {
                                 <div className="text-[10px] font-mono text-blue-500 font-bold uppercase">{ev.slug}</div>
                             </td>
                             <td className="p-6">
-                                <span className="font-bold text-gray-500 text-sm">{new Date(ev.start_date).toLocaleDateString()}</span>
+                                <span className="font-bold text-gray-500 text-sm">{ev.start_date ? new Date(ev.start_date).toLocaleDateString() : 'N/A'}</span>
                             </td>
                             <td className="p-6 text-center">
                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest
                                     ${ev.status === 'active' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}
                                 `}>
-                                    {ev.status}
+                                    {ev.status || 'Archived'}
                                 </span>
                             </td>
                             <td className="p-6 text-right font-bold text-slate-700">
-                                {ev.orders_count}
+                                {ev.orders_count || 0}
                             </td>
                             <td className="p-6 text-right">
-                                <span className="font-black text-xl text-green-600">${ev.total_revenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                                <span className="font-black text-xl text-green-600">${(ev.total_revenue || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                             </td>
                             <td className="p-6 text-right">
                                 <div className="flex gap-2 justify-end">
@@ -165,14 +197,8 @@ export default function EventHistoryPage() {
                                         onClick={() => downloadReport(ev.slug, ev.event_name)}
                                         className="px-4 py-2 rounded-xl bg-white border border-green-200 text-green-600 font-black text-[10px] uppercase tracking-widest hover:bg-green-50 transition-colors shadow-sm"
                                     >
-                                        Export Excel
+                                        Excel
                                     </button>
-                                    <Link 
-                                        href={`/admin/events/${ev.slug}`}
-                                        className="px-4 py-2 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-colors shadow-sm"
-                                    >
-                                        View
-                                    </Link>
                                 </div>
                             </td>
                         </tr>
