@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase'; 
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 
 export default function ReconcilePage() {
   const [eventSlug, setEventSlug] = useState('');
@@ -30,23 +31,14 @@ export default function ReconcilePage() {
     setSelectedEvent(currentEvent);
 
     const { data: invData } = await supabase.from('inventory').select('*, inventory_master(item_name, cost_price)').eq('event_slug', slug);
-    
-    // 1. Fetch sales and include payment_method to identify CC vs Cash
-    const { data: salesData } = await supabase
-        .from('orders')
-        .select('cart_data, total_price, payment_method')
-        .eq('event_slug', slug)
-        .neq('status', 'refunded');
+    const { data: salesData } = await supabase.from('orders').select('cart_data, total_price, payment_method').eq('event_slug', slug).neq('status', 'refunded');
 
     let totalValue = 0, totalUnits = 0, totalCogs = 0, totalCCFees = 0;
     const tally: any = {};
 
     salesData?.forEach(order => {
-        // --- CALC SQUARE FEES ---
-        // Only apply if not cash and not a $0 hosted order
         const orderTotal = Number(order.total_price) || 0;
         if (order.payment_method !== 'cash' && orderTotal > 0) {
-            // Formula: 2.6% of total + 15 cents per transaction
             totalCCFees += (orderTotal * 0.026) + 0.15;
         }
 
@@ -78,9 +70,8 @@ export default function ReconcilePage() {
   const netProfit = totals.value - totals.cogs - totals.fees - totalExpenses;
 
   const handleArchive = async () => {
-    if (!confirm("Finalize Audit? Fees and Expenses will be saved to history.")) return;
+    if (!confirm("Confirm Final Audit? This returns stock to Glendale and archives the meet.")) return;
     setLoading(true);
-
     try {
         await supabase.from('event_settings').update({
             status: 'archived',
@@ -88,7 +79,7 @@ export default function ReconcilePage() {
             truck_rental_cost: expenses.truck,
             travel_gas_cost: expenses.travel,
             misc_expenses: expenses.misc,
-            total_processing_fees: totals.fees, // SAVING THE CALCULATED FEES
+            total_processing_fees: totals.fees,
             total_invoiced_value: totals.value
         }).eq('slug', eventSlug);
 
@@ -101,21 +92,31 @@ export default function ReconcilePage() {
             }
         }
         await supabase.from('inventory').delete().eq('event_slug', eventSlug);
-        alert("Success! Meet archived with full financial audit.");
         window.location.href = "/admin/events/history";
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8 font-sans">
+    <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
+      
+      {/* RESTORED HEADER WITH DASHBOARD LINK */}
+      <div className="max-w-7xl mx-auto mb-10">
+        <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase hover:underline mb-2 inline-block tracking-widest">
+            ← Dashboard
+        </Link>
+        <h1 className="text-5xl font-black tracking-tighter uppercase leading-none">Unload & Audit</h1>
+        <p className="text-gray-400 font-bold mt-2 uppercase text-[10px] tracking-widest">Finalize meet financials and return inventory to Glendale</p>
+      </div>
+
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
         
+        {/* LEFT: AUDIT PANEL */}
         <div className="lg:col-span-4 space-y-6">
           <div className="bg-white p-6 rounded-3xl border shadow-sm">
             <label className="text-[10px] font-black uppercase text-gray-400 block mb-4 tracking-widest">1. Choose Meet</label>
             <select className="w-full p-4 bg-gray-50 border rounded-2xl font-bold" value={eventSlug} onChange={e => loadStockAndSales(e.target.value)}>
-              <option value="">-- Select Meet --</option>
+              <option value="">-- Active Trucks --</option>
               {events.map(e => <option key={e.slug} value={e.slug}>{e.event_name}</option>)}
             </select>
           </div>
@@ -132,7 +133,7 @@ export default function ReconcilePage() {
                 </div>
               </div>
 
-              <div className={`p-8 rounded-[40px] shadow-2xl text-white ${netProfit > 0 ? 'bg-emerald-950' : 'bg-slate-900'}`}>
+              <div className={`p-8 rounded-[40px] shadow-2xl text-white transition-all duration-500 ${netProfit > 0 ? 'bg-emerald-950' : 'bg-slate-900'}`}>
                 <p className="text-[10px] font-black uppercase text-white/40 text-center mb-1">True Net Profit</p>
                 <p className="text-5xl font-black text-center text-emerald-400 mb-8">${netProfit.toFixed(2)}</p>
                 
@@ -143,22 +144,50 @@ export default function ReconcilePage() {
                     <div className="flex justify-between text-[10px] font-bold uppercase text-white/30"><span>Manual Expenses</span><span>-${totalExpenses.toFixed(2)}</span></div>
                 </div>
 
-                <button onClick={handleArchive} disabled={loading} className="w-full mt-8 bg-red-600 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-red-700 shadow-xl">
-                    Finalize & Save Audit
+                <button onClick={handleArchive} disabled={loading} className="w-full mt-8 bg-red-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-red-700 shadow-xl transition-all">
+                    {loading ? 'Finalizing...' : 'Unload Truck & Close Meet'}
                 </button>
               </div>
             </>
           )}
         </div>
 
-        {/* RIGHT: STOCK VIEW (Remains same as previous version) */}
+        {/* RIGHT: STOCK VIEW */}
         <div className="lg:col-span-8">
-            <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
-                <div className="p-6 bg-slate-900 text-white font-black uppercase text-[10px] tracking-widest flex justify-between">
+            <div className="bg-white rounded-3xl border shadow-sm overflow-hidden min-h-[500px]">
+                <div className="p-6 bg-slate-900 text-white font-black uppercase text-[10px] tracking-widest flex justify-between items-center">
                     <span>Stock Verification</span>
-                    <span className="text-blue-400">{totals.units} Units Pressed</span>
+                    {eventSlug && <span className="text-blue-400">{totals.units} Units Pressed</span>}
                 </div>
-                {/* ... existing table code ... */}
+                <table className="w-full text-left">
+                    <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase border-b tracking-widest">
+                        <tr>
+                            <th className="p-8">Garment</th>
+                            <th className="p-8 text-center">Initial</th>
+                            <th className="p-8 text-center">Sold</th>
+                            <th className="p-8 text-right pr-12">Remaining</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                        {fetching ? (
+                            <tr><td colSpan={4} className="p-32 text-center animate-pulse font-black text-gray-300 uppercase tracking-widest">Calculating Audit Data...</td></tr>
+                        ) : eventStock.length > 0 ? (
+                            eventStock.map(s => (
+                                <tr key={s.id} className="hover:bg-blue-50/10 transition-colors">
+                                    <td className="p-8">
+                                        <div className="font-black text-sm uppercase text-slate-800 leading-none mb-1">{s.inventory_master?.item_name}</div>
+                                        <div className="text-[10px] font-bold text-blue-500 uppercase tracking-tight">{s.size}</div>
+                                    </td>
+                                    <td className="p-8 text-center font-bold text-gray-300">{s.initial}</td>
+                                    <td className="p-8 text-center font-black text-red-500">-{s.sold}</td>
+                                    <td className="p-8 text-right font-black text-slate-900 text-xl pr-12">{s.count}</td>
+                                </tr>
+                            ))
+                        ) : (
+                            <tr><td colSpan={4} className="p-32 text-center font-black text-gray-300 uppercase italic">Select a meet to view stock counts</td></tr>
+                        )}
+                    </tbody>
+                </table>
             </div>
         </div>
       </div>
