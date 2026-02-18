@@ -17,7 +17,7 @@ export default function AdminDashboard() {
   }, []);
 
   async function fetchDashboardStats() {
-    // 1. Warehouse Stats
+    // 1. Warehouse Stats - Based on cost_price for true asset value
     const { data: inventory } = await supabase.from('inventory_master').select('quantity_on_hand, cost_price');
     const warehouseValue = inventory?.reduce((sum, i) => sum + ((i.quantity_on_hand || 0) * (i.cost_price || 0)), 0) || 0;
     const lowStock = inventory?.filter(i => (i.quantity_on_hand || 0) < 10).length || 0;
@@ -50,7 +50,7 @@ export default function AdminDashboard() {
         <div className="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
           <div>
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Command Center</h1>
-            <p className="text-gray-500 font-medium">Lev Custom Merch Operations</p>
+            <p className="text-gray-500 font-medium text-xs uppercase tracking-widest font-black">Lev Custom Merch Operations</p>
           </div>
           <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right">
               <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Asset Value</p>
@@ -58,7 +58,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* METRICS ROW */}
+        {/* TOP METRICS ROW */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
             <Link href="/admin/inventory" className="bg-white p-6 rounded-[32px] border border-red-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
                 <div>
@@ -90,7 +90,7 @@ export default function AdminDashboard() {
             </Link>
         </div>
 
-        {/* MAIN CARDS */}
+        {/* CORE LOGISTICS CARDS */}
         <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-6 ml-2">Core Logistics</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
             <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all group flex flex-col justify-between">
@@ -140,9 +140,9 @@ export default function AdminDashboard() {
             </div>
         </div>
 
-        {/* UTILITIES GRID (Added Event History Here) */}
+        {/* INVENTORY UTILITIES GRID */}
         <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-6 ml-2">Inventory Utilities</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
 
             <Link href="/admin/purchasing/receive" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-blue-300 transition-all group">
                 <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center mb-4 text-xl">📥</div>
@@ -151,13 +151,20 @@ export default function AdminDashboard() {
             </Link>
 
             <Link href="/admin/inventory/reconcile" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-blue-300 transition-all group">
-                <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center mb-4 text-xl">↩️</div>
+                <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center mb-4 text-xl">🚛</div>
                 <h4 className="font-black text-slate-900">Unload Truck</h4>
                 <p className="text-xs text-gray-400 font-medium mt-1">Return & Reconcile.</p>
             </Link>
 
+            {/* NEW: RETURN TO VENDOR CARD */}
+            <Link href="/admin/inventory/return-to-vendor" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-red-300 transition-all group">
+                <div className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center mb-4 text-xl">📤</div>
+                <h4 className="font-black text-slate-900">Return to Vendor</h4>
+                <p className="text-xs text-gray-400 font-medium mt-1">Send Stock Back.</p>
+            </Link>
+
             <Link href="/admin/inventory/adjust" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-blue-300 transition-all group">
-                <div className="w-10 h-10 bg-red-50 rounded-full flex items-center justify-center mb-4 text-xl">🔧</div>
+                <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center mb-4 text-xl">🔧</div>
                 <h4 className="font-black text-slate-900">Adjustments</h4>
                 <p className="text-xs text-gray-400 font-medium mt-1">Write-offs.</p>
             </Link>
@@ -168,7 +175,6 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-400 font-medium mt-1">Manage Kiosks.</p>
             </Link>
 
-            {/* NEW CARD: EVENT HISTORY */}
             <Link href="/admin/events/history" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-cyan-300 transition-all group">
                 <div className="w-10 h-10 bg-cyan-50 rounded-full flex items-center justify-center mb-4 text-xl">📁</div>
                 <h4 className="font-black text-slate-900">Event History</h4>
