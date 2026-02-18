@@ -3,112 +3,126 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase'; 
 import Link from 'next/link';
 
-export default function EventHistory() {
-  const [history, setHistory] = useState([]);
+interface EventSummary {
+  id: string;
+  slug: string;
+  event_name: string;
+  start_date: string;
+  status: string;
+  total_revenue: number;
+  orders_count: number;
+}
+
+export default function EventHistoryPage() {
+  const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchHistory();
   }, []);
 
-  const fetchHistory = async () => {
+  async function fetchHistory() {
     setLoading(true);
-    console.log("Fetching event history...");
-
-    // 1. Get the list of events
-    // NOTE: I commented out .order() temporarily to debug.
-    // If your table does not have a column named 'created_at', this line breaks the query.
-    // Uncomment it ONLY if you verify the column exists in Supabase.
-    const { data, error } = await supabase
+    
+    // 1. Get all events (Active and Archived)
+    const { data: eventData } = await supabase
       .from('event_settings')
-      .select('*');
-      // .order('created_at', { ascending: false }); 
-
-    if (error) {
-      console.error("SUPABASE ERROR:", error);
-      alert("Error loading events: " + error.message);
-    } else {
-      console.log("SUPABASE DATA:", data);
-    }
-
-    setHistory(data || []);
-    setLoading(false);
-  };
-
-  const downloadCSV = async (slug) => {
-    // 2. Querying the 'order' table
-    // WARNING: 'order' is a reserved SQL keyword. If this fails, consider renaming your table to 'orders'.
-    const { data, error } = await supabase
-      .from('order')  
       .select('*')
-      .eq('event_slug', slug); 
+      .order('start_date', { ascending: false });
 
-    if (error) {
-      console.error("CSV Download Error:", error);
-      alert("Error loading orders: " + error.message);
-      return;
-    }
+    if (!eventData) return setLoading(false);
 
-    if (!data || data.length === 0) {
-      alert("No orders found for this event.");
-      return;
-    }
+    // 2. Calculate Revenue for each event
+    // Note: In a larger app, you'd want to do this with a SQL View or RPC function for speed.
+    // For now, we will fetch orders for each event.
+    const summaries = await Promise.all(eventData.map(async (ev) => {
+        const { data: orders } = await supabase
+            .from('orders') // Assuming you have a kiosk orders table
+            .select('total_price')
+            .eq('event_slug', ev.slug);
 
-    // 3. Generate CSV
-    const headers = Object.keys(data[0]).join(",");
-    const rows = data.map(row => 
-      Object.values(row).map(val => {
-        // Handle objects/arrays (like items list) so they don't break the CSV
-        if (typeof val === 'object' && val !== null) return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
-        return `"${val}"`;
-      }).join(",")
-    );
-    const csvContent = [headers, ...rows].join("\n");
+        const revenue = orders?.reduce((sum, o) => sum + (o.total_price || 0), 0) || 0;
+        const count = orders?.length || 0;
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${slug}_orders.csv`;
-    a.click();
-  };
+        return {
+            ...ev,
+            total_revenue: revenue,
+            orders_count: count
+        };
+    }));
+
+    setEvents(summaries);
+    setLoading(false);
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 uppercase">Event History</h1>
-          <Link href="/admin" className="text-sm font-bold text-blue-600 hover:underline">← DASHBOARD</Link>
+    <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
+      <div className="max-w-[1600px] mx-auto">
+        
+        {/* HEADER */}
+        <div className="flex justify-between items-end mb-10">
+          <div>
+            <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline">← Dashboard</Link>
+            <h1 className="text-4xl font-black tracking-tight text-slate-900">Event Archive</h1>
+            <p className="text-gray-500 font-medium">Performance history for Schroeder, Nicolet, and other meets.</p>
+          </div>
         </div>
 
-        {loading ? (
-          <p className="text-center py-20 font-bold text-gray-400">LOADING HISTORY...</p>
-        ) : history.length === 0 ? (
-          <div className="bg-white border-2 border-dashed border-gray-300 p-20 rounded-2xl text-center">
-            <p className="text-gray-500 font-bold">NO ARCHIVED EVENTS FOUND</p>
-            <p className="text-xs text-gray-400 mt-2">(Check console for debugging details)</p>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {history.map(event => (
-              <div key={event.id || event.slug} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center hover:shadow-md transition-all">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">{event.event_name}</h2>
-                  <p className="text-xs font-mono text-gray-400">{event.slug}</p>
-                  <span className={`inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${event.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    {event.status || 'Archived'}
-                  </span>
-                </div>
-                <button 
-                  onClick={() => downloadCSV(event.slug)}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                  DOWNLOAD DATA
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* LIST */}
+        <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden">
+             <div className="p-6 border-b border-gray-100 flex gap-4 bg-gray-50/50">
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Past & Current Events</span>
+             </div>
+             
+             <table className="w-full text-left">
+                <thead className="text-[10px] font-black uppercase text-gray-400 tracking-widest border-b border-gray-100 bg-white">
+                    <tr>
+                        <th className="p-6">Event Name</th>
+                        <th className="p-6">Date</th>
+                        <th className="p-6 text-center">Status</th>
+                        <th className="p-6 text-right">Orders</th>
+                        <th className="p-6 text-right">Total Revenue</th>
+                        <th className="p-6 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                    {loading ? (
+                        <tr><td colSpan={6} className="p-20 text-center font-bold text-gray-300 animate-pulse">LOADING HISTORY...</td></tr>
+                    ) : events.map(ev => (
+                        <tr key={ev.id} className="group hover:bg-blue-50/30 transition-all">
+                            <td className="p-6">
+                                <div className="font-bold text-lg text-slate-900">{ev.event_name}</div>
+                                <div className="text-[10px] font-mono text-blue-500 font-bold uppercase">{ev.slug}</div>
+                            </td>
+                            <td className="p-6">
+                                <span className="font-bold text-gray-500 text-sm">{new Date(ev.start_date).toLocaleDateString()}</span>
+                            </td>
+                            <td className="p-6 text-center">
+                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest
+                                    ${ev.status === 'active' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}
+                                `}>
+                                    {ev.status}
+                                </span>
+                            </td>
+                            <td className="p-6 text-right font-bold text-slate-700">
+                                {ev.orders_count}
+                            </td>
+                            <td className="p-6 text-right">
+                                <span className="font-black text-xl text-green-600">${ev.total_revenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                            </td>
+                            <td className="p-6 text-right">
+                                <Link 
+                                    href={`/admin/events/${ev.slug}`}
+                                    className="px-4 py-2 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-colors shadow-sm"
+                                >
+                                    View Details
+                                </Link>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+             </table>
+        </div>
       </div>
     </div>
   );
