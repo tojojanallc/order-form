@@ -2,8 +2,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase'; 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function AdminDashboard() {
+  const router = useRouter();
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
   // 1. DATE STATE: Default to Today
   const todayStr = new Date().toISOString().split('T')[0];
   const [startDate, setStartDate] = useState(todayStr);
@@ -19,27 +23,42 @@ export default function AdminDashboard() {
   });
 
   useEffect(() => {
+    checkUser();
     fetchDashboardStats();
     fetchUnifiedSales(); 
   }, [startDate, endDate]);
 
+  async function checkUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+        setUserEmail(user.email ?? 'Admin User');
+    } else {
+        // Fallback safety if middleware is bypassed
+        router.push('/admin/login');
+    }
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.push('/admin/login');
+  }
+
   async function fetchUnifiedSales() {
     try {
-      // A. Fetch Direct Shop Sales (uses total_amount)
+      // A. Fetch Direct Shop Sales (from shop_orders table)
       const { data: shopSales } = await supabase
         .from('shop_orders')
         .select('total_amount')
         .gte('created_at', `${startDate}T00:00:00.000Z`)
         .lte('created_at', `${endDate}T23:59:59.999Z`);
 
-      // B. Fetch Event/Kiosk Orders (uses total_price)
+      // B. Fetch Event Sales (from orders table using total_price)
       const { data: eventSales } = await supabase
         .from('orders') 
         .select('total_price') 
         .gte('created_at', `${startDate}T00:00:00.000Z`)
         .lte('created_at', `${endDate}T23:59:59.999Z`);
 
-      // Summing with Number() conversion to handle string-type database values
       const shopTotal = shopSales?.reduce((sum, order) => sum + (Number(order.total_amount) || 0), 0) || 0;
       const eventTotal = eventSales?.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0) || 0;
 
@@ -78,41 +97,58 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-[1600px] mx-auto">
         
-        {/* HEADER & DYNAMIC METRICS */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end mb-10 gap-6">
-          <div>
-            <h1 className="text-4xl font-black tracking-tight text-slate-900">Command Center</h1>
-            <p className="text-gray-500 font-medium text-xs uppercase tracking-widest font-black">Lev Custom Merch Operations</p>
+        {/* TOP BAR: AUTH & BRANDING */}
+        <div className="flex justify-between items-center mb-8">
+            <div>
+                <p className="text-[10px] font-black uppercase text-blue-600 tracking-[0.2em]">Lev Custom Merch</p>
+                <h1 className="text-4xl font-black tracking-tight text-slate-900">Command Center</h1>
+            </div>
+            
+            <div className="flex items-center gap-4 bg-white p-2 px-5 rounded-3xl shadow-sm border border-gray-100">
+                <div className="text-right">
+                    <p className="text-[9px] font-black uppercase text-gray-400 leading-none">Security Active</p>
+                    <p className="text-xs font-bold text-slate-900">{userEmail}</p>
+                </div>
+                <div className="h-8 w-[1px] bg-gray-100 mx-1"></div>
+                <button 
+                    onClick={handleSignOut}
+                    className="text-[10px] font-black uppercase text-red-500 hover:text-white hover:bg-red-500 px-3 py-1.5 rounded-xl transition-all"
+                >
+                    Sign Out
+                </button>
+            </div>
+        </div>
+
+        {/* LOGISTICS CONTROLS: DATES & VALUE */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-6">
+          <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-gray-100 gap-2">
+            <div className="px-3 text-[10px] font-black uppercase text-gray-400">Filter Dates</div>
+            <input 
+                type="date" 
+                className="text-[10px] font-black uppercase bg-gray-50 p-2 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+            />
+            <span className="text-gray-300 font-bold">→</span>
+            <input 
+                type="date" 
+                className="text-[10px] font-black uppercase bg-gray-50 p-2 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+            />
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto">
-              {/* DATE PICKERS */}
-              <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-gray-100 gap-2">
-                <input 
-                    type="date" 
-                    className="text-[10px] font-black uppercase bg-gray-50 p-2 rounded-xl outline-none"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                />
-                <span className="text-gray-300 font-bold">→</span>
-                <input 
-                    type="date" 
-                    className="text-[10px] font-black uppercase bg-gray-50 p-2 rounded-xl outline-none"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                />
-              </div>
-
-              {/* REVENUE CARD (BLUE) */}
-              <div className="bg-slate-900 px-6 py-4 rounded-3xl shadow-xl text-right min-w-[200px]">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Selected Revenue</p>
+              {/* REVENUE CARD */}
+              <div className="bg-slate-900 px-8 py-5 rounded-[32px] shadow-xl text-right min-w-[240px]">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Combined Revenue</p>
                   <p className="text-3xl font-black text-blue-400">${stats.salesValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
               </div>
 
-              {/* ASSET CARD (GREEN) */}
-              <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right min-w-[200px]">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Asset Value</p>
-                  <p className="text-3xl font-black text-green-500">${stats.warehouseValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
+              {/* ASSET CARD */}
+              <div className="bg-white px-8 py-5 rounded-[32px] shadow-sm border border-gray-100 text-right min-w-[240px]">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Inventory Asset Value</p>
+                  <p className="text-3xl font-black text-green-500">${stats.warehouseValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
               </div>
           </div>
         </div>
