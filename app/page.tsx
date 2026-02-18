@@ -525,6 +525,8 @@ const calculateGrandTotal = () => cart.reduce((sum, item) => sum + item.finalPri
         const handleSuccess = () => {
             if (window.pollingRef) clearInterval(window.pollingRef);
             if (channel) supabase.removeChannel(channel);
+            // ADD THIS LINE HERE:
+    decrementInventory(cart);
             // SEND SMS & EMAIL HERE
             sendConfirmationSMS(customerName, customerPhone);
             sendReceiptEmail(orderId, customerName, customerEmail, cart, calculateGrandTotal());
@@ -532,6 +534,33 @@ const calculateGrandTotal = () => cart.reduce((sum, item) => sum + item.finalPri
             // Don't clear cart here; resetApp handles it
             setIsTerminalProcessing(false);
         };
+
+        // ADD THIS BELOW YOUR OTHER HELPERS (like sendConfirmationSMS)
+const decrementInventory = async (cartItems) => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
+
+    for (const item of cartItems) {
+        // 1. Get current count
+        const { data: current } = await supabase
+            .from('inventory')
+            .select('count')
+            .eq('event_slug', currentSlug)
+            .eq('product_id', item.productId)
+            .eq('size', item.size)
+            .single();
+
+        if (current && current.count > 0) {
+            // 2. Subtract 1 (or the quantity purchased)
+            await supabase
+                .from('inventory')
+                .update({ count: current.count - (item.quantity || 1) })
+                .eq('event_slug', currentSlug)
+                .eq('product_id', item.productId)
+                .eq('size', item.size);
+        }
+    }
+};
 
         const channel = supabase.channel(`terminal_watch_${orderId}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders', filter: `id=eq.${orderId}` }, 
@@ -600,6 +629,9 @@ const calculateGrandTotal = () => cart.reduce((sum, item) => sum + item.finalPri
 
         // --- SUCCESS ACTIONS ---
         console.log("✅ Cash Order Created:", data.orderId);
+
+        // ADD THIS LINE HERE:
+await decrementInventory(cart);
         
         setLastOrderId(data.orderId); // <--- FIXES "Order #---"
         
