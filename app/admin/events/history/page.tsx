@@ -15,17 +15,15 @@ export default function EventHistoryPage() {
   async function fetchHistory() {
     setLoading(true);
     
-    // CHANGED: Sorting by 'created_at' because 'start_date' does not exist
+    // CHANGED: Removed date sorting. Now sorting alphabetically by Name.
     const { data, error } = await supabase
       .from('event_settings')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('event_name', { ascending: true });
 
     if (error) {
       console.error("Error loading events:", error);
       setErrorMsg(error.message);
-      setLoading(false);
-      return;
     }
 
     if (data) {
@@ -37,6 +35,8 @@ export default function EventHistoryPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-[1600px] mx-auto">
+        
+        {/* HEADER */}
         <div className="flex justify-between items-end mb-10">
           <div>
             <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline">← Dashboard</Link>
@@ -48,6 +48,7 @@ export default function EventHistoryPage() {
           </button>
         </div>
 
+        {/* ERROR MESSAGE */}
         {errorMsg && (
              <div className="bg-red-50 border border-red-200 p-6 rounded-3xl mb-8">
                 <h3 className="text-red-600 font-black uppercase text-sm mb-1">Database Error</h3>
@@ -55,6 +56,7 @@ export default function EventHistoryPage() {
              </div>
         )}
 
+        {/* LIST */}
         <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden">
              <table className="w-full text-left">
                 <thead className="text-[10px] font-black uppercase text-gray-400 tracking-widest border-b border-gray-100 bg-white">
@@ -72,19 +74,20 @@ export default function EventHistoryPage() {
                         <tr><td colSpan={4} className="p-20 text-center font-bold text-gray-400 italic">No events found in 'event_settings'.</td></tr>
                     ) : events.map(ev => (
                         <tr key={ev.id} className="group hover:bg-blue-50/30 transition-all">
+                            
+                            {/* 1. Name */}
                             <td className="p-6">
                                 <div className="font-black text-lg text-slate-900">{ev.event_name}</div>
-                                <div className="text-xs font-bold text-gray-400 mt-1">
-                                    Created: {new Date(ev.created_at).toLocaleDateString()}
-                                </div>
                             </td>
                             
+                            {/* 2. Slug */}
                             <td className="p-6">
                                 <span className="font-mono text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded border border-blue-100">
                                     {ev.slug}
                                 </span>
                             </td>
 
+                            {/* 3. Status */}
                             <td className="p-6 text-center">
                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest
                                     ${ev.status === 'active' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}
@@ -93,6 +96,7 @@ export default function EventHistoryPage() {
                                 </span>
                             </td>
 
+                            {/* 4. Action Button */}
                             <td className="p-6 text-right">
                                 <Link 
                                     href={`/admin/events/history/${ev.slug}`}
