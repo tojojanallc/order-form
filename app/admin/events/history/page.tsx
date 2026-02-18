@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase'; 
 import Link from 'next/link';
+import * as XLSX from 'xlsx'; // You might need to run: npm install xlsx
 
 interface EventSummary {
   id: string;
@@ -24,7 +25,7 @@ export default function EventHistoryPage() {
   async function fetchHistory() {
     setLoading(true);
     
-    // 1. Get all events (Active and Archived)
+    // 1. Get all events
     const { data: eventData } = await supabase
       .from('event_settings')
       .select('*')
@@ -32,17 +33,16 @@ export default function EventHistoryPage() {
 
     if (!eventData) return setLoading(false);
 
-    // 2. Calculate Revenue for each event
-    // Note: In a larger app, you'd want to do this with a SQL View or RPC function for speed.
-    // For now, we will fetch orders for each event.
+    // 2. Calculate Revenue (Fixing the table name to 'orders')
     const summaries = await Promise.all(eventData.map(async (ev) => {
-        const { data: orders } = await supabase
-            .from('orders') // Assuming you have a kiosk orders table
+        // ERROR WAS HERE: changed .from('order') to .from('orders')
+        const { data: orderData } = await supabase
+            .from('orders') 
             .select('total_price')
             .eq('event_slug', ev.slug);
 
-        const revenue = orders?.reduce((sum, o) => sum + (o.total_price || 0), 0) || 0;
-        const count = orders?.length || 0;
+        const revenue = orderData?.reduce((sum, o) => sum + (o.total_price || 0), 0) || 0;
+        const count = orderData?.length || 0;
 
         return {
             ...ev,
@@ -54,6 +54,55 @@ export default function EventHistoryPage() {
     setEvents(summaries);
     setLoading(false);
   }
+
+  // --- NEW: DOWNLOAD EXCEL FUNCTION ---
+  const downloadReport = async (eventSlug: string, eventName: string) => {
+    // 1. Fetch full order details for this event
+    const { data: fullOrders, error } = await supabase
+        .from('orders') // Targeted plural 'orders'
+        .select(`
+            id, 
+            created_at, 
+            customer_name, 
+            customer_email, 
+            total_price,
+            order_items (
+                sku, 
+                item_name, 
+                size, 
+                color, 
+                quantity, 
+                price
+            )
+        `)
+        .eq('event_slug', eventSlug);
+
+    if (error) return alert("Error loading orders: " + error.message);
+    if (!fullOrders || fullOrders.length === 0) return alert("No orders found for this event.");
+
+    // 2. Flatten Data for Excel (One row per item)
+    const excelRows = fullOrders.flatMap(order => 
+        order.order_items.map((item: any) => ({
+            "Order Date": new Date(order.created_at).toLocaleDateString(),
+            "Customer": order.customer_name || 'Walk-in',
+            "Email": order.customer_email,
+            "SKU": item.sku,
+            "Product": item.item_name,
+            "Size": item.size,
+            "Color": item.color,
+            "Qty": item.quantity,
+            "Unit Price": item.price,
+            "Line Total": item.quantity * item.price,
+            "Order Total": order.total_price // helpful for validation
+        }))
+    );
+
+    // 3. Generate File
+    const worksheet = XLSX.utils.json_to_sheet(excelRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Sales Data");
+    XLSX.writeFile(workbook, `${eventName}_Sales_Report.xlsx`);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
@@ -82,7 +131,7 @@ export default function EventHistoryPage() {
                         <th className="p-6 text-center">Status</th>
                         <th className="p-6 text-right">Orders</th>
                         <th className="p-6 text-right">Total Revenue</th>
-                        <th className="p-6 text-right">Action</th>
+                        <th className="p-6 text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -111,12 +160,20 @@ export default function EventHistoryPage() {
                                 <span className="font-black text-xl text-green-600">${ev.total_revenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                             </td>
                             <td className="p-6 text-right">
-                                <Link 
-                                    href={`/admin/events/${ev.slug}`}
-                                    className="px-4 py-2 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-colors shadow-sm"
-                                >
-                                    View Details
-                                </Link>
+                                <div className="flex gap-2 justify-end">
+                                    <button 
+                                        onClick={() => downloadReport(ev.slug, ev.event_name)}
+                                        className="px-4 py-2 rounded-xl bg-white border border-green-200 text-green-600 font-black text-[10px] uppercase tracking-widest hover:bg-green-50 transition-colors shadow-sm"
+                                    >
+                                        Export Excel
+                                    </button>
+                                    <Link 
+                                        href={`/admin/events/${ev.slug}`}
+                                        className="px-4 py-2 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-colors shadow-sm"
+                                    >
+                                        View
+                                    </Link>
+                                </div>
                             </td>
                         </tr>
                     ))}
