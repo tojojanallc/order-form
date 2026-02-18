@@ -424,20 +424,12 @@ const calculateGrandTotal = () => cart.reduce((sum, item) => sum + item.finalPri
   //
   const handleAddToCart = () => {
     if (!selectedProduct) return;
-    if (mainOptions.length > 0 && !selectedMainDesign) { alert("Please select a Design (Step 2)."); return; }
+    if (mainOptions.length > 0 && !selectedMainDesign) { alert("Please select a Design."); return; }
     
+    // Check positions
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
-    if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Accent Logo and Name."); return; }
-
-if (backNameList && !backListConfirmed) {
-        alert("Please confirm you found your athlete's name on the list.");
-        return;
-    }
-    if (metallicHighlight && !metallicName.trim()) {
-        alert("Please enter the athlete name for the Metallic Highlight.");
-        return;
-    }
+    if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Accent and Name."); return; }
 
     const newItem = {
       id: Date.now(),
@@ -445,20 +437,26 @@ if (backNameList && !backListConfirmed) {
       productName: selectedProduct.name,
       size: size,
       needsShipping: isOutOfStock, 
+      // THE FIX: We add these flat fields so the History Page can see them easily
+      custom_name: names.length > 0 ? names[0].text : (metallicHighlight ? metallicName : null),
+      has_heat_sheet: backNameList,
+      
       customizations: { 
           mainDesign: selectedMainDesign, 
-          logos, 
-          names, 
+          logos, // Full array for the production team
+          names, // Full array for the production team
           backList: backNameList, 
           metallic: metallicHighlight,
-          metallicName: metallicHighlight ? metallicName : '' // <--- SAVED
+          metallicName: metallicHighlight ? metallicName : ''
       },
       finalPrice: calculateTotal()
     };
+    
     setCart([...cart, newItem]);
+    // Reset form states
     setLogos([]); setNames([]); setBackNameList(false); setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName('');
     if (mainOptions.length > 1) setSelectedMainDesign(''); 
-  };
+};
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
   const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
