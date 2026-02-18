@@ -7,7 +7,6 @@ export default function EventReportPage({ params }: { params: { slug: string } }
   const [event, setEvent] = useState<any>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
   const [revenue, setRevenue] = useState(0);
 
   useEffect(() => {
@@ -18,105 +17,103 @@ export default function EventReportPage({ params }: { params: { slug: string } }
 
   async function fetchDetails(slug: string) {
     setLoading(true);
-
     try {
-      // 1. Get Event Info
-      const { data: eventData } = await supabase
-        .from('event_settings')
-        .select('id, slug, event_name, status') 
-        .eq('slug', slug)
-        .maybeSingle();
+      const { data: eventData } = await supabase.from('event_settings').select('event_name, slug, status').eq('slug', slug).maybeSingle();
       if (eventData) setEvent(eventData);
 
-      // 2. Get Orders (Directly)
-      const { data: mainOrders, error: orderErr } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('event_slug', slug);
-
-      if (orderErr) throw orderErr;
-
-      // 3. Get ALL Items in a separate bucket to prevent join errors
+      const { data: mainOrders } = await supabase.from('orders').select('*').eq('event_slug', slug);
       const { data: allItems } = await supabase.from('order_items').select('*');
 
-      // 4. Safe Merge
       if (mainOrders) {
         const joined = mainOrders.map(order => ({
             ...order,
-            // Match items manually; if allItems is null, default to empty array
             order_items: (allItems || []).filter(item => item.order_id === order.id)
         }));
-
         setOrders(joined);
-        const total = joined.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0);
-        setRevenue(total);
+        setRevenue(joined.reduce((sum, o) => sum + (Number(o.total_price) || 0), 0));
       }
-
     } catch (err) {
-      console.error("Fetch failed:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   }
 
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center font-black text-gray-300 animate-pulse uppercase tracking-widest">Loading Ledger...</div>;
+  // HELPER FUNCTION: Extracts customizations regardless of column name
+  const renderCustomizations = (item: any) => {
+    const details = [];
+    
+    // 1. Check direct columns
+    if (item.custom_name) details.push({ label: 'Name', value: item.custom_name });
+    if (item.heat_sheet) details.push({ label: 'Heat Sheet', value: 'Yes' });
+    
+    // 2. Check JSON columns (often named 'customizations' or 'metadata' in these setups)
+    const extraData = item.customizations || item.metadata || item.options || {};
+    if (typeof extraData === 'object') {
+        Object.entries(extraData).forEach(([key, val]) => {
+            if (val) details.push({ label: key, value: String(val) });
+        });
+    }
+
+    if (details.length === 0) return null;
+
+    return (
+      <div className="flex flex-wrap gap-2 mt-2">
+        {details.map((d, i) => (
+          <span key={i} className="bg-purple-50 text-purple-700 border border-purple-100 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-tight">
+            {d.label}: {d.value}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center font-black text-gray-300 animate-pulse uppercase">Searching...</div>;
   if (!event) return <div className="min-h-screen bg-gray-50 flex items-center justify-center font-black text-gray-400">EVENT NOT FOUND</div>;
 
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-[1600px] mx-auto">
-        
         <div className="mb-10 flex justify-between items-end">
           <div>
-            <Link href="/admin/events/history" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block">← Back to Archive</Link>
+            <Link href="/admin/events/history" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline">← Back to Archive</Link>
             <h1 className="text-5xl font-black tracking-tight">{event.event_name}</h1>
             <p className="text-gray-400 font-bold text-[10px] tracking-widest uppercase mt-1">Slug: {event.slug}</p>
           </div>
-          <div className="bg-slate-950 text-white p-6 rounded-[32px] shadow-xl text-right min-w-[250px]">
+          <div className="bg-slate-950 text-white p-6 px-10 rounded-[32px] shadow-2xl text-right">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total Revenue</p>
                 <p className="text-4xl font-black text-green-400">${revenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</p>
           </div>
         </div>
 
-        {/* SALES TABLE */}
-        <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-[48px] border border-gray-200 shadow-sm overflow-hidden min-h-[500px]">
              <table className="w-full text-left">
                 <thead className="bg-white text-[10px] font-black uppercase text-gray-400 tracking-widest border-b border-gray-100">
                     <tr>
-                        <th className="p-8">Customer</th>
-                        <th className="p-8">Purchased Items</th>
+                        <th className="p-8">Customer / Time</th>
+                        <th className="p-8">Purchased Items & Swag Details</th>
                         <th className="p-8 text-right">Total</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                    {orders.length === 0 ? (
-                        <tr><td colSpan={3} className="p-32 text-center font-black text-gray-300 uppercase italic">No Matches Found</td></tr>
-                    ) : orders.map(order => (
-                        <tr key={order.id} className="hover:bg-blue-50/20 transition-colors">
+                    {orders.map(order => (
+                        <tr key={order.id} className="hover:bg-blue-50/10 transition-colors">
                             <td className="p-8">
-                                <div className="font-black text-sm text-slate-900 uppercase">{order.customer_name || 'Walk-in'}</div>
-                                <div className="text-[10px] font-bold text-gray-400">{new Date(order.created_at).toLocaleTimeString()}</div>
+                                <div className="font-black text-sm text-slate-900 uppercase leading-none mb-1">{order.customer_name || 'Walk-in'}</div>
+                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-tight">
+                                    {new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </div>
                             </td>
                             <td className="p-8">
-                                <div className="flex flex-col gap-2">
+                                <div className="flex flex-col gap-3">
                                     {order.order_items?.map((item: any, i: number) => (
-                                        <div key={i} className="text-xs font-bold text-slate-700">
-                                            <span className="text-blue-500 mr-2">{item.quantity}×</span> 
-                                            {item.item_name}
-                                            
-                                            {/* CUSTOMIZATIONS: Check common column names */}
-                                            <div className="flex gap-2 mt-1">
-                                                {item.custom_name && (
-                                                    <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[9px] uppercase font-black">
-                                                        Name: {item.custom_name}
-                                                    </span>
-                                                )}
-                                                {(item.heat_sheet === true || item.heat_sheets === true) && (
-                                                    <span className="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded text-[9px] uppercase font-black">
-                                                        + Heat Sheet
-                                                    </span>
-                                                )}
+                                        <div key={i} className="border-l-4 border-blue-500 pl-4 py-1">
+                                            <div className="text-xs font-black text-slate-800">
+                                                <span className="text-blue-500 mr-2">{item.quantity}×</span> 
+                                                {item.item_name} <span className="text-[10px] text-gray-400 uppercase ml-2">({item.size})</span>
                                             </div>
+                                            {/* RENDER THE CUSTOMIZATIONS HERE */}
+                                            {renderCustomizations(item)}
                                         </div>
                                     ))}
                                 </div>
