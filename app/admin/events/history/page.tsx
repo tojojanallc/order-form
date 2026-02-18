@@ -16,12 +16,11 @@ export default function EventHistoryPage() {
     setLoading(true);
     setErrorMsg('');
     
-    // 1. EXPLICIT SELECT: Only ask for columns we know exist
-    // We avoid '*' to prevent "column does not exist" errors
+    // CHANGED: Removed 'location' from this select query to fix the error
     const { data, error } = await supabase
       .from('event_settings')
-      .select('id, slug, event_name, status, location') 
-      .order('event_name', { ascending: true }); // Sort Alphabetically
+      .select('id, slug, event_name, status') 
+      .order('event_name', { ascending: true });
 
     if (error) {
       console.error("Error loading events:", error);
@@ -42,7 +41,7 @@ export default function EventHistoryPage() {
             <p className="text-gray-500 font-medium">Performance history & configurations.</p>
           </div>
           <button onClick={fetchHistory} className="bg-white border border-gray-200 px-4 py-2 rounded-xl text-xs font-bold uppercase hover:bg-gray-100">
-            Force Refresh
+            Refresh List
           </button>
         </div>
 
@@ -72,7 +71,6 @@ export default function EventHistoryPage() {
                         <tr key={ev.id} className="group hover:bg-blue-50/30 transition-all">
                             <td className="p-6">
                                 <div className="font-black text-lg text-slate-900">{ev.event_name}</div>
-                                {ev.location && <div className="text-xs font-bold text-gray-400 mt-1">{ev.location}</div>}
                             </td>
                             <td className="p-6">
                                 <span className="font-mono text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded border border-blue-100">
