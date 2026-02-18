@@ -111,7 +111,7 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
             
             {/* 1. WAREHOUSE MASTER */}
-            <Link href="/admin/inventory" className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all group">
+            <Link href="/admin/inventory/warehouse/" className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-blue-200 transition-all group">
                 <div className="h-14 w-14 bg-blue-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">📦</div>
                 <h3 className="text-2xl font-black text-slate-900 mb-2">Warehouse Master</h3>
                 <p className="text-sm text-gray-500 font-medium">Manage 1,300+ SKUs, pricing, and stock levels.</p>
