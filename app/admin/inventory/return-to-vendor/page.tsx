@@ -48,6 +48,7 @@ export default function ReturnToVendor() {
         sku: item.sku, 
         name: item.item_name, 
         size: item.size, 
+        color: item.color, // ADDED COLOR HERE
         cost: item.cost_price || 0, 
         qty: amount 
       }]);
@@ -69,7 +70,6 @@ export default function ReturnToVendor() {
     try {
       const totalValue = cart.reduce((sum, i) => sum + (i.qty * i.cost), 0);
 
-      // 1. Create Return Header
       const { data: ret, error: retErr } = await supabase
         .from('vendor_returns')
         .insert({
@@ -83,9 +83,7 @@ export default function ReturnToVendor() {
 
       if (retErr) throw retErr;
 
-      // 2. Process Items & Update Inventory
       for (const item of cart) {
-        // Log the return item
         await supabase.from('vendor_return_items').insert({
           return_id: ret.id,
           sku: item.sku,
@@ -93,7 +91,6 @@ export default function ReturnToVendor() {
           unit_cost: item.cost
         });
 
-        // Deduct from Inventory Master (Using a simple update for reliability)
         const currentItem = inventory.find(i => i.sku === item.sku);
         await supabase
           .from('inventory_master')
@@ -101,7 +98,7 @@ export default function ReturnToVendor() {
           .eq('sku', item.sku);
       }
 
-      alert("✅ Return Processed & Inventory Updated!");
+      alert("✅ Return Processed!");
       router.push('/admin');
     } catch (error: any) {
       alert("Error: " + error.message);
@@ -123,24 +120,21 @@ export default function ReturnToVendor() {
         <div className="flex justify-between items-end mb-10">
           <div>
             <h1 className="text-4xl font-black tracking-tight">Return to Vendor</h1>
-            <p className="text-gray-500 font-medium">Lev Custom Merch • Post-Event Adjustments</p>
+            <p className="text-gray-500 font-medium font-black uppercase text-[10px] tracking-widest">Inventory Adjustments</p>
           </div>
           <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right">
-              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Items being returned</p>
-              <p className="text-3xl font-black text-red-500">{cart.reduce((a, c) => a + c.qty, 0)}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Credit Value</p>
+              <p className="text-3xl font-black text-red-500">-${cart.reduce((sum, i) => sum + (i.qty * i.cost), 0).toFixed(2)}</p>
           </div>
         </div>
 
         <div className="grid grid-cols-12 gap-8">
-            {/* LEFT: FORM */}
             <div className="col-span-8 space-y-6">
-                
-                {/* 1. VENDOR & REF */}
                 <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
                     <h2 className="text-xs font-black uppercase text-gray-400 tracking-widest mb-4">Transaction Details</h2>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Target Vendor</label>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1 ml-1">Vendor</label>
                             <select 
                                 className="w-full p-3 bg-gray-50 rounded-xl font-bold border-none focus:ring-2 focus:ring-blue-500 appearance-none"
                                 value={vendorId}
@@ -151,7 +145,7 @@ export default function ReturnToVendor() {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Reference / RMA #</label>
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1 ml-1">Reference / RMA #</label>
                             <input 
                                 className="w-full p-3 bg-gray-50 rounded-xl font-bold border-none focus:ring-2 focus:ring-blue-500"
                                 placeholder="e.g. Nicolet-Return-01"
@@ -162,12 +156,11 @@ export default function ReturnToVendor() {
                     </div>
                 </div>
 
-                {/* 2. ITEM SELECTOR */}
                 <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm min-h-[400px]">
                     <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-xs font-black uppercase text-gray-400 tracking-widest">Select Stock to Return</h2>
+                        <h2 className="text-xs font-black uppercase text-gray-400 tracking-widest">Select Product</h2>
                         <input 
-                            placeholder="Search SKU..." 
+                            placeholder="Filter by Name or SKU..." 
                             className="bg-gray-50 p-2 px-4 rounded-lg text-xs font-bold outline-none border border-transparent focus:border-blue-100"
                             value={search}
                             onChange={e => setSearch(e.target.value)}
@@ -176,7 +169,7 @@ export default function ReturnToVendor() {
 
                     <div className="grid grid-cols-12 gap-4 items-end mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                         <div className="col-span-8">
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Inventory Item</label>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Inventory Item</label>
                             <select 
                                 className="w-full p-3 bg-white rounded-xl font-bold border border-slate-200 focus:ring-2 focus:ring-blue-500 h-[48px]"
                                 value={selectedSku}
@@ -184,12 +177,14 @@ export default function ReturnToVendor() {
                             >
                                 <option value="">-- Choose Item --</option>
                                 {filteredInventory.map(i => (
-                                    <option key={i.sku} value={i.sku}>{i.item_name} ({i.size}) — Stock: {i.quantity_on_hand}</option>
+                                    <option key={i.sku} value={i.sku}>
+                                        {i.item_name} | {i.color} | {i.size} (In Stock: {i.quantity_on_hand})
+                                    </option>
                                 ))}
                             </select>
                         </div>
                         <div className="col-span-2">
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Qty</label>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Qty</label>
                             <input type="number" className="w-full p-3 bg-white rounded-xl font-bold border border-slate-200 h-[48px]" value={qty} onChange={e => setQty(e.target.value)} />
                         </div>
                         <div className="col-span-2">
@@ -199,7 +194,7 @@ export default function ReturnToVendor() {
 
                     <textarea 
                         className="w-full p-4 bg-gray-50 rounded-2xl font-medium border-none focus:ring-2 focus:ring-blue-500 text-sm" 
-                        placeholder="Internal notes (e.g. 'Overstock from Nicolet meet', 'Defective fabric')"
+                        placeholder="Internal notes (Reason for return...)"
                         rows={3}
                         value={notes}
                         onChange={e => setNotes(e.target.value)}
@@ -207,21 +202,22 @@ export default function ReturnToVendor() {
                 </div>
             </div>
 
-            {/* RIGHT: RETURN SUMMARY */}
             <div className="col-span-4">
                 <div className="bg-slate-900 text-white p-6 rounded-[30px] shadow-2xl sticky top-6">
                     <h2 className="text-xs font-black uppercase text-gray-500 tracking-widest mb-6">Return Summary</h2>
                     
                     {cart.length === 0 ? (
-                        <div className="text-center py-20 text-gray-700 italic text-sm">No items selected for return.</div>
+                        <div className="text-center py-20 text-gray-700 italic text-sm font-bold">No items selected.</div>
                     ) : (
                         <div className="space-y-3 mb-8 max-h-[400px] overflow-y-auto pr-2">
                             {cart.map((line, idx) => (
-                                <div key={idx} className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 relative">
+                                <div key={idx} className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700 relative group">
                                     <button onClick={() => removeFromReturn(line.sku)} className="absolute top-2 right-3 text-slate-600 hover:text-red-400 transition-colors">×</button>
                                     <div className="font-bold text-[11px] uppercase truncate pr-4">{line.name}</div>
                                     <div className="flex justify-between items-center mt-2">
-                                        <div className="text-[9px] text-gray-500 font-bold uppercase">{line.size} • Returning {line.qty}</div>
+                                        <div className="text-[9px] text-gray-500 font-bold uppercase">
+                                            {line.color} • {line.size} • x{line.qty}
+                                        </div>
                                         <div className="text-xs font-black text-red-400">-${(line.qty * line.cost).toFixed(2)}</div>
                                     </div>
                                 </div>
@@ -230,12 +226,6 @@ export default function ReturnToVendor() {
                     )}
 
                     <div className="border-t border-slate-800 pt-6 mt-4">
-                        <div className="flex justify-between items-center mb-6 px-2">
-                            <span className="text-[10px] font-black uppercase text-gray-500">Total Credit Value</span>
-                            <span className="text-2xl font-black text-red-500">
-                                -${cart.reduce((sum, i) => sum + (i.qty * i.cost), 0).toFixed(2)}
-                            </span>
-                        </div>
                         <button 
                             onClick={processReturn}
                             disabled={loading || cart.length === 0}
