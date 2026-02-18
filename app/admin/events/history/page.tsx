@@ -2,61 +2,35 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase'; 
 import Link from 'next/link';
-import * as XLSX from 'xlsx';
 
 export default function EventHistoryPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSimpleHistory();
+    fetchHistory();
   }, []);
 
-  async function fetchSimpleHistory() {
+  async function fetchHistory() {
     setLoading(true);
-    
-    // 1. Simple Fetch - No sorting by date yet to be safe
+    // Fetch event settings to see names, dates, and active add-ons
     const { data, error } = await supabase
       .from('event_settings')
-      .select('*');
+      .select('*')
+      .order('start_date', { ascending: false });
 
-    if (error) {
-      console.error("Error fetching events:", error);
-      alert("Error loading events: " + error.message);
-    }
-
-    if (data) {
-      setEvents(data);
-    }
+    if (data) setEvents(data);
     setLoading(false);
   }
-
-  // Excel Download (We keep this separate so it doesn't break the page load)
-  const downloadReport = async (eventSlug: string, eventName: string) => {
-    // Try to get orders for this event
-    const { data: orders, error } = await supabase
-        .from('orders') // Assumes table is named 'orders'
-        .select('*')
-        .eq('event_slug', eventSlug);
-
-    if (error) return alert("Could not download: " + error.message);
-    if (!orders || orders.length === 0) return alert("No orders found for " + eventName);
-
-    const worksheet = XLSX.utils.json_to_sheet(orders);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Sales");
-    XLSX.writeFile(workbook, `${eventName}_Sales.xlsx`);
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-[1600px] mx-auto">
-        
         <div className="flex justify-between items-end mb-10">
           <div>
             <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline">← Dashboard</Link>
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Event Archive</h1>
-            <p className="text-gray-500 font-medium">History for Schroeder, Nicolet, and other meets.</p>
+            <p className="text-gray-500 font-medium">Performance history & configurations.</p>
           </div>
         </div>
 
@@ -64,25 +38,43 @@ export default function EventHistoryPage() {
              <table className="w-full text-left">
                 <thead className="text-[10px] font-black uppercase text-gray-400 tracking-widest border-b border-gray-100 bg-white">
                     <tr>
-                        <th className="p-6">Event Name</th>
-                        <th className="p-6">Slug</th>
+                        <th className="p-6">Event Details</th>
+                        <th className="p-6">Configuration & Add-ons</th>
                         <th className="p-6 text-center">Status</th>
-                        <th className="p-6 text-right">Actions</th>
+                        <th className="p-6 text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                     {loading ? (
-                        <tr><td colSpan={4} className="p-20 text-center font-bold text-gray-300 animate-pulse">LOADING...</td></tr>
-                    ) : events.length === 0 ? (
-                        <tr><td colSpan={4} className="p-20 text-center font-bold text-gray-400 italic">No events found in 'event_settings'.</td></tr>
+                        <tr><td colSpan={4} className="p-20 text-center font-bold text-gray-300 animate-pulse">LOADING ARCHIVE...</td></tr>
                     ) : events.map(ev => (
                         <tr key={ev.id} className="group hover:bg-blue-50/30 transition-all">
                             <td className="p-6">
-                                <div className="font-bold text-lg text-slate-900">{ev.event_name}</div>
+                                <div className="font-black text-lg text-slate-900">{ev.event_name}</div>
+                                <div className="text-[10px] font-mono text-blue-500 font-bold uppercase mb-1">{ev.slug}</div>
+                                <div className="text-xs font-bold text-gray-400">{ev.location || 'No Location Set'}</div>
                             </td>
+                            
                             <td className="p-6">
-                                <span className="font-mono text-xs font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded">{ev.slug}</span>
+                                <div className="flex flex-wrap gap-2">
+                                    {/* Displaying Add-ons/Features if they exist as boolean flags */}
+                                    {ev.enable_custom_names && (
+                                        <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-wide">
+                                            Custom Names
+                                        </span>
+                                    )}
+                                    {ev.enable_heat_sheets && (
+                                        <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-[10px] font-black uppercase tracking-wide">
+                                            Heat Sheets
+                                        </span>
+                                    )}
+                                    {/* If no specific flags, show generic config badge */}
+                                    <span className="bg-gray-100 text-gray-500 px-2 py-1 rounded text-[10px] font-black uppercase tracking-wide">
+                                        Standard Config
+                                    </span>
+                                </div>
                             </td>
+
                             <td className="p-6 text-center">
                                 <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest
                                     ${ev.status === 'active' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}
@@ -90,15 +82,14 @@ export default function EventHistoryPage() {
                                     {ev.status}
                                 </span>
                             </td>
+
                             <td className="p-6 text-right">
-                                <div className="flex gap-2 justify-end">
-                                    <button 
-                                        onClick={() => downloadReport(ev.slug, ev.event_name)}
-                                        className="px-4 py-2 rounded-xl bg-white border border-green-200 text-green-600 font-black text-[10px] uppercase tracking-widest hover:bg-green-50 transition-colors shadow-sm"
-                                    >
-                                        Download Excel
-                                    </button>
-                                </div>
+                                <Link 
+                                    href={`/admin/events/history/${ev.slug}`}
+                                    className="px-6 py-3 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-colors shadow-lg"
+                                >
+                                    View Dashboard
+                                </Link>
                             </td>
                         </tr>
                     ))}
