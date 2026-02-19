@@ -8,7 +8,6 @@ export default function LoadTruck() {
   const [activeEvents, setActiveEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Selection State
   const [selectedEvent, setSelectedEvent] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [transferQty, setTransferQty] = useState<{ [key: string]: string }>({});
@@ -20,15 +19,16 @@ export default function LoadTruck() {
 
   async function fetchData() {
     setLoading(true);
-    // Pull from Master Warehouse (The source of truth)
+    // 1. Get Master Warehouse (The source)
     const { data: inv } = await supabase.from('inventory_master').select('*').order('item_name');
+    // 2. Get Active Events (The destination)
     const { data: evts } = await supabase.from('event_settings').select('*').eq('status', 'active');
+    
     setWarehouse(inv || []);
     setActiveEvents(evts || []);
     setLoading(false);
   }
 
-  // THE BULK ACTION: This is where we fix the "No Price" issue
   const processBulkTransfer = async () => {
     const itemsToMove = Object.entries(transferQty)
       .filter(([_, qty]) => parseInt(qty) > 0)
@@ -38,25 +38,26 @@ export default function LoadTruck() {
         item: warehouse.find(i => i.sku === sku)
       }));
 
-    if (!selectedEvent) return alert("Please select a target truck (Event).");
-    if (itemsToMove.length === 0) return alert("Enter quantities for at least one item.");
+    if (!selectedEvent) return alert("Select a target truck first.");
+    if (itemsToMove.length === 0) return alert("Enter a quantity for at least one item.");
 
     setIsProcessing(true);
     try {
       for (const batchItem of itemsToMove) {
         const { sku, qty, item } = batchItem;
 
-        // STEP 1: FORCE SYNC TO GLOBAL PRODUCTS TABLE
-        // This ensures the Kiosk has the correct Name, Price, and Type
-        await supabase.from('products').upsert({
-            id: sku,
+        // --- STEP 1: FORCE POPULATE THE PRODUCTS TABLE ---
+        // This ensures the item exists in the Global Catalog with a price
+        const { error: prodError } = await supabase.from('products').upsert({
+            id: sku,                    // Key must match SKU
             name: item.item_name,
-            base_price: item.base_price || 0, // This populates the "Global Price"
-            type: item.type || 'apparel',
-            active: true
+            base_price: item.base_price || 0,
+            type: item.type || 'apparel' // Use existing type or default
         }, { onConflict: 'id' });
 
-        // STEP 2: GET CURRENT STOCK ON TRUCK
+        if (prodError) throw new Error(`Global Sync Failed for ${sku}: ${prodError.message}`);
+
+        // --- STEP 2: GET CURRENT STOCK ON TRUCK ---
         const { data: existing } = await supabase
           .from('inventory')
           .select('count')
@@ -65,30 +66,33 @@ export default function LoadTruck() {
           .eq('size', item.size)
           .maybeSingle();
 
-        // STEP 3: UPSERT TO EVENT TRUCK (Includes Price & Cost Sync)
-        await supabase.from('inventory').upsert({
+        // --- STEP 3: UPSERT TO EVENT TRUCK ---
+        const { error: invError } = await supabase.from('inventory').upsert({
             event_slug: selectedEvent,
             product_id: sku,
             size: item.size,
             count: (existing?.count || 0) + qty,
             active: true,
             cost_price: item.cost_price || 0,
-            override_price: item.base_price || 0 // Pushes the warehouse price to the meet
+            override_price: item.base_price || 0
         }, { onConflict: 'event_slug,product_id,size' });
 
-        // STEP 4: DEDUCT FROM MASTER WAREHOUSE
+        if (invError) throw new Error(`Truck Load Failed for ${sku}: ${invError.message}`);
+
+        // --- STEP 4: DEDUCT FROM MASTER WAREHOUSE ---
         await supabase.from('inventory_master')
           .update({ quantity_on_hand: item.quantity_on_hand - qty })
           .eq('sku', sku)
           .eq('size', item.size);
       }
 
-      alert(`✅ Successfully loaded ${itemsToMove.length} items to ${selectedEvent}!`);
-      setTransferQty({}); // Reset inputs
-      fetchData(); // Refresh warehouse counts
+      alert(`✅ Success! ${itemsToMove.length} items synced to Global Catalog and loaded to ${selectedEvent}.`);
+      setTransferQty({});
+      fetchData();
 
     } catch (err: any) {
-      alert("Database Error: " + err.message);
+      alert("Error: " + err.message);
+      console.error(err);
     } finally {
       setIsProcessing(false);
     }
@@ -103,7 +107,6 @@ export default function LoadTruck() {
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-[1400px] mx-auto">
         
-        {/* HEADER */}
         <div className="flex justify-between items-center mb-10">
             <div>
                 <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Dashboard</Link>
@@ -115,14 +118,13 @@ export default function LoadTruck() {
                 disabled={isProcessing || !selectedEvent}
                 className="bg-emerald-500 text-white px-10 py-5 rounded-3xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-emerald-400 disabled:opacity-30 transition-all"
             >
-                {isProcessing ? 'Processing Batch...' : 'Finalize Bulk Load 🚛'}
+                {isProcessing ? 'Syncing Tables...' : 'Finalize Bulk Load 🚛'}
             </button>
         </div>
 
-        {/* CONTROLS */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
-            <div className="lg:col-span-4 bg-slate-900 p-6 rounded-[32px] text-white">
-                <p className="text-[10px] font-black uppercase text-slate-500 mb-3 tracking-widest">1. Choose Destination Truck</p>
+            <div className="lg:col-span-4 bg-slate-900 p-6 rounded-[32px] text-white shadow-2xl">
+                <p className="text-[10px] font-black uppercase text-slate-500 mb-3 tracking-widest">Target Truck</p>
                 <select 
                     className="w-full bg-slate-800 p-4 rounded-2xl border-none outline-none font-black text-blue-400 text-lg"
                     value={selectedEvent}
@@ -143,7 +145,6 @@ export default function LoadTruck() {
             </div>
         </div>
 
-        {/* WAREHOUSE LIST */}
         <div className="bg-white rounded-[40px] border border-gray-100 shadow-2xl overflow-hidden mb-20">
             <div className="grid grid-cols-12 bg-slate-100 p-5 px-8 text-[10px] font-black uppercase tracking-widest text-gray-400">
                 <div className="col-span-6">Warehouse Item & SKU</div>
@@ -165,7 +166,7 @@ export default function LoadTruck() {
                         <div className="col-span-4 flex justify-end">
                             <input 
                                 type="number" 
-                                className={`w-32 p-4 rounded-2xl border-none outline-none font-black text-center text-xl transition-all ${transferQty[item.sku] ? 'bg-blue-600 text-white' : 'bg-gray-100 text-slate-400'}`}
+                                className={`w-32 p-4 rounded-2xl border-none outline-none font-black text-center text-xl transition-all ${transferQty[item.sku] ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-100 text-slate-400'}`}
                                 value={transferQty[item.sku] || ''}
                                 onChange={(e) => setTransferQty({...transferQty, [item.sku]: e.target.value})}
                                 placeholder="0"
