@@ -59,6 +59,9 @@ export default function AdminPage() {
   // --- TRUCKING STATE ---
   const [truckTargetEvent, setTruckTargetEvent] = useState(''); 
 
+
+  const [transferQty, setTransferQty] = useState({}); // Tracks bulk loading quantities
+    
   const [guests, setGuests] = useState([]); 
   const [terminals, setTerminals] = useState([]); 
   const [loading, setLoading] = useState(false);
@@ -503,30 +506,50 @@ export default function AdminPage() {
   };
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   
-  // --- TRUCK FUNCTIONALITY ---
-  const addProductToEvent = async (product) => {
-      if (!truckTargetEvent) return alert("Select an event first!");
-      setLoading(true);
-      const sizes = SIZE_ORDER; 
-      const inventoryRows = sizes.map(size => ({
-          event_slug: truckTargetEvent,
-          product_id: product.id,
-          size: size,
-          count: 0,
-          active: false, 
-          cost_price: 8.50,
-          override_price: null
-      }));
+  // --- THE SMART BULK TRUCK LOGIC ---
+  const processBulkTransfer = async () => {
+      if (!truckTargetEvent) return alert("Select a 'Truck to' destination first (top right of catalog)!");
+      
+      const itemsToMove = Object.entries(transferQty)
+        .filter(([_, qty]) => parseInt(qty) > 0)
+        .map(([sku, qty]) => ({
+          sku,
+          qty: parseInt(qty),
+          product: products.find(p => p.id === sku)
+        }));
 
-      const { error } = await supabase.from('inventory').insert(inventoryRows);
-      
-      if (error) {
-          alert("Error adding to event: " + error.message);
-      } else {
-          alert(`Success! Sent ${product.name} to ${truckTargetEvent}. Go to 'Event Stock' to manage it.`);
-      }
-      setLoading(false);
-  };
+      if (itemsToMove.length === 0) return alert("Enter quantities for the items you want to load.");
+
+      setLoading(true);
+      try {
+          for (const batchItem of itemsToMove) {
+              const { sku, qty, product } = batchItem;
+
+              const { data: existing } = await supabase
+                  .from('inventory')
+                  .select('count')
+                  .eq('event_slug', truckTargetEvent)
+                  .eq('product_id', sku)
+                  .maybeSingle();
+
+              // UPSERT: Creates or Updates the specific truck record
+              await supabase.from('inventory').upsert({
+                  event_slug: truckTargetEvent,
+                  product_id: sku,
+                  size: 'Adult L', // Current default
+                  count: (existing?.count || 0) + qty,
+                  active: true, // Only moved items will show up
+                  override_price: product.base_price // FIX: Pricing synced
+              }, { onConflict: 'event_slug,product_id,size' });
+          }
+          alert("🚛 Truck Loaded & Prices Synced!");
+          setTransferQty({});
+          fetchInventory();
+      } catch (e) {
+          alert("Transfer Error: " + e.message);
+      }
+      setLoading(false);
+  };
 
   // --- NEW: RETURN TO WAREHOUSE LOGIC ---
   const returnToWarehouse = async (item) => {
