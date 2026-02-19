@@ -7,7 +7,6 @@ export default function LoadTruck() {
   const [warehouse, setWarehouse] = useState<any[]>([]);
   const [activeEvents, setActiveEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
   const [selectedEvent, setSelectedEvent] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [transferQty, setTransferQty] = useState<{ [key: string]: string }>({});
@@ -25,7 +24,6 @@ export default function LoadTruck() {
   }
 
   const processBulkTransfer = async () => {
-    // 1. Identify items with quantities
     const itemsToMove = Object.entries(transferQty)
       .filter(([_, qty]) => parseInt(qty) > 0)
       .map(([key, qty]) => {
@@ -33,8 +31,8 @@ export default function LoadTruck() {
         return { key, qty: parseInt(qty), item };
       });
 
-    if (!selectedEvent) return alert("Select a target meet.");
-    if (itemsToMove.length === 0) return alert("Enter quantities to move.");
+    if (!selectedEvent) return alert("Select a destination truck first.");
+    if (itemsToMove.length === 0) return alert("Enter quantities to load.");
 
     setIsProcessing(true);
     try {
@@ -42,27 +40,26 @@ export default function LoadTruck() {
         const { item, qty } = batchItem;
         if (!item) continue;
 
-        // FORCE VALUE: Ensure this is a number and NOT null
+        // FORCE VALUE: This ensures base_price is a valid number and NEVER null
         const priceToSync = item.base_price !== null && item.base_price !== undefined 
           ? Number(item.base_price) 
           : 0.00;
 
-        // --- THE "FORCE SYNC": Update Global Catalog (products) ---
-        // We pack every required field into one object to satisfy NOT NULL constraints
+        // --- THE "FINAL SYNC": Populate products.base_price ---
+        // We use the item.sku as the ID to link with the Kiosk's Global Catalog
         const { error: prodError } = await supabase.from('products').upsert({
-            id: item.sku,
+            id: item.sku,                    
             name: item.item_name || 'Unnamed Item',
-            base_price: priceToSync,          // <--- FORCED VALUE
+            base_price: priceToSync,          // <--- PUSHES PRICE TO PRODUCTS TABLE
             type: item.type || 'apparel',
             image_url: item.image_url || ''
         }, { onConflict: 'id' });
 
         if (prodError) {
-          console.error("Database rejected product sync:", prodError);
-          throw new Error(`Catalog Sync Failed: ${prodError.message}`);
+          throw new Error(`Catalog Sync Failed for ${item.sku}: ${prodError.message}`);
         }
 
-        // --- STEP 2: LOAD TRUCK (inventory) ---
+        // --- THE TRUCK LOAD: Populate inventory table ---
         const { data: existing } = await supabase
           .from('inventory')
           .select('count')
@@ -78,24 +75,25 @@ export default function LoadTruck() {
             count: (existing?.count || 0) + qty,
             active: true, 
             cost_price: Number(item.cost_price || 0),
-            override_price: priceToSync // Sync truck price to match global catalog
+            override_price: priceToSync // Sync local meet price with Global Catalog
         }, { onConflict: 'event_slug,product_id,size' });
 
-        if (invError) throw new Error(`Truck Inventory Error: ${invError.message}`);
+        if (invError) throw new Error(`Truck Load Failed: ${invError.message}`);
 
-        // --- STEP 3: DEDUCT WAREHOUSE STOCK ---
+        // --- WAREHOUSE DEDUCTION ---
         await supabase.from('inventory_master')
           .update({ quantity_on_hand: item.quantity_on_hand - qty })
           .eq('sku', item.sku)
           .eq('size', item.size);
       }
 
-      alert(`✅ MISSION SUCCESS: ${itemsToMove.length} items moved. Prices are now LOCKED in the Global Catalog.`);
+      alert(`✅ Success! Prices synced and stock loaded to ${selectedEvent}.`);
       setTransferQty({});
       fetchData();
 
     } catch (err: any) {
-      alert("CRITICAL SYNC ERROR: " + err.message);
+      alert("CRITICAL ERROR: " + err.message);
+      console.error(err);
     } finally {
       setIsProcessing(false);
     }
@@ -109,10 +107,10 @@ export default function LoadTruck() {
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-[1400px] mx-auto">
-        <div className="flex justify-between items-center mb-10">
+        <div className="flex justify-between items-center mb-12">
             <div>
                 <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Dashboard</Link>
-                <h1 className="text-4xl font-black tracking-tight mt-1 uppercase text-slate-900">Load Truck</h1>
+                <h1 className="text-4xl font-black tracking-tight mt-1 uppercase">Load Truck</h1>
             </div>
             <button 
                 onClick={processBulkTransfer}
@@ -125,13 +123,13 @@ export default function LoadTruck() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-10">
             <div className="lg:col-span-4 bg-slate-900 p-8 rounded-[40px] text-white shadow-2xl">
-                <p className="text-[10px] font-black uppercase text-slate-500 mb-3 tracking-widest">Select Target Meet</p>
+                <p className="text-[10px] font-black uppercase text-slate-500 mb-3 tracking-widest">Target Meet</p>
                 <select 
                     className="w-full bg-slate-800 p-4 rounded-2xl border-none outline-none font-black text-blue-400 text-lg shadow-inner appearance-none"
                     value={selectedEvent}
                     onChange={(e) => setSelectedEvent(e.target.value)}
                 >
-                    <option value="">-- Choose Truck --</option>
+                    <option value="">-- Select Event --</option>
                     {activeEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.event_name}</option>)}
                 </select>
             </div>
@@ -162,7 +160,7 @@ export default function LoadTruck() {
                                 <h3 className="text-xl font-black text-slate-800 uppercase leading-none">{item.item_name}</h3>
                                 <div className="flex gap-2 mt-2">
                                     <span className="text-[9px] font-black bg-blue-50 text-blue-500 px-2 py-0.5 rounded border border-blue-100 uppercase">{item.sku}</span>
-                                    <span className="text-[9px] font-black text-gray-400 uppercase self-center">Size {item.size} • Retail: ${item.base_price || '0.00'}</span>
+                                    <span className="text-[9px] font-black text-gray-400 uppercase self-center">Size {item.size} • Warehouse Price: ${item.base_price || '0.00'}</span>
                                 </div>
                             </div>
                             <div className="col-span-2 text-center text-2xl font-black text-slate-900">{item.quantity_on_hand}</div>
