@@ -1,230 +1,214 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/supabase'; 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
-// Initialize Supabase with your project keys
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-export default function InventoryTransferPage() {
+export default function LoadTruck() {
+  const router = useRouter();
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [warehouse, setWarehouse] = useState<any[]>([]);
+  const [activeEvents, setActiveEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [masterInventory, setMasterInventory] = useState<any[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
   
-  // Selection & UI State
-  const [targetSlug, setTargetSlug] = useState('');
-  const [moveQuantities, setMoveQuantities] = useState<{[key: string]: string}>({}); 
+  // Selection State
+  const [selectedEvent, setSelectedEvent] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [transferQty, setTransferQty] = useState<{ [key: string]: string }>({});
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // 1. Fetch Data using your new Table Structures
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      
-      // Get Active Events from your event_settings table
-      const { data: eventData } = await supabase
-        .from('event_settings')
-        .select('slug, event_name')
-        .neq('slug', 'warehouse')
-        .eq('status', 'active')
-        .order('event_name');
-      
-      // Get all items with the new columns (Color, Category, etc.)
-      const { data: masterData } = await supabase
-        .from('inventory_master')
-        .select('*')
-        .order('item_name', { ascending: true });
-
-      setEvents(eventData || []);
-      setMasterInventory(masterData || []);
-      setLoading(false);
-    };
+    checkUser();
     fetchData();
   }, []);
 
-  // 2. The Restored Transfer Logic
-  const handleTransfer = async (item: any) => {
-    const qtyToMove = parseInt(moveQuantities[item.id] || '0');
+  async function checkUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) setUserEmail(user.email);
+  }
 
-    if (!targetSlug) return alert("⚠️ SELECT A DESTINATION EVENT FIRST");
-    if (!qtyToMove || qtyToMove <= 0) return alert("⚠️ ENTER A VALID QUANTITY");
-    if (qtyToMove > item.quantity_on_hand) return alert("⚠️ NOT ENOUGH STOCK IN MASTER");
-
-    const confirmMsg = `Confirm Load-Out:\n\nMoving ${qtyToMove}x ${item.item_name} (${item.color} / ${item.size})\n➡️ Destination: ${targetSlug.toUpperCase()}`;
-    if (!confirm(confirmMsg)) return;
-
+  async function fetchData() {
     setLoading(true);
+    const { data: inv } = await supabase.from('inventory_master').select('*').order('item_name');
+    const { data: evts } = await supabase.from('event_settings').select('*').eq('status', 'active');
+    setWarehouse(inv || []);
+    setActiveEvents(evts || []);
+    setLoading(false);
+  }
 
+  const handleQtyChange = (sku: string, value: string) => {
+    setTransferQty(prev => ({ ...prev, [sku]: value }));
+  };
+
+  const processTransfer = async (item: any) => {
+    const qty = parseInt(transferQty[item.sku] || '0');
+    if (!selectedEvent) return alert("Please select a target event truck first.");
+    if (qty <= 0) return alert("Enter a valid quantity to load.");
+    if (qty > item.quantity_on_hand) return alert("Not enough stock in warehouse.");
+
+    setIsProcessing(true);
     try {
-      // Step A: Subtract from inventory_master (Tojojana LLC Warehouse)
-      const { error: subError } = await supabase
-        .from('inventory_master')
-        .update({ quantity_on_hand: item.quantity_on_hand - qtyToMove })
-        .eq('id', item.id);
-
-      if (subError) throw subError;
-
-      // Step B: Add to event truck (inventory table)
-      // Note: We map master columns to the event inventory table columns
-      const { data: existing } = await supabase
+      // 1. Check if item already exists on this event's inventory
+      const { data: existingEventStock } = await supabase
         .from('inventory')
-        .select('count, id')
-        .eq('event_slug', targetSlug)
-        .eq('sku', item.sku)
+        .select('count')
+        .eq('event_slug', selectedEvent)
+        .eq('product_id', item.sku)
         .eq('size', item.size)
         .maybeSingle();
 
-      if (existing) {
-        await supabase
-          .from('inventory')
-          .update({ count: existing.count + qtyToMove, active: true })
-          .eq('id', existing.id);
-      } else {
-        await supabase.from('inventory').insert({
-          event_slug: targetSlug,
-          sku: item.sku,
-          item_name: item.item_name,
+      // 2. UPSERT to Event Inventory (inventory table)
+      const { error: upsertError } = await supabase
+        .from('inventory')
+        .upsert({
+          event_slug: selectedEvent,
+          product_id: item.sku,
           size: item.size,
-          color: item.color,
-          category: item.category,
-          price: item.selling_price,
-          count: qtyToMove,
-          active: true
-        });
-      }
+          count: (existingEventStock?.count || 0) + qty,
+          active: true, // Forces it to show in Event Stock and Kiosk
+          cost_price: item.cost_price || 0
+        }, { onConflict: 'event_slug,product_id,size' });
 
-      // Step C: Optimistic UI Update
-      setMasterInventory(prev => prev.map(i => 
-        i.id === item.id ? { ...i, quantity_on_hand: i.quantity_on_hand - qtyToMove } : i
-      ));
-      setMoveQuantities(prev => ({ ...prev, [item.id]: '' })); 
-      alert("🚚 Units moved to truck!");
+      if (upsertError) throw upsertError;
+
+      // 3. DEDUCT from Master Warehouse (inventory_master table)
+      const { error: deductError } = await supabase
+        .from('inventory_master')
+        .update({ quantity_on_hand: item.quantity_on_hand - qty })
+        .eq('sku', item.sku);
+
+      if (deductError) throw deductError;
+
+      // 4. Update local state for immediate visual feedback
+      setWarehouse(prev => prev.map(i => i.sku === item.sku ? { ...i, quantity_on_hand: i.quantity_on_hand - qty } : i));
+      setTransferQty(prev => ({ ...prev, [item.sku]: '' }));
       
-    } catch (e: any) {
-      alert("Transfer Error: " + e.message);
+      alert(`✅ Loaded ${qty} units of ${item.item_name} (${item.size}) to ${selectedEvent}`);
+
+    } catch (err: any) {
+      alert("Transfer Failed: " + err.message);
+    } finally {
+      setIsProcessing(false);
     }
-    setLoading(false);
   };
 
-  const filtered = masterInventory.filter(i => 
+  const filteredWarehouse = warehouse.filter(i => 
     i.item_name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    i.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    i.color?.toLowerCase().includes(searchTerm.toLowerCase())
+    i.sku?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8 font-sans">
-      <div className="flex flex-col md:flex-row justify-between items-end mb-8 gap-6">
-        <div>
-          <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase hover:underline mb-1 inline-block tracking-widest">
-            ← Dashboard
-          </Link>
-          <h1 className="text-4xl font-black text-gray-900 tracking-tight">Truck Load-Out</h1>
-          <p className="text-gray-500 font-medium">Lev Custom Merch: Transfer stock to an active Event Truck.</p>
+    <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
+      <div className="max-w-[1600px] mx-auto">
+        
+        {/* HEADER */}
+        <div className="flex justify-between items-center mb-12">
+            <div>
+                <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-[0.2em] hover:underline">
+                    ← Command Center
+                </Link>
+                <h1 className="text-4xl font-black tracking-tight text-slate-900 mt-1">Load Truck</h1>
+            </div>
+            <div className="flex items-center gap-4 bg-white p-2 px-5 rounded-3xl shadow-sm border border-gray-100">
+                <div className="text-right">
+                    <p className="text-[9px] font-black uppercase text-gray-400 leading-none">Security Active</p>
+                    <p className="text-xs font-bold text-slate-900">{userEmail}</p>
+                </div>
+                <div className="h-10 w-10 bg-slate-900 rounded-2xl flex items-center justify-center text-white text-xs font-black ml-2">LC</div>
+            </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex items-center gap-5 w-full md:w-auto">
-            <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 flex-shrink-0 border border-blue-100">
-                <span className="text-2xl">🚛</span>
-            </div>
-            <div className="flex-1">
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Active Destination</label>
+        {/* CONTROLS AREA */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-10">
+            {/* 1. Select Target Truck */}
+            <div className="lg:col-span-4 bg-slate-900 p-8 rounded-[40px] shadow-2xl text-white">
+                <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-4">Step 1: Target Destination</p>
                 <select 
-                    className="block w-full md:w-64 p-1 text-lg font-black text-gray-900 border-none focus:ring-0 outline-none bg-transparent cursor-pointer"
-                    onChange={e => setTargetSlug(e.target.value)}
-                    value={targetSlug}
+                    className="w-full bg-slate-800 p-4 rounded-2xl border-none outline-none font-black text-blue-400 text-lg appearance-none"
+                    value={selectedEvent}
+                    onChange={(e) => setSelectedEvent(e.target.value)}
                 >
-                    <option value="">Select Event...</option>
-                    {events.map(e => <option key={e.slug} value={e.slug}>{e.event_name}</option>)}
+                    <option value="">-- Choose Truck --</option>
+                    {activeEvents.map(evt => (
+                        <option key={evt.id} value={evt.slug}>{evt.event_name}</option>
+                    ))}
                 </select>
+                <p className="text-[10px] text-slate-500 mt-4 font-medium italic">
+                    All stock loaded will immediately be available for sales at the selected event.
+                </p>
+            </div>
+
+            {/* 2. Search Warehouse */}
+            <div className="lg:col-span-8 bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm flex flex-col justify-center">
+                <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">Step 2: Find Warehouse Stock</p>
+                <div className="relative">
+                    <input 
+                        type="text"
+                        placeholder="Search SKU, Item Name, or Color..."
+                        className="w-full p-5 pl-14 bg-gray-50 rounded-3xl border-none outline-none font-bold text-lg focus:ring-2 focus:ring-blue-500 transition-all"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    <span className="absolute left-6 top-5 text-xl grayscale opacity-30">🔍</span>
+                </div>
             </div>
         </div>
-      </div>
 
-      <div className="bg-white p-4 rounded-t-2xl border-t border-x border-gray-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
-        <div className="relative flex-1 w-full">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 text-xl">🔍</span>
-            <input 
-                placeholder="Search by SKU, Product Name, or Color..." 
-                className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all font-bold text-gray-700 placeholder:text-gray-300"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-            />
-        </div>
-        <div className="bg-gray-100 px-4 py-2 rounded-lg text-xs font-black text-gray-400 uppercase tracking-tighter">
-            {filtered.length} Items Matching
-        </div>
-      </div>
+        {/* WAREHOUSE LIST */}
+        <div className="bg-white rounded-[48px] border border-gray-100 shadow-2xl overflow-hidden">
+            <div className="grid grid-cols-12 bg-slate-100 p-6 px-10 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
+                <div className="col-span-5">Warehouse Item</div>
+                <div className="col-span-2 text-center">In Stock</div>
+                <div className="col-span-5 text-right">Transfer to Truck</div>
+            </div>
 
-      <div className="bg-white border-x border-b border-gray-200 rounded-b-2xl overflow-hidden shadow-sm">
-        <table className="w-full text-left border-collapse">
-            <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="p-4 text-[10px] font-black uppercase text-gray-400 tracking-widest">Product / Details</th>
-                    <th className="p-4 text-[10px] font-black uppercase text-gray-400 tracking-widest">Warehouse Stock</th>
-                    <th className="p-4 text-[10px] font-black uppercase text-gray-400 tracking-widest text-right pr-8">Load Truck</th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-50 max-h-[800px] overflow-y-auto">
                 {loading ? (
-                    <tr>
-                        <td colSpan={3} className="p-20 text-center">
-                            <div className="inline-block animate-spin text-3xl mb-4">🔄</div>
-                            <p className="font-bold text-gray-400 uppercase tracking-widest">Syncing with Master Catalog...</p>
-                        </td>
-                    </tr>
-                ) : filtered.map(item => {
-                    const lowStock = item.quantity_on_hand < 10;
-                    return (
-                        <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
-                            <td className="p-4">
-                                <div className="font-black text-gray-900 leading-none mb-1 uppercase tracking-tight">{item.item_name}</div>
-                                <div className="flex gap-2 items-center">
-                                    <span className="text-[10px] font-mono font-bold text-blue-500 uppercase">{item.sku}</span>
-                                    <span className="bg-gray-900 text-white px-2 py-0.5 rounded text-[9px] font-black uppercase">{item.size}</span>
-                                    <span className="text-[9px] font-bold text-gray-400 uppercase">{item.color}</span>
-                                </div>
-                            </td>
+                    <div className="p-32 text-center animate-pulse text-gray-300 font-black uppercase tracking-widest">Accessing Master Inventory...</div>
+                ) : filteredWarehouse.map((item) => (
+                    <div key={item.sku} className="grid grid-cols-12 p-6 px-10 items-center hover:bg-blue-50/50 transition-colors group">
+                        {/* Item Info */}
+                        <div className="col-span-5">
+                            <h3 className="text-xl font-black text-slate-900 uppercase leading-none">{item.item_name}</h3>
+                            <div className="flex gap-2 mt-2">
+                                <span className="text-[9px] font-black bg-blue-50 text-blue-500 px-2 py-0.5 rounded border border-blue-100 uppercase tracking-widest">{item.sku}</span>
+                                <span className="text-[9px] font-black bg-gray-100 text-gray-500 px-2 py-0.5 rounded border border-gray-200 uppercase tracking-widest">{item.color}</span>
+                                <span className="text-[9px] font-black text-gray-400 uppercase self-center">Size {item.size}</span>
+                            </div>
+                        </div>
 
-                            <td className="p-4">
-                                <div className="flex flex-col">
-                                    <span className={`text-xl font-black leading-none ${lowStock ? 'text-red-600' : 'text-slate-900'}`}>
-                                        {item.quantity_on_hand}
-                                    </span>
-                                    <span className="text-[9px] font-black text-gray-400 uppercase mt-1">Available Units</span>
-                                </div>
-                            </td>
+                        {/* Current Warehouse Stock */}
+                        <div className="col-span-2 text-center">
+                            <p className={`text-2xl font-black ${item.quantity_on_hand < 10 ? 'text-red-500 animate-pulse' : 'text-slate-900'}`}>
+                                {item.quantity_on_hand}
+                            </p>
+                            <p className="text-[8px] font-black uppercase text-gray-400">Available</p>
+                        </div>
 
-                            <td className="p-4 text-right">
-                                <div className="flex gap-3 justify-end items-center">
-                                    <input 
-                                        type="number" 
-                                        placeholder="0"
-                                        className="w-20 p-2 bg-gray-50 border-2 border-gray-100 rounded-xl text-center font-black text-gray-900 outline-none focus:border-blue-500 focus:bg-white transition-all shadow-inner"
-                                        value={moveQuantities[item.id] || ''}
-                                        onChange={(e) => setMoveQuantities({...moveQuantities, [item.id]: e.target.value})}
-                                    />
-                                    <button 
-                                        onClick={() => handleTransfer(item)}
-                                        className={`px-6 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-sm
-                                            ${targetSlug && moveQuantities[item.id]
-                                                ? 'bg-blue-600 text-white hover:bg-slate-900' 
-                                                : 'bg-gray-100 text-gray-300 cursor-not-allowed'}
-                                        `}
-                                        disabled={!targetSlug || !moveQuantities[item.id]}
-                                    >
-                                        Load 🚚
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    );
-                })}
-            </tbody>
-        </table>
+                        {/* Load Control */}
+                        <div className="col-span-5 flex justify-end items-center gap-4">
+                            <div className="relative">
+                                <input 
+                                    type="number"
+                                    placeholder="Qty"
+                                    className="w-24 p-4 bg-gray-50 rounded-2xl border-none outline-none font-black text-center text-lg focus:ring-2 focus:ring-green-500 transition-all"
+                                    value={transferQty[item.sku] || ''}
+                                    onChange={(e) => handleQtyChange(item.sku, e.target.value)}
+                                />
+                            </div>
+                            <button 
+                                onClick={() => processTransfer(item)}
+                                disabled={isProcessing || !selectedEvent || !transferQty[item.sku]}
+                                className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] hover:bg-green-600 disabled:opacity-30 disabled:hover:bg-slate-900 transition-all flex items-center gap-3"
+                            >
+                                {isProcessing ? 'Moving...' : 'Load Truck 🚛'}
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+
       </div>
     </div>
   );
