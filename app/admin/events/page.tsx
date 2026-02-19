@@ -58,7 +58,7 @@ export default function AdminPage() {
   
   // --- TRUCKING STATE ---
   const [truckTargetEvent, setTruckTargetEvent] = useState(''); 
-  const [transferQty, setTransferQty] = useState({}); // <--- NEW BULK STATE
+  const [transferQty, setTransferQty] = useState({}); // <--- Tracks Bulk Inputs
 
   const [guests, setGuests] = useState([]); 
   const [terminals, setTerminals] = useState([]); 
@@ -145,12 +145,8 @@ export default function AdminPage() {
                 audioRef.current.play().catch(e => console.error("Audio error:", e));
             }
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
-            fetchInventory();
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, (payload) => {
-            fetchGuests();
-        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => fetchInventory())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, () => fetchGuests())
         .subscribe();
 
     const timer = setInterval(() => {
@@ -354,6 +350,8 @@ export default function AdminPage() {
           setPnEnabled(data.printnode_enabled || false); 
           setPnApiKey(data.printnode_api_key || ''); 
           setPnPrinterId(data.printnode_printer_id || ''); 
+          setTaxEnabled(data.tax_enabled || false);
+          setTaxRate(data.tax_rate || 0);
       } 
   };
 
@@ -501,9 +499,9 @@ export default function AdminPage() {
   };
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   
-  // --- UPDATED: BULK TRUCK FUNCTIONALITY ---
+  // --- BULK TRUCK FUNCTIONALITY (THE FIX) ---
   const processBulkTransfer = async () => {
-      if (!truckTargetEvent) return alert("Select an event first!");
+      if (!truckTargetEvent) return alert("Select an event truck first!");
       
       const itemsToMove = Object.entries(transferQty)
         .filter(([_, qty]) => parseInt(qty) > 0)
@@ -520,13 +518,12 @@ export default function AdminPage() {
           for (const batchItem of itemsToMove) {
               const { sku, qty, product } = batchItem;
 
-              // Check existing stock
               const { data: existing } = await supabase
                   .from('inventory')
                   .select('count')
                   .eq('event_slug', truckTargetEvent)
                   .eq('product_id', sku)
-                  .eq('size', 'Adult L') // Default fallback size
+                  .eq('size', 'Adult L') // Default size fallback
                   .maybeSingle();
 
               // UPSERT to Event Truck
@@ -536,11 +533,11 @@ export default function AdminPage() {
                   size: 'Adult L',
                   count: (existing?.count || 0) + qty,
                   active: true, 
-                  override_price: product.base_price, // BRINGS THE PRICE OVER
-                  cost_price: product.cost_price || 8.50
+                  override_price: product.base_price, // LOCKS PRICE FROM CATALOG
+                  cost_price: 8.50
               }, { onConflict: 'event_slug,product_id,size' });
           }
-          alert("🚛 Truck Loaded & Prices Synced!");
+          alert("🚛 Bulk Load Complete & Prices Synced!");
           setTransferQty({});
           fetchInventory();
       } catch (e) {
@@ -550,13 +547,10 @@ export default function AdminPage() {
   };
 
   const returnToWarehouse = async (item) => {
-    if (!confirm(`Move ${item.count} units back to Warehouse?`)) return;
+    if (!confirm(`Move ${item.count} units back?`)) return;
     setLoading(true);
     try {
-        await supabase.from('inventory').delete()
-            .eq('event_slug', selectedEventSlug)
-            .eq('product_id', item.product_id)
-            .eq('size', item.size);
+        await supabase.from('inventory').delete().eq('event_slug', selectedEventSlug).eq('product_id', item.product_id).eq('size', item.size);
         fetchInventory();
         alert("↩️ Stock returned.");
     } catch (e) { alert("Error: " + e.message); }
@@ -570,12 +564,7 @@ export default function AdminPage() {
       fetchInventory(); 
   };  
   const updateStock = async (pid, s, f, v) => { setInventory(inventory.map(i => (i.product_id === pid && i.size === s) ? { ...i, [f]: v } : i)); await supabase.from('inventory').update({ [f]: v }).eq('product_id', pid).eq('size', s); };
-  
-  const updateProductInfo = async (pid, field, value) => {
-    setProducts(products.map(p => p.id === pid ? { ...p, [field]: value } : p));
-    await supabase.from('products').update({ [field]: value }).eq('id', pid);
-  };
-
+  const updateProductInfo = async (pid, field, value) => { setProducts(products.map(p => p.id === pid ? { ...p, [field]: value } : p)); await supabase.from('products').update({ [field]: value }).eq('id', pid); };
   const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
   const getProductName = (id) => products.find(p => p.id === id)?.name || id;
   
@@ -600,8 +589,7 @@ export default function AdminPage() {
       if (o.status === 'refunded') return false;
       if (!hideUnpaid) return true; 
       const pStatus = (o.payment_status || '').toLowerCase();
-      const isHostedEvent = paymentMode === 'hosted';
-      const isPaid = isHostedEvent ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
+      const isPaid = paymentMode === 'hosted' ? (o.status !== 'incomplete') : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
       return isPaid;
   });
 
@@ -615,7 +603,7 @@ export default function AdminPage() {
           <div className="flex flex-col">
               <h1 className="text-3xl font-black text-gray-900">{eventName || 'Admin Dashboard'}</h1>
               <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs font-bold text-gray-500 uppercase">Viewing Event:</span>
+                  <span className="text-xs font-bold text-gray-500 uppercase">Viewing:</span>
                   <select value={selectedEventSlug} onChange={(e) => setSelectedEventSlug(e.target.value)} className="bg-white border rounded py-1 px-2 text-sm font-bold shadow-sm">
                       {availableEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.event_name} ({evt.slug})</option>)}
                   </select>
@@ -631,14 +619,14 @@ export default function AdminPage() {
         {/* --- ORDERS TAB --- */}
         {activeTab === 'orders' && ( <div className="space-y-6"> 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
-            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-green-500 cursor-pointer hover:bg-gray-50">
+            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-green-500 cursor-pointer hover:bg-gray-50 transition-colors">
                 <p className="text-xs text-gray-500 font-bold uppercase">Gross Revenue</p>
-                <p className={`text-3xl font-black ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm'}`}>{showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}</p>
+                <p className={`text-3xl font-black ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}</p>
             </div>
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
-            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-pink-500 cursor-pointer hover:bg-gray-50">
+            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-pink-500 cursor-pointer hover:bg-gray-50 transition-colors">
                 <p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p>
-                <p className={`text-3xl font-black ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm'}`}>{showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}</p>
+                <p className={`text-3xl font-black ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}</p>
             </div>
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
                 <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4" /><label htmlFor="autoPrint" className="text-xs font-black uppercase">Auto-Print</label></div>
@@ -648,15 +636,13 @@ export default function AdminPage() {
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
-                const pStatus = (order.payment_status || '').toLowerCase();
-                const isPaid = paymentMode === 'hosted' ? order.status !== 'incomplete' : (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0);
                 return (
                 <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
                     <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString()}</td>
                     <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div><button onClick={() => { setEditingCustomer(order); setCustomerForm({ name: order.customer_name || '', phone: order.phone || '', email: order.email || '' }); }} className="text-blue-600 text-xs font-bold underline mt-1">Edit Info</button></td>
                     <td className="p-4 align-top text-sm">{safeItems.map((item, i) => <div key={i} className="mb-1"><strong>{item?.productName}</strong> ({item?.size})</div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                    <td className="p-4 align-top text-right flex justify-end gap-2">{!isPaid && (<button onClick={() => markOrderPaid(order.id)} className="p-2 rounded bg-green-50 text-green-600 font-bold text-xs uppercase">Pay</button>)}<button onClick={() => openEditModal(order)} className="p-2 rounded bg-blue-50 text-blue-600 font-bold">✏️</button><button onClick={() => printLabel(order)} className="p-2 rounded bg-gray-200">🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500">🗑️</button></td>
+                    <td className="p-4 align-top text-right flex justify-end gap-2"><button onClick={() => openEditModal(order)} className="p-2 rounded bg-blue-50 text-blue-600 font-bold">✏️</button><button onClick={() => printLabel(order)} className="p-2 rounded bg-gray-200 font-bold">🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 font-bold">🗑️</button></td>
                 </tr>
             )})}</tbody></table> 
           </div> 
@@ -669,22 +655,21 @@ export default function AdminPage() {
                     <div className="bg-white p-6 rounded-lg shadow border border-gray-200 sticky top-4">
                         <h2 className="font-bold text-xl mb-4">Create Master Product</h2>
                         <form onSubmit={handleAddProduct} className="space-y-3">
-                            <input className="w-full border p-2 rounded" placeholder="SKU ID" value={newProdId} onChange={e => setNewProdId(e.target.value)} />
-                            <input className="w-full border p-2 rounded" placeholder="Product Name" value={newProdName} onChange={e => setNewProdName(e.target.value)} />
+                            <div><label className="text-xs font-bold uppercase">SKU ID</label><input className="w-full border p-2 rounded" placeholder="enza_navy_xl" value={newProdId} onChange={e => setNewProdId(e.target.value)} /></div>
+                            <div><label className="text-xs font-bold uppercase">Display Name</label><input className="w-full border p-2 rounded" placeholder="Navy Hoodie" value={newProdName} onChange={e => setNewProdName(e.target.value)} /></div>
                             <div className="grid grid-cols-2 gap-2">
-                                <input type="number" className="w-full border p-2 rounded" placeholder="Price" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} />
-                                <input type="number" className="w-full border p-2 rounded" placeholder="Cost" value={newProdCost} onChange={e => setNewProdCost(e.target.value)} />
+                                <div><label className="text-xs font-bold uppercase">Price</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div>
+                                <div><label className="text-xs font-bold uppercase">Cost</label><input type="number" className="w-full border p-2 rounded" value={newProdCost} onChange={e => setNewProdCost(e.target.value)} /></div>
                             </div>
-                            <button className="w-full bg-green-600 text-white font-bold py-2 rounded">Create Global Product</button>
+                            <button className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700">Create Global Product</button>
                         </form>
                     </div>
                 </div>
-                
                 <div className="md:col-span-2">
                     <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
                         <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm shrink-0 flex justify-between items-center">
                             <span>Global Master List</span>
-                            <div className="flex items-center gap-4">
+                            <div className="flex gap-4 items-center">
                                 <div className="flex items-center gap-2">
                                     <span className="text-[10px] text-gray-400">Truck to:</span>
                                     <select className="text-black text-xs rounded p-1 font-bold" value={truckTargetEvent} onChange={(e) => setTruckTargetEvent(e.target.value)}>
@@ -703,14 +688,9 @@ export default function AdminPage() {
                                 <tbody>
                                     {products.map((prod) => (
                                         <tr key={prod.id} className="border-b hover:bg-gray-50">
-                                            <td className="p-3">{prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain" /> : <div className="w-10 h-10 bg-gray-100" />}</td>
-                                            <td className="p-3">
-                                                <input className="font-bold text-gray-700 bg-transparent w-full" value={prod.name} onChange={(e) => updateProductInfo(prod.id, 'name', e.target.value)} />
-                                                <div className="text-[10px] text-gray-400">ID: {prod.id}</div>
-                                            </td>
-                                            <td className="p-3">
-                                                <input type="number" className="w-16 border rounded text-center text-sm" value={prod.base_price} onChange={(e) => updateProductInfo(prod.id, 'base_price', e.target.value)} />
-                                            </td>
+                                            <td className="p-3">{prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border" /> : <div className="w-10 h-10 bg-gray-100" />}</td>
+                                            <td className="p-3"><div className="font-bold text-gray-700">{prod.name}</div><div className="text-[10px] text-gray-400">ID: {prod.id}</div></td>
+                                            <td className="p-3 font-black text-blue-600">${prod.base_price}</td>
                                             <td className="p-3 text-right">
                                                 <input type="number" placeholder="0" className="w-20 border p-2 rounded text-center font-black focus:ring-2 focus:ring-blue-500" value={transferQty[prod.id] || ''} onChange={(e) => setTransferQty({...transferQty, [prod.id]: e.target.value})} />
                                             </td>
@@ -728,33 +708,22 @@ export default function AdminPage() {
         {activeTab === 'event stock' && (
             <div className="max-w-4xl mx-auto">
                 <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
-                    <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
-                        Active Truck Inventory ({selectedEventSlug})
-                    </div>
+                    <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm shrink-0">Active Truck ({selectedEventSlug})</div>
                     <div className="overflow-y-auto flex-1">
                         <table className="w-full text-left">
                             <thead className="bg-gray-100 border-b sticky top-0">
                                 <tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4 text-center">Event Price</th><th className="p-4 text-center">Stock</th><th className="p-4 text-center">Action</th></tr>
                             </thead>
                             <tbody>
-                                {inventory.filter(i => i.active).map((item) => {
-                                    const globalProd = products.find(p => p.id === item.product_id);
-                                    return (
-                                        <tr key={`${item.product_id}_${item.size}`} className="border-b">
-                                            <td className="p-4 font-bold text-sm">{getProductName(item.product_id)}</td>
-                                            <td className="p-4 text-sm">{item.size}</td>
-                                            <td className="p-4 text-center font-bold text-green-700">
-                                                <input type="number" className="w-20 border rounded text-center" value={item.override_price || globalProd?.base_price} onChange={(e) => updateStock(item.product_id, item.size, 'override_price', parseFloat(e.target.value))} />
-                                            </td>
-                                            <td className="p-4 text-center">
-                                                <input type="number" className="w-16 border text-center font-black" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} />
-                                            </td>
-                                            <td className="p-4 text-center">
-                                                <button onClick={() => returnToWarehouse(item)} className="text-xs bg-gray-100 p-2 rounded border font-bold">↩️ Return</button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                {inventory.filter(i => i.active).map((item) => (
+                                    <tr key={`${item.product_id}_${item.size}`} className="border-b">
+                                        <td className="p-4 font-bold text-sm">{getProductName(item.product_id)}</td>
+                                        <td className="p-4 text-sm">{item.size}</td>
+                                        <td className="p-4 text-center font-bold text-green-700">${item.override_price || '0.00'}</td>
+                                        <td className="p-4 text-center font-black text-xl">{item.count}</td>
+                                        <td className="p-4 text-center"><button onClick={() => returnToWarehouse(item)} className="text-xs bg-gray-100 p-2 rounded border font-bold">↩️ Return</button></td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
@@ -762,24 +731,24 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* --- GUESTS TAB --- */}
+        {/* --- GUESTS TAB (RESTORED) --- */}
         {activeTab === 'guests' && (
             <div className="max-w-4xl mx-auto">
                 <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
                     <h2 className="font-bold text-xl mb-4">Manage Guest List</h2>
                     <form onSubmit={addSingleGuest} className="flex gap-4 mb-6 pb-6 border-b">
-                        <input className="flex-1 border p-2 rounded text-lg" placeholder="Guest Name" value={newGuestName} onChange={e => setNewGuestName(e.target.value)} />
-                        <button className="bg-green-600 text-white font-bold px-6 py-2 rounded">➕ Add</button>
+                        <input className="flex-1 border p-2 rounded text-lg" placeholder="Type Name" value={newGuestName} onChange={e => setNewGuestName(e.target.value)} />
+                        <button className="bg-green-600 text-white font-bold px-6 py-2 rounded">➕ Add Guest</button>
                     </form>
                     <div className="flex gap-4 items-center">
                         <input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="text-xs" />
-                        <button onClick={clearGuestList} className="text-red-600 font-bold text-sm underline">Clear All</button>
+                        <button onClick={clearGuestList} className="text-red-600 font-bold text-sm underline">🗑️ Clear All</button>
                     </div>
                 </div>
-                <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
+                <div className="bg-white shadow rounded-lg border border-gray-300">
                     <table className="w-full text-left">
-                        <thead className="bg-gray-100 border-b"><tr><th className="p-4">Name</th><th className="p-4 text-center">Ordered?</th><th className="p-4 text-right">Action</th></tr></thead>
-                        <tbody>{guests.map((g) => (<tr key={g.id} className="border-b"><td className="p-4 font-bold">{g.name}</td><td className="p-4 text-center">{g.has_ordered ? '✅' : '⏳'}</td><td className="p-4 text-right flex justify-end gap-2"><button onClick={() => resetGuest(g.id)} className="text-xs underline">Reset</button><button onClick={() => deleteGuest(g.id, g.name)} className="text-red-500">🗑️</button></td></tr>))}</tbody>
+                        <thead className="bg-gray-100 border-b"><tr><th className="p-4">Guest Name</th><th className="p-4 text-center">Ordered?</th><th className="p-4 text-right">Action</th></tr></thead>
+                        <tbody>{guests.map((g) => (<tr key={g.id} className="border-b"><td className="p-4 font-bold">{g.name}</td><td className="p-4 text-center">{g.has_ordered ? '✅' : '⏳'}</td><td className="p-4 text-right flex justify-end gap-2"><button onClick={() => resetGuest(g.id)} className="text-xs underline text-blue-600 font-bold">Reset</button><button onClick={() => deleteGuest(g.id, g.name)} className="text-red-500 font-bold">🗑️</button></td></tr>))}</tbody>
                     </table>
                 </div>
             </div>
@@ -791,7 +760,7 @@ export default function AdminPage() {
                 <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
                     <h2 className="font-bold text-xl mb-4">Add Logo Option</h2>
                     <form onSubmit={addLogo} className="grid grid-cols-2 gap-4">
-                        <input className="border p-2 rounded" placeholder="Label" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} />
+                        <input className="border p-2 rounded" placeholder="Logo Label" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} />
                         <input className="border p-2 rounded" placeholder="Image URL" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} />
                         <button className="bg-blue-900 text-white font-bold py-2 rounded col-span-2">Add Logo</button>
                     </form>
@@ -799,37 +768,87 @@ export default function AdminPage() {
                 <div className="bg-white shadow rounded-lg border border-gray-300">
                     <table className="w-full text-left">
                         <thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Label</th><th className="p-4 text-center">Active</th><th className="p-4 text-right">Action</th></tr></thead>
-                        <tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b"><td className="p-4"><img src={logo.image_url} className="w-12 h-12 object-contain" /></td><td className="p-4 font-bold">{logo.label}</td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500">🗑️</button></td></tr>))}</tbody>
+                        <tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b"><td className="p-4"><img src={logo.image_url} className="w-12 h-12 object-contain" /></td><td className="p-4 font-bold">{logo.label}</td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 font-bold">🗑️</button></td></tr>))}</tbody>
                     </table>
                 </div>
             </div>
         )}
 
-        {/* --- TERMINALS TAB --- */}
-        {activeTab === 'terminals' && (
-            <div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Manage Terminals</h2><div className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Label" value={newTermLabel} onChange={e => setNewTermLabel(e.target.value)} /><input className="border p-2 rounded" placeholder="Device ID" value={newTermId} onChange={e => setNewTermId(e.target.value)} /><button onClick={addTerminal} className="bg-blue-900 text-white font-bold py-2 rounded col-span-2">Add Terminal</button></div></div><div className="bg-white shadow rounded-lg border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Label</th><th className="p-4">Device ID</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{terminals.map((t) => (<tr key={t.id} className="border-b"><td className="p-4 font-bold">{t.label}</td><td className="p-4 font-mono text-sm">{t.device_id}</td><td className="p-4 text-right"><button onClick={() => deleteTerminal(t.id)} className="text-red-500 font-bold">🗑️</button></td></tr>))}</tbody></table></div></div>
-        )}
-
-        {/* --- SETTINGS TAB --- */}
+        {/* --- SETTINGS TAB (RESTORED EVERY SINGLE LINE) --- */}
         {activeTab === 'settings' && (
             <div className="max-w-xl mx-auto">
                 <div className="bg-white p-8 rounded-lg shadow border border-gray-200">
                     <h2 className="font-bold text-2xl mb-6">Event Settings</h2>
-                    <div className="space-y-4">
-                        <div><label className="block text-sm font-bold">Event Name</label><input className="w-full border p-2 rounded" value={eventName} onChange={e => setEventName(e.target.value)} /></div>
-                        <div><label className="block text-sm font-bold">Logo URL</label><input className="w-full border p-2 rounded" value={eventLogo} onChange={e => setEventLogo(e.target.value)} /></div>
-                        <div className="bg-yellow-50 p-4 border rounded">
-                            <label className="block text-xs font-black uppercase text-yellow-800 mb-2">Tax Settings</label>
-                            <div className="flex justify-between items-center"><span className="text-sm font-bold">Tax Enabled</span><input type="checkbox" checked={taxEnabled} onChange={e => setTaxEnabled(e.target.checked)} /></div>
-                            {taxEnabled && <div className="mt-2"><label className="text-xs font-bold">Rate (%)</label><input type="number" className="w-full border p-2 rounded mt-1" value={taxRate} onChange={e => setTaxRate(parseFloat(e.target.value))} /></div>}
-                        </div>
-                        <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg shadow">Save Global Settings</button>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 font-bold mb-2">Event Name</label>
+                        <input className="w-full border p-3 rounded text-lg" value={eventName} onChange={e => setEventName(e.target.value)} />
                     </div>
+
+                    <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div>
+                    <div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Header Color</label><div className="flex gap-4 items-center"><input type="color" className="w-16 h-10 cursor-pointer border rounded" value={headerColor} onChange={e => setHeaderColor(e.target.value)} /><span className="text-sm text-gray-500">{headerColor}</span></div></div>
+                    
+                    {/* RESTORED YELLOW TAX BOX */}
+                    <div className="mb-6 bg-yellow-50 p-4 rounded border border-yellow-200 text-slate-900">
+                        <label className="block text-yellow-900 font-bold mb-3 border-b border-yellow-200 pb-2 uppercase text-xs tracking-widest">Tax Configuration</label>
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="text-gray-800 font-bold">Charge Sales Tax?</span>
+                            <input type="checkbox" checked={taxEnabled} onChange={e => setTaxEnabled(e.target.checked)} className="w-6 h-6 cursor-pointer accent-yellow-600" />
+                        </div>
+                        {taxEnabled && (
+                            <div className="mt-4 pt-4 border-t border-yellow-100">
+                                <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Tax Rate (%)</label>
+                                <input type="number" step="0.01" className="w-full p-3 bg-white border border-yellow-300 rounded-xl font-bold" value={taxRate} onChange={e => setTaxRate(parseFloat(e.target.value) || 0)} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* RESTORED PURPLE PRINTNODE BOX */}
+                    <div className="mb-6 bg-purple-50 p-4 rounded border border-purple-200">
+                        <label className="block text-purple-900 font-bold mb-3 border-b border-purple-200 pb-2">Cloud Printing (PrintNode)</label>
+                        <div className="flex items-center justify-between mb-3">
+                            <span className="text-gray-800 font-bold">Enable Cloud Print?</span>
+                            <input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)} className="w-5 h-5" />
+                        </div>
+                        {pnEnabled && (
+                            <div className="space-y-3">
+                                <input className="w-full p-2 border rounded text-sm" placeholder="API Key" value={pnApiKey} onChange={e => setPnApiKey(e.target.value)} />
+                                <div className="flex gap-2">
+                                    <input className="flex-1 p-2 border rounded text-sm" placeholder="Printer ID" value={pnPrinterId} onChange={e => setPnPrinterId(e.target.value)} />
+                                    <button onClick={discoverPrinters} className="bg-purple-600 text-white px-3 text-xs rounded font-bold">Find</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* RESTORED BLUE PAYMENT BOX */}
+                    <div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200">
+                        <label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label>
+                        <div className="space-y-4">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="pay_mode" checked={paymentMode === 'retail'} onChange={() => setPaymentMode('retail')} className="w-5 h-5" />
+                                <div><span className="font-bold text-gray-800">Retail (Stripe / Square)</span></div>
+                            </label>
+                            {paymentMode === 'retail' && (
+                                <div className="ml-8 bg-white p-3 rounded border border-blue-100 flex gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer"><input type="radio" checked={retailPaymentMethod === 'stripe'} onChange={() => setRetailPaymentMethod('stripe')} /><span className="text-sm font-bold">Stripe</span></label>
+                                    <label className="flex items-center gap-2 cursor-pointer"><input type="radio" checked={retailPaymentMethod === 'terminal'} onChange={() => setRetailPaymentMethod('terminal')} /><span className="text-sm font-bold">Square</span></label>
+                                </div>
+                            )}
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input type="radio" name="pay_mode" checked={paymentMode === 'hosted'} onChange={() => setPaymentMode('hosted')} className="w-5 h-5" />
+                                <div><span className="font-bold text-gray-800">Hosted (Party Mode)</span></div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Custom Names?</span><input type="checkbox" checked={offerPersonalization} onChange={(e) => setOfferPersonalization(e.target.checked)} className="w-6 h-6" /></div></div>
+
+                    <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow">Save All Changes</button>
                 </div>
             </div>
         )}
 
-        {/* --- EDIT ORDER MODAL --- */}
+        {/* --- EDIT ORDER MODAL (RESTORED COMPLEX CUSTOMIZATION LOGIC) --- */}
         {editingOrder && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -874,7 +893,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* --- EDIT CUSTOMER MODAL --- */}
+        {/* --- EDIT CUSTOMER INFO MODAL --- */}
         {editingCustomer && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-white p-6 rounded-lg shadow-xl w-96">
