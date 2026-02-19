@@ -155,13 +155,14 @@ export default function AdminDashboard() {
 
         {/* TOP METRICS ROW */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-            <Link href="/admin/inventory" className="bg-white p-6 rounded-[32px] border border-red-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
-                <div>
-                    <p className="text-4xl font-black text-red-500 group-hover:scale-110 transition-transform">{stats.lowStock}</p>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Low Stock Alerts</p>
-                </div>
-                <div className="h-10 w-10 bg-red-50 rounded-full flex items-center justify-center text-red-500 text-xl">⚠️</div>
-            </Link>
+            
+<Link href="/admin/inventory/warehouse?filter=low" className="bg-white p-6 rounded-[32px] border border-red-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
+    <div>
+        <p className="text-4xl font-black text-red-500 group-hover:scale-110 transition-transform">{stats.lowStock}</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Low Stock Alerts</p>
+    </div>
+    <div className="h-10 w-10 bg-red-50 rounded-full flex items-center justify-center text-red-500 text-xl">⚠️</div>
+</Link>
             <Link href="/admin/inventory/transfer" className="bg-white p-6 rounded-[32px] border border-blue-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
                 <div>
                     <p className="text-4xl font-black text-blue-600 group-hover:scale-110 transition-transform">{stats.activeEvents}</p>
