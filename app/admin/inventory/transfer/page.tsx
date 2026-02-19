@@ -40,16 +40,14 @@ export default function LoadTruck() {
         const { item, qty } = batchItem;
         if (!item) continue;
 
-        // --- THE ATOMIC FIX ---
-        // Your DB rejects null prices. We force the number here.
-        const forcedPrice = parseFloat(item.base_price) || 0;
+        // --- THE FIX: We pull selling_price from inventory_master ---
+        const forcedPrice = parseFloat(item.selling_price) || 0;
 
         // 1. UPDATE THE GLOBAL CATALOG (products)
-        // Must include id, name, type, and base_price in ONE object.
         const { error: prodError } = await supabase.from('products').upsert({
             id: item.sku,
             name: item.item_name,
-            base_price: forcedPrice, // <--- THE FIX: No longer sent separately
+            base_price: forcedPrice, // Maps to base_price in Kiosk
             type: item.type || 'apparel'
         }, { onConflict: 'id' });
 
@@ -147,7 +145,7 @@ export default function LoadTruck() {
                         <div key={key} className="grid grid-cols-12 p-6 px-10 items-center hover:bg-blue-50/50">
                             <div className="col-span-6">
                                 <h3 className="text-lg font-black uppercase">{item.item_name}</h3>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase">{item.sku} • {item.size} • ${item.base_price}</p>
+                                <p className="text-[10px] text-gray-400 font-bold uppercase">{item.sku} • {item.size} • ${item.selling_price || '0.00'}</p>
                             </div>
                             <div className="col-span-2 text-center font-black text-xl">{item.quantity_on_hand}</div>
                             <div className="col-span-4 flex justify-end">
