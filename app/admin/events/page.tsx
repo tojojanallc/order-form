@@ -737,54 +737,44 @@ export default function AdminPage() {
                 </div>
                 
                 <div className="md:col-span-2">
-                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
-                        <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0 flex justify-between items-center">
-                            <span>Global Master List</span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-400">Truck to:</span>
-                                <select 
-                                    className="text-black text-xs rounded p-1 font-bold"
-                                    value={truckTargetEvent}
-                                    onChange={(e) => setTruckTargetEvent(e.target.value)}
-                                >
-                                    <option value="">-- Select Event --</option>
-                                    {availableEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.event_name}</option>)}
-                                </select>
-                            </div>
-                        </div>
-                        <div className="overflow-y-auto flex-1">
-                            <table className="w-full text-left">
-                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img</th><th className="p-3">Product Name</th><th className="p-3 w-24">Base $</th><th className="p-3 text-right">Action</th></tr></thead>
-                                <tbody>
-                                    {products.map((prod) => (
-                                        <tr key={prod.id} className="border-b hover:bg-gray-50">
-                                            <td className="p-3">
-                                                {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-white" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px]">No Img</div>}
-                                            </td>
-                                            <td className="p-3">
-                                                <input className="font-bold text-gray-700 border-none bg-transparent w-full focus:bg-white focus:border focus:p-1" value={prod.name} onChange={(e) => updateProductInfo(prod.id, 'name', e.target.value)} />
-                                                <div className="text-xs text-gray-400">ID: {prod.id}</div>
-                                            </td>
-                                            <td className="p-3 font-mono text-gray-600">
-                                                <input type="number" className="w-16 border rounded text-center" value={prod.base_price} onChange={(e) => updateProductInfo(prod.id, 'base_price', e.target.value)} />
-                                            </td>
-                                            <td className="p-3 text-right">
-                                                <button 
-                                                    onClick={() => addProductToEvent(prod)}
-                                                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded shadow disabled:opacity-50"
-                                                    disabled={loading || !truckTargetEvent}
-                                                    title={!truckTargetEvent ? "Select an event top right first" : `Send to ${truckTargetEvent}`}
-                                                >
-                                                    🚚 Truck It
-                                                </button>
-                                                <button onClick={() => deleteProduct(prod.id)} className="ml-4 text-red-300 hover:text-red-500 font-bold" title="Delete from Global Catalog">×</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
+                        <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0 flex justify-between items-center">
+                            <span>Global Master List</span>
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-400">Truck to:</span>
+                                    <select className="text-black text-xs rounded p-1 font-bold" value={truckTargetEvent} onChange={(e) => setTruckTargetEvent(e.target.value)}>
+                                        <option value="">-- Choose --</option>
+                                        {availableEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.event_name}</option>)}
+                                    </select>
+                                </div>
+                                <button onClick={processBulkTransfer} disabled={loading || !truckTargetEvent} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-xs font-black shadow transition-all">
+                                    {loading ? 'Processing...' : 'Finalize Bulk Load 🚛'}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="overflow-y-auto flex-1">
+                            <table className="w-full text-left">
+                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img</th><th className="p-3">Product Name</th><th className="p-3 w-24">Price</th><th className="p-3 text-right">Qty to Load</th></tr></thead>
+                                <tbody>
+                                    {products.map((prod) => (
+                                        <tr key={prod.id} className="border-b hover:bg-gray-50">
+                                            <td className="p-3">{prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain" /> : <div className="w-10 h-10 bg-gray-100" />}</td>
+                                            <td className="p-3">
+                                                <div className="font-bold">{prod.name}</div>
+                                                <div className="text-[10px] text-gray-400">{prod.id}</div>
+                                            </td>
+                                            <td className="p-3 font-black text-blue-600">${prod.base_price}</td>
+                                            <td className="p-3 text-right">
+                                                <input type="number" placeholder="0" className="w-20 border p-2 rounded text-center font-black focus:ring-2 focus:ring-blue-500" value={transferQty[prod.id] || ''} onChange={(e) => setTransferQty({...transferQty, [prod.id]: e.target.value})} />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
                 </div>
             </div>
         )}
