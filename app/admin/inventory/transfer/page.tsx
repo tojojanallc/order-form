@@ -7,15 +7,12 @@ export default function LoadTruck() {
   const [warehouse, setWarehouse] = useState<any[]>([]);
   const [activeEvents, setActiveEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
   const [selectedEvent, setSelectedEvent] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [transferQty, setTransferQty] = useState<{ [key: string]: string }>({});
   const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   async function fetchData() {
     setLoading(true);
@@ -35,36 +32,36 @@ export default function LoadTruck() {
       });
 
     if (!selectedEvent) return alert("Select a target meet.");
-    if (itemsToMove.length === 0) return alert("Enter quantities to move.");
+    if (itemsToMove.length === 0) return alert("Enter quantities.");
 
     setIsProcessing(true);
-    
     try {
       for (const batchItem of itemsToMove) {
         const { item, qty } = batchItem;
         if (!item) continue;
 
-        // 1. DATA PREP: Ensure we have a clean number for the price
-        const targetPrice = Number(item.base_price) || 0;
-        const targetCost = Number(item.cost_price) || 0;
+        // Ensure we have a clean decimal number
+        const cleanPrice = parseFloat(item.base_price) || 0;
 
-        console.log(`Syncing SKU: ${item.sku} with Price: ${targetPrice}`);
-
-        // 2. THE PRIMARY SYNC: Update the Global Catalog (products table)
-        // This MUST happen first. We use the SKU as the ID.
-        const { error: prodError } = await supabase.from('products').upsert({
-            id: item.sku,                     // Map SKU to ID
-            name: item.item_name,             // Master Name
-            base_price: targetPrice,          // THE CORE FIX
-            type: item.type || 'apparel'      // Required field
+        // --- STEP 1: FORCE THE GLOBAL CATALOG UPDATE ---
+        // First, ensure the product identity exists
+        const { error: identityError } = await supabase.from('products').upsert({
+            id: item.sku,
+            name: item.item_name,
+            type: item.type || 'apparel'
         }, { onConflict: 'id' });
 
-        if (prodError) {
-            console.error("CATALOG SYNC ERROR:", prodError);
-            throw new Error(`Failed to sync Global Price for ${item.sku}: ${prodError.message}`);
-        }
+        if (identityError) throw new Error(`Identity Sync Failed: ${identityError.message}`);
 
-        // 3. THE TRUCK SYNC: Load the Event Inventory
+        // Second, FORCE the base_price update specifically
+        const { error: priceError } = await supabase
+            .from('products')
+            .update({ base_price: cleanPrice })
+            .eq('id', item.sku);
+
+        if (priceError) throw new Error(`PRICE UPDATE FAILED for ${item.sku}: ${priceError.message}`);
+
+        // --- STEP 2: LOAD THE TRUCK ---
         const { data: existing } = await supabase
           .from('inventory')
           .select('count')
@@ -78,27 +75,26 @@ export default function LoadTruck() {
             product_id: item.sku,
             size: item.size,
             count: (existing?.count || 0) + qty,
-            active: true, 
-            cost_price: targetCost,
-            override_price: targetPrice // Sync truck price to match global
+            active: true,
+            cost_price: parseFloat(item.cost_price) || 0,
+            override_price: cleanPrice
         }, { onConflict: 'event_slug,product_id,size' });
 
-        if (invError) throw new Error(`Truck Load Failed: ${invError.message}`);
+        if (invError) throw new Error(`Truck Inventory Error: ${invError.message}`);
 
-        // 4. THE WAREHOUSE DEDUCTION
+        // --- STEP 3: DEDUCT FROM WAREHOUSE ---
         await supabase.from('inventory_master')
           .update({ quantity_on_hand: item.quantity_on_hand - qty })
           .eq('sku', item.sku)
           .eq('size', item.size);
       }
 
-      alert(`✅ Success! Prices are synced in the Global Catalog and stock is on the truck.`);
+      alert(`✅ Success! Prices forced to Catalog and Stock loaded to ${selectedEvent}.`);
       setTransferQty({});
       fetchData();
 
     } catch (err: any) {
-      alert("CRITICAL ERROR: " + err.message);
-      console.error("Process Failure:", err);
+      alert("CRITICAL SYNC ERROR: " + err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -120,9 +116,9 @@ export default function LoadTruck() {
             <button 
                 onClick={processBulkTransfer}
                 disabled={isProcessing || !selectedEvent}
-                className="bg-emerald-500 text-white px-10 py-5 rounded-3xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-emerald-400 disabled:opacity-30 transition-all"
+                className="bg-slate-900 text-white px-10 py-5 rounded-3xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-emerald-600 disabled:opacity-30 transition-all"
             >
-                {isProcessing ? 'Forcing Price Sync...' : 'Finalize Bulk Load 🚛'}
+                {isProcessing ? 'Forcing Price Update...' : 'Finalize Bulk Load 🚛'}
             </button>
         </div>
 
@@ -141,7 +137,7 @@ export default function LoadTruck() {
             <div className="lg:col-span-8 bg-white p-8 rounded-[40px] border border-gray-100 flex items-end shadow-sm">
                 <input 
                     type="text" 
-                    placeholder="Search Enza, Decal, Hoodie, SKU..." 
+                    placeholder="Search Warehouse (Enza, Decal, Hoodie, SKU...)" 
                     className="w-full p-4 bg-gray-50 rounded-2xl border-none outline-none font-bold text-lg"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -152,7 +148,7 @@ export default function LoadTruck() {
         <div className="bg-white rounded-[48px] border border-gray-100 shadow-2xl overflow-hidden mb-20">
             <div className="grid grid-cols-12 bg-slate-100 p-6 px-10 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 border-b">
                 <div className="col-span-6">Warehouse Item & SKU</div>
-                <div className="col-span-2 text-center">In Warehouse</div>
+                <div className="col-span-2 text-center">Available</div>
                 <div className="col-span-4 text-right">Qty to Move</div>
             </div>
 
@@ -165,7 +161,7 @@ export default function LoadTruck() {
                                 <h3 className="text-xl font-black text-slate-800 uppercase leading-none">{item.item_name}</h3>
                                 <div className="flex gap-2 mt-2">
                                     <span className="text-[9px] font-black bg-blue-50 text-blue-500 px-2 py-0.5 rounded border border-blue-100 uppercase">{item.sku}</span>
-                                    <span className="text-[9px] font-black text-gray-400 uppercase self-center">Size {item.size} • WH Price: ${item.base_price || '0.00'}</span>
+                                    <span className="text-[9px] font-black text-gray-400 uppercase self-center">Size {item.size} • Retail: ${item.base_price || '0.00'}</span>
                                 </div>
                             </div>
                             <div className="col-span-2 text-center text-2xl font-black text-slate-900">{item.quantity_on_hand}</div>
