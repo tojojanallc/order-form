@@ -1,4 +1,5 @@
 'use client';
+import { useSearchParams } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../../supabase'; 
 import Link from 'next/link';
@@ -10,6 +11,10 @@ export default function WarehouseMasterPage() {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [editingId, setEditingId] = useState<number | string | null>(null);
   const [totalValue, setTotalValue] = useState(0);
+  const searchParams = useSearchParams();
+  const filter = searchParams.get('filter'); // This catches the "?filter=low"
+  
+  const [inventory, setInventory] = useState([]);
 
   // Form state for editing existing items
   const [editForm, setEditForm] = useState({ 
@@ -19,7 +24,17 @@ export default function WarehouseMasterPage() {
   });
 
   useEffect(() => { fetchWarehouseData(); }, []);
+  const fetchInventory = async () => {
+    let query = supabase.from('inventory_master').select('*');
 
+    // If the dashboard sent us here via the alert, apply the filter
+    if (filter === 'low') {
+      query = query.lt('quantity_on_hand', 10);
+    }
+
+    const { data } = await query.order('item_name');
+    setInventory(data || []);
+  };
   const fetchWarehouseData = async () => {
     setLoading(true);
     const { data } = await supabase.from('inventory_master').select('*').order('item_name', { ascending: true });
