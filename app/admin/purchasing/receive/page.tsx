@@ -49,30 +49,51 @@ export default function ReceivePO() {
   };
 
   const receiveAll = async () => {
-    if (!confirm(`Confirm receipt of PO ${selectedPO.po_number}? master warehouse counts will be updated.`)) return;
+    if (!confirm(`Confirm receipt of PO ${selectedPO.po_number}?`)) return;
 
     setProcessing(true);
     try {
-      for (const item of poItems) {
-        const { data: current } = await supabase.from('inventory_master').select('quantity_on_hand').eq('sku', item.sku).single();
-        await supabase.from('inventory_master').update({
-            quantity_on_hand: (current?.quantity_on_hand || 0) + item.quantity,
-            cost_price: item.unit_cost // Sync the most recent cost
-        }).eq('sku', item.sku);
-      }
+        for (const item of poItems) {
+            // 1. Fetch current stock carefully
+            const { data: current, error: fetchErr } = await supabase
+                .from('inventory_master')
+                .select('quantity_on_hand')
+                .eq('sku', item.sku)
+                .single();
 
-      await supabase.from('purchases').update({ status: 'received' }).eq('id', selectedPO.id);
+            if (fetchErr) {
+                console.error(`Could not find SKU ${item.sku} in master:`, fetchErr);
+                continue; // Skip if item is missing to prevent crashing the whole PO
+            }
 
-      alert("✅ Stock Intake Complete!");
-      setSelectedPO(null);
-      fetchOpenPOs();
+            // 2. Perform the update with the CORRECT column name (cost_price)
+            const { error: updateErr } = await supabase
+                .from('inventory_master')
+                .update({
+                    quantity_on_hand: (current?.quantity_on_hand || 0) + item.quantity,
+                    cost_price: item.unit_cost // Changed from cost_per_unit to cost_price
+                })
+                .eq('sku', item.sku);
+
+            if (updateErr) {
+                console.error(`Update failed for SKU ${item.sku}:`, updateErr);
+                throw new Error(`Failed to update ${item.sku}`);
+            }
+        }
+
+        // 3. Mark PO as received only after all items succeed
+        await supabase.from('purchases').update({ status: 'received' }).eq('id', selectedPO.id);
+
+        alert("✅ Inventory Successfully Added to Warehouse!");
+        setSelectedPO(null);
+        fetchOpenPOs();
 
     } catch (err: any) {
-      alert("Error: " + err.message);
+        alert("Critical Error: " + err.message);
     } finally {
         setProcessing(false);
     }
-  };
+};
 
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
