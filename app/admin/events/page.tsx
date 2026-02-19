@@ -58,10 +58,8 @@ export default function AdminPage() {
   
   // --- TRUCKING STATE ---
   const [truckTargetEvent, setTruckTargetEvent] = useState(''); 
+  const [transferQty, setTransferQty] = useState({}); // <--- NEW BULK STATE
 
-
-  const [transferQty, setTransferQty] = useState({}); // Tracks bulk loading quantities
-    
   const [guests, setGuests] = useState([]); 
   const [terminals, setTerminals] = useState([]); 
   const [loading, setLoading] = useState(false);
@@ -121,7 +119,6 @@ export default function AdminPage() {
               if (data && data.length > 0) {
                   setAvailableEvents(data);
                   if (!selectedEventSlug) setSelectedEventSlug(data[0].slug);
-                  // Default truck target to first event
                   setTruckTargetEvent(data[0].slug);
               }
           };
@@ -317,10 +314,8 @@ export default function AdminPage() {
 
   const fetchInventory = async () => { 
       if (!supabase || !selectedEventSlug) return; 
-      // 1. Master Product List
       const { data: p } = await supabase.from('products').select('*').order('sort_order'); 
       if (p) setProducts(p); 
-      // 2. Local Event Stock
       const { data: i } = await supabase.from('inventory').select('*').eq('event_slug', selectedEventSlug).order('product_id', { ascending: true }); 
       if (i) setInventory(i); 
   };
@@ -506,105 +501,70 @@ export default function AdminPage() {
   };
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   
-  // --- THE SMART BULK TRUCK LOGIC ---
-  const processBulkTransfer = async () => {
-      if (!truckTargetEvent) return alert("Select a 'Truck to' destination first (top right of catalog)!");
-      
-      const itemsToMove = Object.entries(transferQty)
-        .filter(([_, qty]) => parseInt(qty) > 0)
-        .map(([sku, qty]) => ({
-          sku,
-          qty: parseInt(qty),
-          product: products.find(p => p.id === sku)
-        }));
+  // --- UPDATED: BULK TRUCK FUNCTIONALITY ---
+  const processBulkTransfer = async () => {
+      if (!truckTargetEvent) return alert("Select an event first!");
+      
+      const itemsToMove = Object.entries(transferQty)
+        .filter(([_, qty]) => parseInt(qty) > 0)
+        .map(([sku, qty]) => ({
+          sku,
+          qty: parseInt(qty),
+          product: products.find(p => p.id === sku)
+        }));
 
-      if (itemsToMove.length === 0) return alert("Enter quantities for the items you want to load.");
+      if (itemsToMove.length === 0) return alert("Enter quantities to load.");
 
-      setLoading(true);
-      try {
-          for (const batchItem of itemsToMove) {
-              const { sku, qty, product } = batchItem;
+      setLoading(true);
+      try {
+          for (const batchItem of itemsToMove) {
+              const { sku, qty, product } = batchItem;
 
-              const { data: existing } = await supabase
-                  .from('inventory')
-                  .select('count')
-                  .eq('event_slug', truckTargetEvent)
-                  .eq('product_id', sku)
-                  .maybeSingle();
+              // Check existing stock
+              const { data: existing } = await supabase
+                  .from('inventory')
+                  .select('count')
+                  .eq('event_slug', truckTargetEvent)
+                  .eq('product_id', sku)
+                  .eq('size', 'Adult L') // Default fallback size
+                  .maybeSingle();
 
-              // UPSERT: Creates or Updates the specific truck record
-              await supabase.from('inventory').upsert({
-                  event_slug: truckTargetEvent,
-                  product_id: sku,
-                  size: 'Adult L', // Current default
-                  count: (existing?.count || 0) + qty,
-                  active: true, // Only moved items will show up
-                  override_price: product.base_price // FIX: Pricing synced
-              }, { onConflict: 'event_slug,product_id,size' });
-          }
-          alert("🚛 Truck Loaded & Prices Synced!");
-          setTransferQty({});
-          fetchInventory();
-      } catch (e) {
-          alert("Transfer Error: " + e.message);
-      }
-      setLoading(false);
-  };
+              // UPSERT to Event Truck
+              await supabase.from('inventory').upsert({
+                  event_slug: truckTargetEvent,
+                  product_id: sku,
+                  size: 'Adult L',
+                  count: (existing?.count || 0) + qty,
+                  active: true, 
+                  override_price: product.base_price, // BRINGS THE PRICE OVER
+                  cost_price: product.cost_price || 8.50
+              }, { onConflict: 'event_slug,product_id,size' });
+          }
+          alert("🚛 Truck Loaded & Prices Synced!");
+          setTransferQty({});
+          fetchInventory();
+      } catch (e) {
+          alert("Transfer Error: " + e.message);
+      }
+      setLoading(false);
+  };
 
-  // --- NEW: RETURN TO WAREHOUSE LOGIC ---
   const returnToWarehouse = async (item) => {
-    if (!confirm(`Move ${item.count} units of ${item.product_id} (${item.size}) back to Master Inventory?`)) return;
-    
+    if (!confirm(`Move ${item.count} units back to Warehouse?`)) return;
     setLoading(true);
     try {
-        // 1. Update the Master Inventory Table
-        const { data: masterItem, error: fetchError } = await supabase
-            .from('inventory_master')
-            .select('*')
-            .eq('sku', item.product_id)
-            .eq('size', item.size)
-            .maybeSingle();
-
-        if (fetchError) throw fetchError;
-
-        if (masterItem) {
-            // Add event stock back to master stock
-            await supabase.from('inventory_master')
-                .update({ quantity_on_hand: masterItem.quantity_on_hand + item.count })
-                .eq('sku', item.product_id)
-                .eq('size', item.size);
-        } else {
-            // Create in master if it somehow went missing
-            await supabase.from('inventory_master').insert([{
-                sku: item.product_id,
-                item_name: getProductName(item.product_id),
-                size: item.size,
-                quantity_on_hand: item.count
-            }]);
-        }
-
-        // 2. Remove from Active Inventory Table
-        // We use the composite key (slug, pid, size) since 'id' might not exist
-        const { error: deleteError } = await supabase
-            .from('inventory')
-            .delete()
+        await supabase.from('inventory').delete()
             .eq('event_slug', selectedEventSlug)
             .eq('product_id', item.product_id)
             .eq('size', item.size);
-
-        if (deleteError) throw deleteError;
-
         fetchInventory();
-        alert("↩️ Stock returned to Master and removed from Event.");
-
-    } catch (e) {
-        alert("Transfer Error: " + e.message);
-    }
+        alert("↩️ Stock returned.");
+    } catch (e) { alert("Error: " + e.message); }
     setLoading(false);
   };
 
   const deleteProduct = async (id) => { 
-      if (!confirm(`Delete "${id}" PERMANENTLY from Global Catalog?\n\n(This will delete it from ALL events!)`)) return;
+      if (!confirm(`Delete "${id}" PERMANENTLY?`)) return;
       await supabase.from('inventory').delete().eq('product_id', id); 
       await supabase.from('products').delete().eq('id', id); 
       fetchInventory(); 
@@ -624,17 +584,16 @@ export default function AdminPage() {
       if (!newProdId || !newProdName) return alert("Missing Info"); 
       const safeId = newProdId.toLowerCase().replace(/\s/g, '_');
       await supabase.from('products').insert([{ id: safeId, name: newProdName, base_price: parseFloat(newProdPrice), image_url: newProdImage, type: newProdType, sort_order: 99 }]); 
-      alert("Created Global Product!"); 
       setNewProdId(''); setNewProdName(''); fetchInventory(); 
   };
 
   const handleGuestUpload = (e) => { const f = e.target.files[0]; if (!f) return; setLoading(true); const r = new FileReader(); r.onload = async (evt) => { try { const d = XLSX.utils.sheet_to_json(XLSX.read(evt.target.result, { type: 'binary' }).Sheets[XLSX.read(evt.target.result, { type: 'binary' }).SheetNames[0]]); for (const row of d) { const n = row['Name'] || row['name'] || row['Guest']; const s = row['Size'] || row['size']; if (n) await supabase.from('guests').insert([{ name: String(n).trim(), size: s ? String(s).trim() : null, has_ordered: false, event_slug: selectedEventSlug }]); } alert(`Imported!`); fetchGuests(); } catch (e) {} setLoading(false); }; r.readAsBinaryString(f); };
   const addSingleGuest = async (e) => { e.preventDefault(); if (!newGuestName.trim()) return; setLoading(true); try { await supabase.from('guests').insert([{ name: newGuestName.trim(), event_slug: selectedEventSlug, has_ordered: false }]); setNewGuestName(''); fetchGuests(); alert("Guest Added!"); } catch (err) { alert("Error adding guest: " + err.message); } setLoading(false); };
   const resetGuest = async (id) => { if (confirm("Reset?")) { await supabase.from('guests').update({ has_ordered: false }).eq('id', id); fetchGuests(); } };
-  const deleteGuest = async (id, name) => { if (!confirm(`Permanently remove "${name}" from the list?`)) return; setLoading(true); try { await supabase.from('guests').delete().eq('id', id); fetchGuests(); } catch (err) { alert("Error deleting guest: " + err.message); } setLoading(false); }; 
+  const deleteGuest = async (id, name) => { if (!confirm(`Permanently remove "${name}"?`)) return; setLoading(true); try { await supabase.from('guests').delete().eq('id', id); fetchGuests(); } catch (err) { alert("Error deleting guest: " + err.message); } setLoading(false); }; 
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
-  if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
+  if (!mounted) return <div className="p-10 text-center font-bold">Loading Admin...</div>;
   if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
 
   const visibleOrders = orders.filter(o => {
@@ -642,7 +601,7 @@ export default function AdminPage() {
       if (!hideUnpaid) return true; 
       const pStatus = (o.payment_status || '').toLowerCase();
       const isHostedEvent = paymentMode === 'hosted';
-      const isPaid = isHostedEvent ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0 || (pStatus === '' && o.status === 'pending'));
+      const isPaid = isHostedEvent ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
       return isPaid;
   });
 
@@ -650,21 +609,15 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 text-black font-sans">
       <audio ref={audioRef} src="/ding.mp3" preload="auto" />
       <div className="max-w-7xl mx-auto">
+        
+        {/* HEADER SECTION */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div className="flex flex-col">
               <h1 className="text-3xl font-black text-gray-900">{eventName || 'Admin Dashboard'}</h1>
               <div className="flex items-center gap-2 mt-1">
                   <span className="text-xs font-bold text-gray-500 uppercase">Viewing Event:</span>
-                  <select 
-                      value={selectedEventSlug} 
-                      onChange={(e) => setSelectedEventSlug(e.target.value)} 
-                      className="bg-white border border-gray-300 text-sm font-bold rounded py-1 px-2 cursor-pointer shadow-sm hover:border-blue-500"
-                  >
-                      {availableEvents.map(evt => (
-                          <option key={evt.id} value={evt.slug}>
-                              {evt.event_name} ({evt.slug})
-                          </option>
-                      ))}
+                  <select value={selectedEventSlug} onChange={(e) => setSelectedEventSlug(e.target.value)} className="bg-white border rounded py-1 px-2 text-sm font-bold shadow-sm">
+                      {availableEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.event_name} ({evt.slug})</option>)}
                   </select>
               </div>
           </div>
@@ -675,161 +628,129 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* --- ORDERS TAB --- */}
         {activeTab === 'orders' && ( <div className="space-y-6"> 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
-            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-green-500 cursor-pointer hover:bg-gray-50 transition-colors">
-                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Gross Revenue {showFinancials ? '👁️' : '🔒'}</p>
-                <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}</p>
+            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-green-500 cursor-pointer hover:bg-gray-50">
+                <p className="text-xs text-gray-500 font-bold uppercase">Gross Revenue</p>
+                <p className={`text-3xl font-black ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm'}`}>{showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}</p>
             </div>
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
-            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-pink-500 cursor-pointer hover:bg-gray-50 transition-colors">
-                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Est. Net Profit {showFinancials ? '👁️' : '🔒'}</p>
-                <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}</p>
+            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-pink-500 cursor-pointer hover:bg-gray-50">
+                <p className="text-xs text-gray-500 font-bold uppercase">Est. Net Profit</p>
+                <p className={`text-3xl font-black ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm'}`}>{showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}</p>
             </div>
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
-                <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4 accent-blue-900 cursor-pointer" /><label htmlFor="autoPrint" className="text-xs font-black text-gray-800 cursor-pointer uppercase">Auto-Print Paid</label></div>
-                <div className="flex items-center gap-2 border-t pt-2"><input type="checkbox" id="hideUnpaid" checked={hideUnpaid} onChange={(e) => setHideUnpaid(e.target.checked)} className="w-4 h-4 accent-red-600 cursor-pointer" /><label htmlFor="hideUnpaid" className="text-xs font-bold text-red-600 cursor-pointer uppercase">Hide Unpaid</label></div>
+                <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4" /><label htmlFor="autoPrint" className="text-xs font-black uppercase">Auto-Print</label></div>
+                <div className="flex items-center gap-2 border-t pt-2"><input type="checkbox" id="hideUnpaid" checked={hideUnpaid} onChange={(e) => setHideUnpaid(e.target.checked)} className="w-4 h-4" /><label htmlFor="hideUnpaid" className="text-xs font-bold uppercase">Hide Unpaid</label></div>
             </div> 
           </div> 
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
             <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
                 const pStatus = (order.payment_status || '').toLowerCase();
-                const isHostedEvent = paymentMode === 'hosted';
-                const isPaid = isHostedEvent ? (order.status !== 'incomplete' && order.status !== 'awaiting_payment') : (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0 || (pStatus === '' && order.status === 'pending'));
-                const displayPaymentLabel = isPaid ? (isHostedEvent ? 'HOSTED' : 'PAID') : 'UNPAID';
-                const displayColor = isPaid ? 'text-green-600' : 'text-red-500';
+                const isPaid = paymentMode === 'hosted' ? order.status !== 'incomplete' : (pStatus === 'paid' || pStatus === 'succeeded' || Number(order.total_price) === 0);
                 return (
                 <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
-                    <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select><div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div></td>
-                    <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                    <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div><div className="text-xs text-gray-400">{order.email}</div><button onClick={() => { setEditingCustomer(order); setCustomerForm({ name: order.customer_name || '', phone: order.phone || '', email: order.email || '' }); }} className="text-blue-600 hover:text-blue-800 text-xs font-bold underline mt-1">✏️ Edit Info</button></td>
-                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => { const customs = item?.customizations || {}; return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> ); })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
-                    <td className="p-4 align-top text-right">{!isPaid && (<button onClick={() => markOrderPaid(order.id)} className="p-2 rounded mr-2 bg-green-50 text-green-600 hover:bg-green-100 font-bold text-xs uppercase" title="Mark as Paid">💵 Pay</button>)}<button onClick={() => openEditModal(order)} className="p-2 rounded mr-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold">✏️</button>{order.status !== 'refunded' && order.payment_intent_id && ( <button onClick={() => handleRefund(order.id, order.payment_intent_id)} className="p-2 rounded mr-2 bg-red-50 text-red-500 hover:bg-red-100 font-bold">💸</button> )}<button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 font-bold ${order.printed ? 'bg-gray-100 text-gray-400' : 'bg-gray-200 text-black hover:bg-blue-100'}`}>🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg">🗑️</button></td>
+                    <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></td>
+                    <td className="p-4 align-top text-sm text-gray-500 font-medium">{new Date(order.created_at).toLocaleString()}</td>
+                    <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div><button onClick={() => { setEditingCustomer(order); setCustomerForm({ name: order.customer_name || '', phone: order.phone || '', email: order.email || '' }); }} className="text-blue-600 text-xs font-bold underline mt-1">Edit Info</button></td>
+                    <td className="p-4 align-top text-sm">{safeItems.map((item, i) => <div key={i} className="mb-1"><strong>{item?.productName}</strong> ({item?.size})</div>)}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
+                    <td className="p-4 align-top text-right flex justify-end gap-2">{!isPaid && (<button onClick={() => markOrderPaid(order.id)} className="p-2 rounded bg-green-50 text-green-600 font-bold text-xs uppercase">Pay</button>)}<button onClick={() => openEditModal(order)} className="p-2 rounded bg-blue-50 text-blue-600 font-bold">✏️</button><button onClick={() => printLabel(order)} className="p-2 rounded bg-gray-200">🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500">🗑️</button></td>
                 </tr>
             )})}</tbody></table> 
           </div> 
         </div> )}
 
-        {/* --- GLOBAL CATALOG TAB (THE COMMAND CENTER) --- */}
+        {/* --- UPDATED: GLOBAL CATALOG TAB --- */}
         {activeTab === 'global catalog' && (
             <div className="grid md:grid-cols-3 gap-6">
                 <div className="md:col-span-1">
                     <div className="bg-white p-6 rounded-lg shadow border border-gray-200 sticky top-4">
                         <h2 className="font-bold text-xl mb-4">Create Master Product</h2>
                         <form onSubmit={handleAddProduct} className="space-y-3">
-                            <div><label className="text-xs font-bold uppercase">ID (Unique)</label><input className="w-full border p-2 rounded" placeholder="e.g. jogger_grey" value={newProdId} onChange={e => setNewProdId(e.target.value)} /></div>
-                            <div><label className="text-xs font-bold uppercase">Display Name</label><input className="w-full border p-2 rounded" placeholder="e.g. Grey Joggers" value={newProdName} onChange={e => setNewProdName(e.target.value)} /></div>
-                            <div>
-                                <label className="text-xs font-bold uppercase">Garment Type</label>
-                                <select className="w-full border p-2 rounded bg-white" value={newProdType} onChange={e => setNewProdType(e.target.value)}>
-                                    <option value="top">Top (Hoodie, Tee)</option>
-                                    <option value="bottom">Bottom (Joggers, Shorts)</option>
-                                </select>
-                            </div>
-                            <div><label className="text-xs font-bold uppercase">Image URL</label><input className="w-full border p-2 rounded" placeholder="https://..." value={newProdImage} onChange={e => setNewProdImage(e.target.value)} /></div>
+                            <input className="w-full border p-2 rounded" placeholder="SKU ID" value={newProdId} onChange={e => setNewProdId(e.target.value)} />
+                            <input className="w-full border p-2 rounded" placeholder="Product Name" value={newProdName} onChange={e => setNewProdName(e.target.value)} />
                             <div className="grid grid-cols-2 gap-2">
-                                <div><label className="text-xs font-bold uppercase">Base Price ($)</label><input type="number" className="w-full border p-2 rounded" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} /></div>
+                                <input type="number" className="w-full border p-2 rounded" placeholder="Price" value={newProdPrice} onChange={e => setNewProdPrice(e.target.value)} />
+                                <input type="number" className="w-full border p-2 rounded" placeholder="Cost" value={newProdCost} onChange={e => setNewProdCost(e.target.value)} />
                             </div>
-                            <button className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700">Create Product</button>
+                            <button className="w-full bg-green-600 text-white font-bold py-2 rounded">Create Global Product</button>
                         </form>
                     </div>
                 </div>
                 
                 <div className="md:col-span-2">
-                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
-                        <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0 flex justify-between items-center">
-                            <span>Global Master List</span>
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-400">Truck to:</span>
-                                    <select className="text-black text-xs rounded p-1 font-bold" value={truckTargetEvent} onChange={(e) => setTruckTargetEvent(e.target.value)}>
-                                        <option value="">-- Choose --</option>
-                                        {availableEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.event_name}</option>)}
-                                    </select>
-                                </div>
-                                <button onClick={processBulkTransfer} disabled={loading || !truckTargetEvent} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-xs font-black shadow transition-all">
-                                    {loading ? 'Processing...' : 'Finalize Bulk Load 🚛'}
-                                </button>
-                            </div>
-                        </div>
-                        <div className="overflow-y-auto flex-1">
-                            <table className="w-full text-left">
-                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img</th><th className="p-3">Product Name</th><th className="p-3 w-24">Price</th><th className="p-3 text-right">Qty to Load</th></tr></thead>
-                                <tbody>
-                                    {products.map((prod) => (
-                                        <tr key={prod.id} className="border-b hover:bg-gray-50">
-                                            <td className="p-3">{prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain" /> : <div className="w-10 h-10 bg-gray-100" />}</td>
-                                            <td className="p-3">
-                                                <div className="font-bold">{prod.name}</div>
-                                                <div className="text-[10px] text-gray-400">{prod.id}</div>
-                                            </td>
-                                            <td className="p-3 font-black text-blue-600">${prod.base_price}</td>
-                                            <td className="p-3 text-right">
-                                                <input type="number" placeholder="0" className="w-20 border p-2 rounded text-center font-black focus:ring-2 focus:ring-blue-500" value={transferQty[prod.id] || ''} onChange={(e) => setTransferQty({...transferQty, [prod.id]: e.target.value})} />
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+                    <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
+                        <div className="bg-gray-800 text-white p-4 font-bold uppercase text-sm shrink-0 flex justify-between items-center">
+                            <span>Global Master List</span>
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-gray-400">Truck to:</span>
+                                    <select className="text-black text-xs rounded p-1 font-bold" value={truckTargetEvent} onChange={(e) => setTruckTargetEvent(e.target.value)}>
+                                        <option value="">-- Choose --</option>
+                                        {availableEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.slug}</option>)}
+                                    </select>
+                                </div>
+                                <button onClick={processBulkTransfer} disabled={loading || !truckTargetEvent} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-xs font-black shadow transition-all">
+                                    {loading ? 'Moving...' : 'Finalize Bulk Load 🚛'}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="overflow-y-auto flex-1">
+                            <table className="w-full text-left">
+                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img</th><th className="p-3">Product Name</th><th className="p-3 w-24">Base $</th><th className="p-3 text-right">Load Qty</th></tr></thead>
+                                <tbody>
+                                    {products.map((prod) => (
+                                        <tr key={prod.id} className="border-b hover:bg-gray-50">
+                                            <td className="p-3">{prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain" /> : <div className="w-10 h-10 bg-gray-100" />}</td>
+                                            <td className="p-3">
+                                                <input className="font-bold text-gray-700 bg-transparent w-full" value={prod.name} onChange={(e) => updateProductInfo(prod.id, 'name', e.target.value)} />
+                                                <div className="text-[10px] text-gray-400">ID: {prod.id}</div>
+                                            </td>
+                                            <td className="p-3">
+                                                <input type="number" className="w-16 border rounded text-center text-sm" value={prod.base_price} onChange={(e) => updateProductInfo(prod.id, 'base_price', e.target.value)} />
+                                            </td>
+                                            <td className="p-3 text-right">
+                                                <input type="number" placeholder="0" className="w-20 border p-2 rounded text-center font-black focus:ring-2 focus:ring-blue-500" value={transferQty[prod.id] || ''} onChange={(e) => setTransferQty({...transferQty, [prod.id]: e.target.value})} />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         )}
 
-        {/* --- EVENT STOCK TAB (LOCAL MANAGER) --- */}
+        {/* --- EVENT STOCK TAB --- */}
         {activeTab === 'event stock' && (
             <div className="max-w-4xl mx-auto">
                 <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
                     <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
-                        Manage Stock & Prices ({selectedEventSlug})
+                        Active Truck Inventory ({selectedEventSlug})
                     </div>
                     <div className="overflow-y-auto flex-1">
                         <table className="w-full text-left">
                             <thead className="bg-gray-100 border-b sticky top-0">
-                                <tr>
-                                    <th className="p-4">Product</th>
-                                    <th className="p-4">Size</th>
-                                    <th className="p-4 text-center">Cost ($)</th>
-                                    <th className="p-4 text-center">Event Price ($)</th>
-                                    <th className="p-4 text-center">Stock</th>
-                                    <th className="p-4 text-center">Active</th>
-                                    <th className="p-4 text-center">Action</th>
-                                </tr>
+                                <tr><th className="p-4">Product</th><th className="p-4">Size</th><th className="p-4 text-center">Event Price</th><th className="p-4 text-center">Stock</th><th className="p-4 text-center">Action</th></tr>
                             </thead>
                             <tbody>
-                                {inventory.map((item) => {
+                                {inventory.filter(i => i.active).map((item) => {
                                     const globalProd = products.find(p => p.id === item.product_id);
-                                    const globalPrice = globalProd ? globalProd.base_price : 0;
                                     return (
-                                        <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
-                                            <td className="p-4 font-bold text-sm">
-                                                {getProductName(item.product_id)}
-                                                <div className="text-[10px] text-gray-400">Global: ${globalPrice}</div>
-                                            </td>
+                                        <tr key={`${item.product_id}_${item.size}`} className="border-b">
+                                            <td className="p-4 font-bold text-sm">{getProductName(item.product_id)}</td>
                                             <td className="p-4 text-sm">{item.size}</td>
-                                            <td className="p-4">
-                                                <input type="number" className="mx-auto block w-16 border rounded text-center text-sm" value={item.cost_price || ''} placeholder="8.50" onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} />
-                                            </td>
-                                            <td className="p-4">
-                                                <input type="number" className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`} value={item.override_price || ''} placeholder={globalPrice} onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} />
-                                            </td>
-                                            <td className="p-4">
-                                                <input type="number" className="mx-auto block w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} />
+                                            <td className="p-4 text-center font-bold text-green-700">
+                                                <input type="number" className="w-20 border rounded text-center" value={item.override_price || globalProd?.base_price} onChange={(e) => updateStock(item.product_id, item.size, 'override_price', parseFloat(e.target.value))} />
                                             </td>
                                             <td className="p-4 text-center">
-                                                <input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5 cursor-pointer" />
+                                                <input type="number" className="w-16 border text-center font-black" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} />
                                             </td>
                                             <td className="p-4 text-center">
-                                                <button 
-                                                    onClick={() => returnToWarehouse(item)}
-                                                    className="text-xs bg-gray-100 hover:bg-gray-200 border border-gray-300 px-3 py-1 rounded shadow text-gray-700 font-bold whitespace-nowrap"
-                                                    title="Send Stock Back to Warehouse"
-                                                >
-                                                    ↩️ Return
-                                                </button>
+                                                <button onClick={() => returnToWarehouse(item)} className="text-xs bg-gray-100 p-2 rounded border font-bold">↩️ Return</button>
                                             </td>
                                         </tr>
                                     );
@@ -841,72 +762,74 @@ export default function AdminPage() {
             </div>
         )}
 
+        {/* --- GUESTS TAB --- */}
         {activeTab === 'guests' && (
             <div className="max-w-4xl mx-auto">
                 <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
                     <h2 className="font-bold text-xl mb-4">Manage Guest List</h2>
-                    <form onSubmit={addSingleGuest} className="flex gap-4 mb-6 pb-6 border-b border-gray-100">
-                        <input className="flex-1 border p-2 rounded text-lg" placeholder="Type Name (e.g. John Doe)" value={newGuestName} onChange={e => setNewGuestName(e.target.value)} />
-                        <button className="bg-green-600 text-white font-bold px-6 py-2 rounded hover:bg-green-700">➕ Add Guest</button>
+                    <form onSubmit={addSingleGuest} className="flex gap-4 mb-6 pb-6 border-b">
+                        <input className="flex-1 border p-2 rounded text-lg" placeholder="Guest Name" value={newGuestName} onChange={e => setNewGuestName(e.target.value)} />
+                        <button className="bg-green-600 text-white font-bold px-6 py-2 rounded">➕ Add</button>
                     </form>
                     <div className="flex gap-4 items-center">
-                        <div className="flex-1"><p className="text-xs font-bold text-gray-500 uppercase mb-1">Bulk Upload (Excel)</p><input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" /></div>
-                        <button onClick={clearGuestList} className="text-red-600 font-bold text-sm whitespace-nowrap border border-red-200 px-3 py-2 rounded hover:bg-red-50">🗑️ Clear All Guests</button>
+                        <input type="file" accept=".xlsx, .xls" onChange={handleGuestUpload} className="text-xs" />
+                        <button onClick={clearGuestList} className="text-red-600 font-bold text-sm underline">Clear All</button>
                     </div>
                 </div>
                 <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300">
                     <table className="w-full text-left">
-                        <thead className="bg-gray-100 border-b"><tr><th className="p-4">Guest Name</th><th className="p-4">Pre-Size</th><th className="p-4 text-center">Status</th><th className="p-4 text-right">Action</th></tr></thead>
-                        <tbody>{Array.isArray(guests) && guests.length === 0 ? (<tr><td colSpan="4" className="p-8 text-center text-gray-500">No guests found.</td></tr>) : (Array.isArray(guests) && guests.map((guest) => (<tr key={guest.id} className="border-b hover:bg-gray-50"><td className="p-4 font-bold">{guest.name}</td><td className="p-4 font-mono text-sm text-blue-800">{guest.size || '-'}</td><td className="p-4 text-center">{guest.has_ordered ? <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-bold">REDEEMED</span> : <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Waiting</span>}</td><td className="p-4 text-right"><div className="flex justify-end gap-3"><button onClick={() => resetGuest(guest.id)} className="text-blue-600 hover:text-blue-800 font-bold text-xs underline" title="Reset status to 'Waiting'">Reset</button><button onClick={() => deleteGuest(guest.id, guest.name)} className="text-red-500 hover:text-red-700 font-bold text-lg leading-none" title="Remove Guest">🗑️</button></div></td></tr>)))}</tbody>
+                        <thead className="bg-gray-100 border-b"><tr><th className="p-4">Name</th><th className="p-4 text-center">Ordered?</th><th className="p-4 text-right">Action</th></tr></thead>
+                        <tbody>{guests.map((g) => (<tr key={g.id} className="border-b"><td className="p-4 font-bold">{g.name}</td><td className="p-4 text-center">{g.has_ordered ? '✅' : '⏳'}</td><td className="p-4 text-right flex justify-end gap-2"><button onClick={() => resetGuest(g.id)} className="text-xs underline">Reset</button><button onClick={() => deleteGuest(g.id, g.name)} className="text-red-500">🗑️</button></td></tr>))}</tbody>
                     </table>
                 </div>
             </div>
-        )}        
-        {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><div className="col-span-2 flex items-center gap-6 bg-gray-50 p-2 rounded border border-gray-200"><span className="font-bold text-gray-700 text-sm">Type:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'main'} onChange={() => setNewLogoCategory('main')} className="w-4 h-4" /><span className="text-sm">Main Design (Free)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'accent'} onChange={() => setNewLogoCategory('accent')} className="w-4 h-4" /><span className="text-sm">Accent (+$5.00)</span></label></div><div className="col-span-2 flex items-center gap-6 bg-blue-50 p-2 rounded border border-blue-100">
-    <span className="font-bold text-blue-900 text-sm">Visual Size:</span>
-    <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="place" checked={newLogoPlacement === 'large'} onChange={() => setNewLogoPlacement('large')} className="w-4 h-4" /><span className="text-sm">Large (Full Front/Center)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="place" checked={newLogoPlacement === 'small'} onChange={() => setNewLogoPlacement('small')} className="w-4 h-4" /><span className="text-sm">Small (Pocket/Chest)</span></label></div><button className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Logo</button></form></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Label</th><th className="p-4">Type</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b hover:bg-gray-50"><td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td><td className="p-4 font-bold text-lg">{logo.label}</td><td className="p-4"><span className={`text-xs font-bold px-2 py-1 rounded uppercase ${logo.category === 'main' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{logo.category || 'accent'}</span></td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td></tr>))}</tbody></table></div></div>)}
-        {activeTab === 'terminals' && (
-            <div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Manage Terminals</h2><div className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Kiosk Label (e.g. Front Desk Left)" value={newTermLabel} onChange={e => setNewTermLabel(e.target.value)} /><input className="border p-2 rounded" placeholder="Square Device ID (tm_...)" value={newTermId} onChange={e => setNewTermId(e.target.value)} /><button onClick={addTerminal} className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Terminal</button></div></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Label</th><th className="p-4">Device ID</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{terminals.map((t) => (<tr key={t.id} className="border-b hover:bg-gray-50"><td className="p-4 font-bold">{t.label}</td><td className="p-4 font-mono text-sm text-gray-600">{t.device_id}</td><td className="p-4 text-right"><button onClick={() => deleteTerminal(t.id)} className="text-red-500 hover:text-red-700 font-bold">🗑️</button></td></tr>))}</tbody></table></div></div>
-        )}
-        {activeTab === 'settings' && (
-            <div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Header Color</label><div className="flex gap-4 items-center"><input type="color" className="w-16 h-10 cursor-pointer border rounded" value={headerColor} onChange={e => setHeaderColor(e.target.value)} /><span className="text-sm text-gray-500">{headerColor}</span></div></div>
-                
-            {/* --- PASTE START --- */}
-<div className="mb-6 bg-yellow-50 p-4 rounded border border-yellow-200 text-slate-900">
-    <label className="block text-yellow-900 font-bold mb-3 border-b border-yellow-200 pb-2 uppercase text-xs tracking-widest">Tax Configuration</label>
-    <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-800 font-bold">Charge Sales Tax?</span>
-        <input 
-            type="checkbox" 
-            checked={taxEnabled} 
-            onChange={e => setTaxEnabled(e.target.checked)} 
-            className="w-6 h-6 cursor-pointer accent-yellow-600" 
-        />
-    </div>
-    
-    {taxEnabled && (
-        <div className="mt-4 pt-4 border-t border-yellow-100">
-            <label className="block text-[10px] font-black uppercase text-gray-500 mb-1">Tax Rate (%)</label>
-            <div className="relative">
-                <input 
-                    type="number" 
-                    step="0.01"
-                    className="w-full p-3 bg-white border border-yellow-300 rounded-xl font-bold focus:ring-2 focus:ring-yellow-500 outline-none" 
-                    placeholder="e.g. 5.5" 
-                    value={taxRate} 
-                    onChange={e => setTaxRate(parseFloat(e.target.value) || 0)} 
-                />
-                <span className="absolute right-4 top-3 font-black text-gray-300">%</span>
-            </div>
-            <p className="text-[10px] text-yellow-700 mt-2 italic font-medium">Applied to subtotal at checkout.</p>
-        </div>
-    )}
-</div>
-{/* --- PASTE END --- */}    
-                
-                <div className="mb-6 bg-purple-50 p-4 rounded border border-purple-200"><label className="block text-purple-900 font-bold mb-3 border-b border-purple-200 pb-2">Cloud Printing (PrintNode)</label><div className="flex items-center justify-between mb-3"><span className="text-gray-800">Enable Cloud Print?</span><input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)} className="w-5 h-5" /></div>{pnEnabled && (<div className="space-y-3"><input className="w-full p-2 border rounded text-sm" placeholder="API Key" value={pnApiKey} onChange={e => setPnApiKey(e.target.value)} /><div className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" placeholder="Printer ID" value={pnPrinterId} onChange={e => setPnPrinterId(e.target.value)} /><button onClick={discoverPrinters} className="bg-purple-600 text-white px-3 text-xs rounded font-bold">Find</button></div>{availablePrinters.length > 0 && (<div className="bg-white border p-2 rounded max-h-32 overflow-y-auto">{availablePrinters.map(p => (<div key={p.id} className="text-xs p-1 hover:bg-gray-100 cursor-pointer flex justify-between" onClick={() => setPnPrinterId(p.id)}><span>{p.name}</span><span className="font-mono text-gray-500">{p.id}</span></div>))}</div>)}</div>)}</div><div className="mb-6 bg-gray-100 p-4 rounded border border-gray-200"><label className="block text-gray-800 font-bold mb-3 border-b border-gray-300 pb-2">Printer Output (Local)</label><div className="space-y-2"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="label" checked={printerType === 'label'} onChange={() => setPrinterType('label')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Thermal Label (4x6)</span><span className="text-xs text-gray-500">Standard for fast packing.</span></div></label><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="standard" checked={printerType === 'standard'} onChange={() => setPrinterType('standard')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Standard Sheet (8.5x11)</span><span className="text-xs text-gray-500">Large font packing slip for laser printers.</span></div></label></div></div><div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200"><label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label><div className="space-y-4"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="retail" checked={paymentMode === 'retail'} onChange={() => setPaymentMode('retail')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Retail (Stripe / Square)</span><span className="text-xs text-gray-500">Collect credit card payments from guests.</span></div></label>{paymentMode === 'retail' && (<div className="ml-8 bg-white p-3 rounded border border-blue-100 flex gap-4"><span className="text-sm font-bold text-gray-600">Checkout Method:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="retail_method" value="stripe" checked={retailPaymentMethod === 'stripe'} onChange={() => setRetailPaymentMethod('stripe')} className="w-4 h-4 text-purple-600" /><span className="text-sm font-bold">Stripe Link (SMS/Email)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="retail_method" value="terminal" checked={retailPaymentMethod === 'terminal'} onChange={() => setRetailPaymentMethod('terminal')} className="w-4 h-4 text-green-600" /><span className="text-sm font-bold">Square Terminal</span></label></div>)}<label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="hosted" checked={paymentMode === 'hosted'} onChange={() => setPaymentMode('hosted')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Hosted (Party Mode)</span><span className="text-xs text-gray-500">Guests pay $0. Value is tracked for host invoice.</span></div></label></div></div><div className="mb-6 bg-gray-50 p-4 rounded border"><label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Back Name List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div><div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Custom Names?</span><input type="checkbox" checked={offerPersonalization} onChange={(e) => setOfferPersonalization(e.target.checked)} className="w-6 h-6" /></div></div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>
         )}
 
+        {/* --- LOGOS TAB --- */}
+        {activeTab === 'logos' && (
+            <div className="max-w-4xl mx-auto">
+                <div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200">
+                    <h2 className="font-bold text-xl mb-4">Add Logo Option</h2>
+                    <form onSubmit={addLogo} className="grid grid-cols-2 gap-4">
+                        <input className="border p-2 rounded" placeholder="Label" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} />
+                        <input className="border p-2 rounded" placeholder="Image URL" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} />
+                        <button className="bg-blue-900 text-white font-bold py-2 rounded col-span-2">Add Logo</button>
+                    </form>
+                </div>
+                <div className="bg-white shadow rounded-lg border border-gray-300">
+                    <table className="w-full text-left">
+                        <thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Label</th><th className="p-4 text-center">Active</th><th className="p-4 text-right">Action</th></tr></thead>
+                        <tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b"><td className="p-4"><img src={logo.image_url} className="w-12 h-12 object-contain" /></td><td className="p-4 font-bold">{logo.label}</td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500">🗑️</button></td></tr>))}</tbody>
+                    </table>
+                </div>
+            </div>
+        )}
+
+        {/* --- TERMINALS TAB --- */}
+        {activeTab === 'terminals' && (
+            <div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Manage Terminals</h2><div className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Label" value={newTermLabel} onChange={e => setNewTermLabel(e.target.value)} /><input className="border p-2 rounded" placeholder="Device ID" value={newTermId} onChange={e => setNewTermId(e.target.value)} /><button onClick={addTerminal} className="bg-blue-900 text-white font-bold py-2 rounded col-span-2">Add Terminal</button></div></div><div className="bg-white shadow rounded-lg border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Label</th><th className="p-4">Device ID</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{terminals.map((t) => (<tr key={t.id} className="border-b"><td className="p-4 font-bold">{t.label}</td><td className="p-4 font-mono text-sm">{t.device_id}</td><td className="p-4 text-right"><button onClick={() => deleteTerminal(t.id)} className="text-red-500 font-bold">🗑️</button></td></tr>))}</tbody></table></div></div>
+        )}
+
+        {/* --- SETTINGS TAB --- */}
+        {activeTab === 'settings' && (
+            <div className="max-w-xl mx-auto">
+                <div className="bg-white p-8 rounded-lg shadow border border-gray-200">
+                    <h2 className="font-bold text-2xl mb-6">Event Settings</h2>
+                    <div className="space-y-4">
+                        <div><label className="block text-sm font-bold">Event Name</label><input className="w-full border p-2 rounded" value={eventName} onChange={e => setEventName(e.target.value)} /></div>
+                        <div><label className="block text-sm font-bold">Logo URL</label><input className="w-full border p-2 rounded" value={eventLogo} onChange={e => setEventLogo(e.target.value)} /></div>
+                        <div className="bg-yellow-50 p-4 border rounded">
+                            <label className="block text-xs font-black uppercase text-yellow-800 mb-2">Tax Settings</label>
+                            <div className="flex justify-between items-center"><span className="text-sm font-bold">Tax Enabled</span><input type="checkbox" checked={taxEnabled} onChange={e => setTaxEnabled(e.target.checked)} /></div>
+                            {taxEnabled && <div className="mt-2"><label className="text-xs font-bold">Rate (%)</label><input type="number" className="w-full border p-2 rounded mt-1" value={taxRate} onChange={e => setTaxRate(parseFloat(e.target.value))} /></div>}
+                        </div>
+                        <button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg shadow">Save Global Settings</button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* --- EDIT ORDER MODAL --- */}
         {editingOrder && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -951,6 +874,7 @@ export default function AdminPage() {
             </div>
         )}
 
+        {/* --- EDIT CUSTOMER MODAL --- */}
         {editingCustomer && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div className="bg-white p-6 rounded-lg shadow-xl w-96">
@@ -962,6 +886,7 @@ export default function AdminPage() {
               </div>
           </div>
         )}
+
       </div>
     </div>
   );
