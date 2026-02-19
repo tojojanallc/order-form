@@ -25,6 +25,7 @@ export default function LoadTruck() {
   }
 
   const processBulkTransfer = async () => {
+    // 1. Identify items with quantities
     const itemsToMove = Object.entries(transferQty)
       .filter(([_, qty]) => parseInt(qty) > 0)
       .map(([key, qty]) => {
@@ -33,7 +34,7 @@ export default function LoadTruck() {
       });
 
     if (!selectedEvent) return alert("Select a target meet.");
-    if (itemsToMove.length === 0) return alert("Enter quantities.");
+    if (itemsToMove.length === 0) return alert("Enter quantities to move.");
 
     setIsProcessing(true);
     try {
@@ -41,22 +42,27 @@ export default function LoadTruck() {
         const { item, qty } = batchItem;
         if (!item) continue;
 
-        // Ensure we have a valid number for the price
-        const targetPrice = parseFloat(item.base_price) || 0;
+        // FORCE VALUE: Ensure this is a number and NOT null
+        const priceToSync = item.base_price !== null && item.base_price !== undefined 
+          ? Number(item.base_price) 
+          : 0.00;
 
-        // --- THE "ONE-SHOT" FIX: UPSERT EVERYTHING AT ONCE ---
-        // Your database requires base_price to NOT be null. 
-        // We send SKU, Name, Price, and Type in one single object.
+        // --- THE "FORCE SYNC": Update Global Catalog (products) ---
+        // We pack every required field into one object to satisfy NOT NULL constraints
         const { error: prodError } = await supabase.from('products').upsert({
             id: item.sku,
-            name: item.item_name,
-            base_price: targetPrice,         // <--- INCLUDED IN THE INITIAL CALL
-            type: item.type || 'apparel'     // Satisifies the type requirement
+            name: item.item_name || 'Unnamed Item',
+            base_price: priceToSync,          // <--- FORCED VALUE
+            type: item.type || 'apparel',
+            image_url: item.image_url || ''
         }, { onConflict: 'id' });
 
-        if (prodError) throw new Error(`Global Catalog Sync Failed for ${item.sku}: ${prodError.message}`);
+        if (prodError) {
+          console.error("Database rejected product sync:", prodError);
+          throw new Error(`Catalog Sync Failed: ${prodError.message}`);
+        }
 
-        // --- STEP 2: TRUCK STOCK ---
+        // --- STEP 2: LOAD TRUCK (inventory) ---
         const { data: existing } = await supabase
           .from('inventory')
           .select('count')
@@ -70,26 +76,26 @@ export default function LoadTruck() {
             product_id: item.sku,
             size: item.size,
             count: (existing?.count || 0) + qty,
-            active: true,
-            cost_price: parseFloat(item.cost_price) || 0,
-            override_price: targetPrice
+            active: true, 
+            cost_price: Number(item.cost_price || 0),
+            override_price: priceToSync // Sync truck price to match global catalog
         }, { onConflict: 'event_slug,product_id,size' });
 
-        if (invError) throw new Error(`Truck Load Failed: ${invError.message}`);
+        if (invError) throw new Error(`Truck Inventory Error: ${invError.message}`);
 
-        // --- STEP 3: DEDUCT FROM WAREHOUSE ---
+        // --- STEP 3: DEDUCT WAREHOUSE STOCK ---
         await supabase.from('inventory_master')
           .update({ quantity_on_hand: item.quantity_on_hand - qty })
           .eq('sku', item.sku)
           .eq('size', item.size);
       }
 
-      alert(`✅ Success! Catalog prices populated and gear loaded to ${selectedEvent}.`);
+      alert(`✅ MISSION SUCCESS: ${itemsToMove.length} items moved. Prices are now LOCKED in the Global Catalog.`);
       setTransferQty({});
       fetchData();
 
     } catch (err: any) {
-      alert("CRITICAL ERROR: " + err.message);
+      alert("CRITICAL SYNC ERROR: " + err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -105,35 +111,35 @@ export default function LoadTruck() {
       <div className="max-w-[1400px] mx-auto">
         <div className="flex justify-between items-center mb-10">
             <div>
-                <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest">← Command Center</Link>
-                <h1 className="text-4xl font-black tracking-tight mt-1 uppercase">Load Truck</h1>
+                <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Dashboard</Link>
+                <h1 className="text-4xl font-black tracking-tight mt-1 uppercase text-slate-900">Load Truck</h1>
             </div>
             <button 
                 onClick={processBulkTransfer}
                 disabled={isProcessing || !selectedEvent}
-                className="bg-slate-900 text-white px-10 py-5 rounded-3xl font-black uppercase text-xs tracking-widest shadow-xl hover:bg-emerald-600 transition-all"
+                className="bg-emerald-500 text-white px-10 py-5 rounded-[24px] font-black uppercase text-xs tracking-widest shadow-2xl hover:bg-emerald-600 disabled:opacity-30 transition-all"
             >
-                {isProcessing ? 'Writing to Tables...' : 'Finalize Bulk Load 🚛'}
+                {isProcessing ? 'Locking Prices...' : 'Finalize Bulk Load 🚛'}
             </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-8">
-            <div className="lg:col-span-4 bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm">
-                <p className="text-[10px] font-black uppercase text-gray-400 mb-3 tracking-widest">Target Meet</p>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-10">
+            <div className="lg:col-span-4 bg-slate-900 p-8 rounded-[40px] text-white shadow-2xl">
+                <p className="text-[10px] font-black uppercase text-slate-500 mb-3 tracking-widest">Select Target Meet</p>
                 <select 
-                    className="w-full bg-gray-50 p-4 rounded-2xl border-none outline-none font-black text-slate-900 text-lg shadow-inner"
+                    className="w-full bg-slate-800 p-4 rounded-2xl border-none outline-none font-black text-blue-400 text-lg shadow-inner appearance-none"
                     value={selectedEvent}
                     onChange={(e) => setSelectedEvent(e.target.value)}
                 >
-                    <option value="">-- Select Event --</option>
+                    <option value="">-- Choose Truck --</option>
                     {activeEvents.map(evt => <option key={evt.id} value={evt.slug}>{evt.event_name}</option>)}
                 </select>
             </div>
-            <div className="lg:col-span-8 bg-white p-8 rounded-[40px] border border-gray-100 flex items-end shadow-sm">
+            <div className="lg:col-span-8 bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm flex items-end">
                 <input 
                     type="text" 
-                    placeholder="Search Warehouse..." 
-                    className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold text-lg"
+                    placeholder="Search Warehouse (Enza, Hoodie, SKU...)" 
+                    className="w-full p-4 bg-gray-50 rounded-2xl border-none outline-none font-bold text-lg"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -141,9 +147,9 @@ export default function LoadTruck() {
         </div>
 
         <div className="bg-white rounded-[48px] border border-gray-100 shadow-2xl overflow-hidden mb-20">
-            <div className="grid grid-cols-12 bg-slate-100 p-6 px-10 text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
+            <div className="grid grid-cols-12 bg-slate-100 p-6 px-10 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 border-b">
                 <div className="col-span-6">Warehouse Item & SKU</div>
-                <div className="col-span-2 text-center">In Warehouse</div>
+                <div className="col-span-2 text-center">Available</div>
                 <div className="col-span-4 text-right">Qty to Move</div>
             </div>
 
@@ -156,7 +162,7 @@ export default function LoadTruck() {
                                 <h3 className="text-xl font-black text-slate-800 uppercase leading-none">{item.item_name}</h3>
                                 <div className="flex gap-2 mt-2">
                                     <span className="text-[9px] font-black bg-blue-50 text-blue-500 px-2 py-0.5 rounded border border-blue-100 uppercase">{item.sku}</span>
-                                    <span className="text-[9px] font-black text-gray-400 uppercase self-center">Size {item.size} • WH Price: ${item.base_price || '0.00'}</span>
+                                    <span className="text-[9px] font-black text-gray-400 uppercase self-center">Size {item.size} • Retail: ${item.base_price || '0.00'}</span>
                                 </div>
                             </div>
                             <div className="col-span-2 text-center text-2xl font-black text-slate-900">{item.quantity_on_hand}</div>
