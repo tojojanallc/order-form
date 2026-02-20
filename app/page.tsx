@@ -70,6 +70,7 @@ export default function OrderForm() {
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
   const [showPersonalization, setShowPersonalization] = useState(true);
+  const [showNumbers, setShowNumbers] = useState(true); // NEW NUMBER TOGGLE
   
   // --- TAX SETTINGS ---
   const [taxEnabled, setTaxEnabled] = useState(false);
@@ -80,6 +81,7 @@ export default function OrderForm() {
   const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
   const [logos, setLogos] = useState([]); 
   const [names, setNames] = useState([]);
+  const [numbers, setNumbers] = useState([]); // NEW NUMBER DATA
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
   const [backListConfirmed, setBackListConfirmed] = useState(false);
@@ -143,6 +145,7 @@ export default function OrderForm() {
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
         setShowPersonalization(settings.offer_personalization ?? true);
+        setShowNumbers(settings.offer_numbers ?? true); // PULL FROM DB
         setTaxEnabled(settings.tax_enabled || false);
         setTaxRate(settings.tax_rate || 0);
       }
@@ -267,7 +270,7 @@ export default function OrderForm() {
       let options = [];
       if (itemType === 'logo') {
           options = availableZones.filter(z => z.type === 'logo' || z.type === 'both');
-      } else if (itemType === 'name') {
+      } else if (itemType === 'name' || itemType === 'number') {
           options = availableZones.filter(z => z.type === 'name' || z.type === 'both');
       } else {
           options = availableZones;
@@ -291,6 +294,7 @@ export default function OrderForm() {
     let total = basePrice; 
     total += logos.length * 5;      
     total += names.length * 5;      
+    total += numbers.length * 5; // INCLUDES NUMBERS IN MATH
     if (backNameList) total += 5;   
     if (metallicHighlight) total += 5; 
     return total;
@@ -331,14 +335,14 @@ export default function OrderForm() {
   const handleAddToCart = () => {
     if (!selectedProduct) return;
     
-    // Updated Validation: Use availableMainOptions
     if (availableMainOptions.length > 0 && !selectedMainDesign) { 
         alert("Please select a Design."); return; 
     }
     
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
-    if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Accent and Name."); return; }
+    const missingNumberPos = numbers.some(n => !n.position);
+    if (missingLogoPos || missingNamePos || missingNumberPos) { alert("Please select a Position for every Accent, Name, and Number."); return; }
 
     const newItem = {
       id: Date.now(),
@@ -352,6 +356,7 @@ export default function OrderForm() {
           mainDesign: selectedMainDesign, 
           logos, 
           names, 
+          numbers, // ADD NUMBERS TO CART PAYLOAD
           backList: backNameList, 
           metallic: metallicHighlight,
           metallicName: metallicHighlight ? metallicName : ''
@@ -360,7 +365,7 @@ export default function OrderForm() {
     };
     
     setCart([...cart, newItem]);
-    setLogos([]); setNames([]); setBackNameList(false); setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName('');
+    setLogos([]); setNames([]); setNumbers([]); setBackNameList(false); setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName('');
     if (availableMainOptions.length > 1) setSelectedMainDesign(''); 
   };
 
@@ -368,6 +373,7 @@ export default function OrderForm() {
   const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
+  const updateNumber = (i, f, v) => { const n = [...numbers]; n[i][f] = v; setNumbers(n); }; // NUMBER HELPER
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
@@ -594,7 +600,6 @@ export default function OrderForm() {
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
 
   const resetApp = async () => {
-      // 1. Clear out the previous customer's data
       setCart([]); 
       setCustomerName(''); 
       setCustomerEmail(''); 
@@ -606,13 +611,13 @@ export default function OrderForm() {
       setOrderComplete(false); 
       setLogos([]); 
       setNames([]); 
+      setNumbers([]); // RESET NUMBERS
       setSelectedProduct(null); 
       setSize(''); 
       setIsSubmitting(false); 
       setIsTerminalProcessing(false); 
       setLastOrderId(''); 
       
-      // 2. Silently fetch the freshest inventory numbers from the database
       const searchParams = new URLSearchParams(window.location.search);
       const currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
       
@@ -638,7 +643,6 @@ export default function OrderForm() {
         setPriceOverrides(priceMap);
       }
 
-      // 3. Send the screen back to the top
       window.scrollTo(0, 0);
   };
 
@@ -709,7 +713,6 @@ export default function OrderForm() {
                         )}
                     </section>
 
-                    {/* ONLY RENDER DESIGN SECTION IF THERE ARE OPTIONS AVAILABLE FOR THIS GARMENT */}
                     {selectedProduct && availableMainOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
@@ -758,19 +761,36 @@ export default function OrderForm() {
                         </section>
                     )}
 
-                    {selectedProduct && showPersonalization && (
+                    {selectedProduct && (showPersonalization || showNumbers) && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
+                            
+                            {/* NAMES LIST */}
                             {names.map((nameItem, index) => (
-                            <div key={index} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                                <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
+                            <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
+                                <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-bold" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
                                 <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}><option value="">Select Position...</option>{getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
                                 <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                             </div>
                             ))}
-                            {(paymentMode === 'retail' || names.length === 0) && (
-                                <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Your Name to Your Apparel</button>
-                            )}
+
+                            {/* NUMBERS LIST */}
+                            {numbers.map((numItem, index) => (
+                            <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
+                                <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-mono font-bold text-center text-lg tracking-widest" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
+                                <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={numItem.position} onChange={(e) => updateNumber(index, 'position', e.target.value)}><option value="">Select Position...</option>{getPositionOptions('number').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
+                                <button onClick={() => setNumbers(numbers.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
+                            </div>
+                            ))}
+
+                            <div className="flex gap-2">
+                                {(paymentMode === 'retail' || names.length === 0) && showPersonalization && (
+                                    <button onClick={() => setNames([...names, { text: '', position: '' }])} className="flex-1 py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold bg-white">+ Add Name</button>
+                                )}
+                                {(paymentMode === 'retail' || numbers.length === 0) && showNumbers && (
+                                    <button onClick={() => setNumbers([...numbers, { text: '', position: '' }])} className="flex-1 py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold bg-white">+ Add Number</button>
+                                )}
+                            </div>
                         </section>
                     )}
                     
@@ -821,7 +841,11 @@ export default function OrderForm() {
                     {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
                     <p className="text-sm text-gray-800 font-medium">Size: {item.size}</p>
                     <div className="text-xs text-blue-900 font-bold mt-1">Main Design: {item.customizations.mainDesign || 'None'}</div>
-                    <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">{item.customizations.logos.map((l, i) => <div key={i}>• {l.type} ({l.position})</div>)}{item.customizations.names.map((n, i) => <div key={i}>• "{n.text}" ({n.position})</div>)}</div>
+                    <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">
+                        {item.customizations.logos.map((l, i) => <div key={'logo'+i}>• {l.type} ({l.position})</div>)}
+                        {item.customizations.names.map((n, i) => <div key={'name'+i}>• "{n.text}" ({n.position})</div>)}
+                        {item.customizations.numbers?.map((num, i) => <div key={'num'+i}>• Number "{num.text}" ({num.position})</div>)}
+                    </div>
                     {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice.toFixed(2)}</p>}
                     </div>
                 ))}
@@ -902,7 +926,6 @@ const PlacementVisualizer = ({ garmentType, logoSize }) => {
   };
   
   const renderBottomZones = () => { 
-      // ONLY THIGH/POCKET PRINT FOR BOTTOMS NOW
       return ( <circle cx="80" cy="50" r="6" fill={color} fillOpacity="0.8"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></circle> ); 
   };
   
