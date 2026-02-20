@@ -16,16 +16,15 @@ export default function TaxationDashboard() {
     fetchTaxData();
   }, [startDate, endDate]);
 
-  async function fetchTaxData() {
+ async function fetchTaxData() {
     setLoading(true);
 
+    // Fetch ALL events (Removed the strict 'tax_enabled' rule)
     const { data: events } = await supabase
       .from('event_settings')
       .select('*')
-      .eq('tax_enabled', true)
       .order('created_at', { ascending: false });
 
-    // THE FIX: We now pull tax_collected from the database
     let query = supabase.from('orders').select('event_slug, total_price, tax_collected, status, created_at');
     
     if (startDate) query = query.gte('created_at', `${startDate}T00:00:00.000Z`);
@@ -41,11 +40,13 @@ export default function TaxationDashboard() {
       const stats = events.map(evt => {
         const eventOrders = orders.filter(o => o.event_slug === evt.slug && Number(o.total_price) > 0);
         
-        if (eventOrders.length === 0) return null;
-
-        // THE NEW MATH: Just add up the columns directly! No guessing.
-        const grossRevenue = eventOrders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
+        // Sum up the tax and gross directly from the database
         const taxCollected = eventOrders.reduce((sum, o) => sum + Number(o.tax_collected || 0), 0);
+        const grossRevenue = eventOrders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
+        
+        // NEW RULE: If no tax was collected for this event in this date range, hide it.
+        if (taxCollected === 0) return null;
+
         const taxableRevenue = grossRevenue - taxCollected;
 
         masterGross += grossRevenue;
