@@ -32,13 +32,35 @@ export default function ProductionScreen() {
   }
 
   async function markOrderComplete(orderId: string) {
-    // Optimistic UI update (removes it from screen instantly so the presser can keep moving)
+    // 1. Instantly remove it from the presser's screen
     setOrders(current => current.filter(o => o.id !== orderId));
 
+    // 2. Update the database status to 'ready'
     await supabase
       .from('orders')
       .update({ status: 'ready' })
       .eq('id', orderId);
+
+    // 3. FIRE OFF THE TEXT MESSAGE
+    try {
+        const { data: orderData } = await supabase
+            .from('orders')
+            .select('customer_name, phone')
+            .eq('id', orderId)
+            .single();
+
+        if (orderData && orderData.phone && orderData.phone !== 'N/A') {
+            const message = `Hi ${orderData.customer_name}! Your order is ready for pickup. Please head to the Lev Custom Merch team and start wearing your new gear!`;
+            
+            await fetch('/api/send-sms', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ phone: orderData.phone, message: message }) 
+            });
+        }
+    } catch (err) { 
+        console.error("Error sending text:", err); 
+    }
   }
 
   if (loading) return <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center font-black text-2xl uppercase tracking-widest">Loading Press Queue...</div>;
