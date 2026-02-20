@@ -264,6 +264,12 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-400 font-medium mt-1">Write-offs.</p>
             </Link>
 
+            <Link href="/admin/taxation" className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group">
+                <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-xl">🏛️</div>
+                <h4 className="font-black text-slate-900">Tax Liability</h4>
+                <p className="text-sm text-gray-400 font-medium mt-1">View and export tax collected per event.</p>
+            </Link>
+
              <Link href="/admin/events" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-blue-300 transition-all group">
                 <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-xl">⚙️</div>
                 <h4 className="font-black text-slate-900">Event Settings</h4>
