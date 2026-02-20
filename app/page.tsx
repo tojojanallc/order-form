@@ -392,7 +392,7 @@ export default function OrderForm() {
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), eventSlug: currentSlug, eventName })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: currentSlug, eventName })
         });
 
         if (!createRes.ok) throw new Error("Order creation failed");
@@ -404,7 +404,7 @@ export default function OrderForm() {
         const payRes = await fetch('/api/terminal-pay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal(), deviceId: assignedTerminalId })
+            body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal(), taxCollected: calculateTax(), deviceId: assignedTerminalId })
         });
 
         if (!payRes.ok) throw new Error("Terminal connection failed");
@@ -466,7 +466,7 @@ export default function OrderForm() {
         const res = await fetch('/api/create-cash-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
         });
 
         const data = await res.json();
