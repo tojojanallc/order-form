@@ -19,51 +19,66 @@ export default function TaxationDashboard() {
  async function fetchTaxData() {
     setLoading(true);
 
-    // Fetch ALL events (Removed the strict 'tax_enabled' rule)
-    const { data: events } = await supabase
-      .from('event_settings')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    let query = supabase.from('orders').select('event_slug, total_price, tax_collected, status, created_at');
+    // 1. Fetch events just to get their pretty names
+    const { data: events } = await supabase.from('event_settings').select('slug, event_name, tax_rate');
+    
+    // 2. Fetch the orders directly based on the date filter
+    let query = supabase.from('orders').select('event_slug, total_price, tax_collected, created_at');
     
     if (startDate) query = query.gte('created_at', `${startDate}T00:00:00.000Z`);
     if (endDate) query = query.lte('created_at', `${endDate}T23:59:59.999Z`);
     
     const { data: orders } = await query;
 
-    if (events && orders) {
+    if (orders) {
       let masterGross = 0;
       let masterTaxable = 0;
       let masterTax = 0;
 
-      const stats = events.map(evt => {
-        const eventOrders = orders.filter(o => o.event_slug === evt.slug && Number(o.total_price) > 0);
-        
-        // Sum up the tax and gross directly from the database
-        const taxCollected = eventOrders.reduce((sum, o) => sum + Number(o.tax_collected || 0), 0);
-        const grossRevenue = eventOrders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
-        
-        // NEW RULE: If no tax was collected for this event in this date range, hide it.
-        if (taxCollected === 0) return null;
+      // Group orders by their slug, ensuring NO order is left behind
+      const eventGroups: { [key: string]: any } = {};
+      
+      orders.forEach(o => {
+        const taxVal = Number(o.tax_collected || 0);
+        const totalVal = Number(o.total_price || 0);
 
-        const taxableRevenue = grossRevenue - taxCollected;
+        // ONLY count orders that actually collected tax
+        if (taxVal > 0) {
+          const slug = o.event_slug || 'Unknown/Deleted Event';
+          
+          if (!eventGroups[slug]) {
+            // Try to find the matching event to get the nice display name
+            const matchedEvent = events?.find(e => e.slug === slug);
+            eventGroups[slug] = {
+              id: slug,
+              name: matchedEvent ? matchedEvent.event_name : `Orphaned Orders (${slug})`,
+              slug: slug,
+              rate: matchedEvent ? Number(matchedEvent.tax_rate) : 0,
+              orderCount: 0,
+              grossRevenue: 0,
+              taxCollected: 0
+            };
+          }
+          
+          eventGroups[slug].orderCount += 1;
+          eventGroups[slug].grossRevenue += totalVal;
+          eventGroups[slug].taxCollected += taxVal;
+        }
+      });
 
-        masterGross += grossRevenue;
+      // Calculate final totals and taxable revenue
+      const stats = Object.values(eventGroups).map(group => {
+        const taxableRevenue = group.grossRevenue - group.taxCollected;
+        
+        masterGross += group.grossRevenue;
+        masterTax += group.taxCollected;
         masterTaxable += taxableRevenue;
-        masterTax += taxCollected;
 
-        return {
-          id: evt.id,
-          name: evt.event_name,
-          slug: evt.slug,
-          rate: Number(evt.tax_rate) || 0,
-          orderCount: eventOrders.length,
-          grossRevenue,
-          taxableRevenue,
-          taxCollected
-        };
-      }).filter(Boolean);
+        return { ...group, taxableRevenue };
+      });
+
+      // Sort by highest revenue
+      stats.sort((a, b) => b.grossRevenue - a.grossRevenue);
 
       setEventStats(stats);
       setTotals({ gross: masterGross, taxable: masterTaxable, tax: masterTax });
