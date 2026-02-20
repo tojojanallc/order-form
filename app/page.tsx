@@ -258,8 +258,15 @@ export default function OrderForm() {
     }
   }, [selectedProduct, visibleSizes, size, paymentMode, selectedGuest, inventory]);
 
+  // --- REAL-TIME CART MATH ---
   const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
-  const currentStock = inventory[stockKey] ?? 0;
+  const baseStock = inventory[stockKey] ?? 0;
+  
+  // Count how many of this EXACT item (product + size) the customer already added to their cart
+  const qtyInCart = cart.filter(item => item.productId === selectedProduct?.id && item.size === size).length;
+  
+  // The actual remaining stock they can grab right now
+  const currentStock = baseStock - qtyInCart;
   const isOutOfStock = currentStock <= 0;
 
   const getPositionOptions = (itemType, isAccent = false) => {
