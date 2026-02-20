@@ -6,19 +6,22 @@ const baseUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
   : 'http://localhost:3000';
 
-// CHANGE HERE: We use "any" to shut up the strict mode error
 export async function POST(req: any) {
   try {
     const body = await req.json();
-    // WE ADDED taxCollected HERE
-    const { email, name, cart, total, orderId, eventName, eventLogo, taxCollected = 0 } = body;
+    const { email, name, cart, total, orderId, eventName, eventLogo } = body;
 
     if (!email) return NextResponse.json({ error: 'No email provided' }, { status: 400 });
 
-    // --- THE MATH ---
-    const taxAmount = Number(taxCollected) || 0;
+    // --- THE FOOLPROOF MATH ---
+    // 1. Calculate the exact subtotal directly from the cart items
+    const subtotalAmount = cart.reduce((sum: number, item: any) => sum + Number(item.finalPrice || 0), 0);
+    
+    // 2. Grand total is what the customer actually paid
     const grandTotal = Number(total) || 0;
-    const subtotalAmount = grandTotal - taxAmount;
+    
+    // 3. Tax is just the difference between the two (rounded to fix JS decimal weirdness)
+    const taxAmount = Number(Math.max(0, grandTotal - subtotalAmount).toFixed(2));
 
     // 1. Dynamic Event Logo
     let eventLogoHtml = '';
@@ -27,10 +30,9 @@ export async function POST(req: any) {
         eventLogoHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${src}" alt="${eventName}" style="max-width: 150px; height: auto;" /></div>`;
     }
 
-    // 2. Static Company Logo (from the bottom of your file)
+    // 2. Static Company Logo
     const companyLogoUrl = `https://assets.zyrosite.com/ulxsOaa5kyTQvVNU/lev-150-CtP7sCPqLTeMeyOY.png`;
 
-    // CHANGE HERE: We use "any" for the item too
     const cartRows = cart.map((item: any) => {
         const customizations = [];
         if(item.customizations?.mainDesign) customizations.push(`Design: ${item.customizations.mainDesign}`);
@@ -38,12 +40,12 @@ export async function POST(req: any) {
         return `<tr>
             <td style="padding: 12px 8px; border-bottom: 1px solid #ddd;"><strong>${item.productName}</strong><br/><span style="font-size: 12px; color: #555;">Size: ${item.size}</span></td>
             <td style="padding: 12px 8px; border-bottom: 1px solid #ddd; font-size: 12px;">${customizations.join('<br/>')}</td>
-            <td style="padding: 12px 8px; border-bottom: 1px solid #ddd; text-align: right;">$${item.finalPrice.toFixed(2)}</td>
+            <td style="padding: 12px 8px; border-bottom: 1px solid #ddd; text-align: right;">$${Number(item.finalPrice).toFixed(2)}</td>
         </tr>`;
     }).join('');
 
     // --- DYNAMIC TAX ROW ---
-    // Only shows up if tax is greater than 0
+    // Only shows up if the math determines tax was actually charged
     let taxRowHtml = '';
     if (taxAmount > 0) {
         taxRowHtml = `
