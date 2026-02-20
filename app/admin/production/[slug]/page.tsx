@@ -1,6 +1,5 @@
-// @ts-nocheck
 'use client';
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -59,7 +58,7 @@ export default function ProductionScreen() {
             <button onClick={fetchPendingOrders} className="bg-slate-800 hover:bg-slate-700 px-6 py-3 rounded-xl font-bold uppercase text-sm transition-colors">
               🔄 Refresh
             </button>
-            <Link href={`/admin`} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold uppercase text-sm transition-colors">
+            <Link href={`/admin/events/${slug}`} className="bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold uppercase text-sm transition-colors">
               Exit to Admin
             </Link>
         </div>
@@ -106,7 +105,7 @@ export default function ProductionScreen() {
                         </span>
                       </div>
                       
-                      {/* ONLY SHOW DESIGNS */}
+                      {/* ONLY SHOW DESIGNS (Ignore pricing/tax info here) */}
                       <div className="space-y-1 mt-2">
                         {item.customizations?.mainDesign && (
                           <div className="flex items-center gap-2 text-slate-300 font-bold">
@@ -118,16 +117,11 @@ export default function ProductionScreen() {
                             <span className="text-slate-500">▶</span> FOIL: {item.customizations.metallicName || 'Yes'}
                           </div>
                         )}
-                        {item.customizations?.names?.map((nameObj: any, nIdx: number) => (
-                          <div key={nIdx} className="flex items-center gap-2 text-emerald-400 font-bold">
-                            <span className="text-slate-500">▶</span> NAME ({nameObj.position}): {nameObj.text}
+                        {item.customizations?.nameOnSleeve && (
+                          <div className="flex items-center gap-2 text-emerald-400 font-bold">
+                            <span className="text-slate-500">▶</span> SLEEVE: {item.customizations.nameOnSleeveText}
                           </div>
-                        ))}
-                        {item.customizations?.logos?.map((logoObj: any, lIdx: number) => (
-                          <div key={lIdx} className="flex items-center gap-2 text-blue-400 font-bold">
-                            <span className="text-slate-500">▶</span> ACCENT ({logoObj.position}): {logoObj.type}
-                          </div>
-                        ))}
+                        )}
                       </div>
                     </div>
                   ))}
