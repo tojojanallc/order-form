@@ -26,7 +26,7 @@ export async function POST(req: any) {
           total_price: parseFloat(total),
           status: hasBackorder ? 'pending_shipping' : 'pending',
           cart_data: cart,
-          payment_status: 'paid', // Cash is usually marked paid immediately at the counter
+          payment_status: 'pending', // Cash is usually marked paid immediately at the counter
           payment_method: 'cash',
           event_name: eventName,
           event_slug: currentEvent,
