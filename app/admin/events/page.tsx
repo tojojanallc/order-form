@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 
 import { refundOrder } from '@/app/actions/refund-order';
 
-
+import Link from 'next/link';
 
 // --- CONFIG ---
 
@@ -1259,38 +1259,40 @@ export default function AdminPage() {
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
 
           <div className="flex flex-col">
+    <h1 className="text-3xl font-black text-gray-900">{eventName || 'Admin Dashboard'}</h1>
+    
+    {/* I increased the gap here to gap-6 so the button doesn't crowd the dropdown */}
+    <div className="flex items-center gap-6 mt-1">
+        
+        {/* Your existing dropdown */}
+        <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-gray-500 uppercase">Viewing Event:</span>
+            <select 
+                value={selectedEventSlug} 
+                onChange={(e) => setSelectedEventSlug(e.target.value)} 
+                className="bg-white border border-gray-300 text-sm font-bold rounded py-1 px-2 cursor-pointer shadow-sm hover:border-blue-500"
+            >
+                {availableEvents.map(evt => (
+                    <option key={evt.id} value={evt.slug}>
+                        {evt.event_name} ({evt.slug})
+                    </option>
+                ))}
+            </select>
+        </div>
 
-              <h1 className="text-3xl font-black text-gray-900">{eventName || 'Admin Dashboard'}</h1>
+        {/* THE NEW HEAT PRESS BUTTON */}
+        {selectedEventSlug && (
+            <Link 
+                href={`/admin/production/${selectedEventSlug}`} 
+                target="_blank" 
+                className="bg-orange-500 text-white px-4 py-1.5 rounded font-black uppercase text-xs shadow-md hover:bg-orange-400 transition-colors flex items-center gap-2"
+            >
+                🔥 Open Heat Press View
+            </Link>
+        )}
 
-              <div className="flex items-center gap-2 mt-1">
-
-                  <span className="text-xs font-bold text-gray-500 uppercase">Viewing Event:</span>
-
-                  <select 
-
-                      value={selectedEventSlug} 
-
-                      onChange={(e) => setSelectedEventSlug(e.target.value)} 
-
-                      className="bg-white border border-gray-300 text-sm font-bold rounded py-1 px-2 cursor-pointer shadow-sm hover:border-blue-500"
-
-                  >
-
-                      {availableEvents.map(evt => (
-
-                          <option key={evt.id} value={evt.slug}>
-
-                              {evt.event_name} ({evt.slug})
-
-                          </option>
-
-                      ))}
-
-                  </select>
-
-              </div>
-
-          </div>
+    </div>
+</div>
 
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
 
