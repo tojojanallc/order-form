@@ -850,6 +850,29 @@ export default function AdminPage() {
 
   };
 
+  // --- NEW: LAST CALL TEXT BUTTON ---
+  const sendLastCallReminder = async (orderId, phone, customerName) => {
+      if (!phone || phone === 'N/A') return alert("No phone number on file for this customer.");
+      if (!confirm(`Send Last Call text to ${customerName}?`)) return;
+
+      try {
+          const message = `🚨 LAST CALL! Hi ${customerName}, the Lev Custom Merch tent is packing up soon! Please come grab your order before we leave the venue.`;
+          const res = await fetch('/api/send-sms', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phone, message })
+          });
+          
+          if (res.ok) {
+              alert(`Last call sent to ${customerName}!`);
+          } else {
+              alert("Failed to send text.");
+          }
+      } catch (err) {
+          console.error("Error sending reminder:", err);
+          alert("Error sending text.");
+      }
+  };
 
 
   const markOrderPaid = async (orderId) => {
@@ -1374,7 +1397,15 @@ export default function AdminPage() {
 
                     <td className="p-4 align-top text-sm">{safeItems.map((item, i) => { const customs = item?.customizations || {}; return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')}</div></div> ); })}<div className="mt-2 text-right font-black text-green-800">${order.total_price}</div></td>
 
-                    <td className="p-4 align-top text-right">{!isPaid && (<button onClick={() => markOrderPaid(order.id)} className="p-2 rounded mr-2 bg-green-50 text-green-600 hover:bg-green-100 font-bold text-xs uppercase" title="Mark as Paid">💵 Pay</button>)}<button onClick={() => openEditModal(order)} className="p-2 rounded mr-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold">✏️</button>{order.status !== 'refunded' && order.payment_intent_id && ( <button onClick={() => handleRefund(order.id, order.payment_intent_id)} className="p-2 rounded mr-2 bg-red-50 text-red-500 hover:bg-red-100 font-bold">💸</button> )}<button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 font-bold ${order.printed ? 'bg-gray-100 text-gray-400' : 'bg-gray-200 text-black hover:bg-blue-100'}`}>🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg">🗑️</button></td>
+                    <td className="p-4 align-top text-right">{!isPaid && (<button onClick={() => markOrderPaid(order.id)} className="p-2 rounded mr-2 bg-green-50 text-green-600 hover:bg-green-100 font-bold text-xs uppercase" title="Mark as Paid">💵 Pay</button>)}{order.status === 'ready' && (
+        <button 
+            onClick={() => sendLastCallReminder(order.id, order.phone, order.customer_name)} 
+            className="p-2 rounded mr-2 bg-orange-100 text-orange-700 hover:bg-orange-200 font-bold text-xs uppercase shadow-sm" 
+            title="Send Last Call Text"
+        >
+            🔔 Remind
+        </button>
+    )}<button onClick={() => openEditModal(order)} className="p-2 rounded mr-2 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold">✏️</button>{order.status !== 'refunded' && order.payment_intent_id && ( <button onClick={() => handleRefund(order.id, order.payment_intent_id)} className="p-2 rounded mr-2 bg-red-50 text-red-500 hover:bg-red-100 font-bold">💸</button> )}<button onClick={() => printLabel(order)} className={`p-2 rounded mr-2 font-bold ${order.printed ? 'bg-gray-100 text-gray-400' : 'bg-gray-200 text-black hover:bg-blue-100'}`}>🖨️</button><button onClick={() => deleteOrder(order.id, order.cart_data)} className="text-red-500 hover:text-red-700 font-bold text-lg">🗑️</button></td>
 
                 </tr>
 
