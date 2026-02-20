@@ -22,10 +22,9 @@ const ZONES = {
         { id: 'back_bottom', label: 'Back Bottom', type: 'name' }
     ],
     bottom: [
+        // LEG PRINTS REMOVED PER REQUEST
         { id: 'left_thigh', label: 'Left Thigh (Upper)', type: 'both' },
         { id: 'right_thigh', label: 'Right Thigh (Upper)', type: 'both' },
-        { id: 'lower_left', label: 'Lower Left Leg', type: 'both' },   
-        { id: 'lower_right', label: 'Lower Right Leg', type: 'both' }, 
         { id: 'back_pocket', label: 'Back Pocket', type: 'logo' },
         { id: 'rear', label: 'Rear (Center)', type: 'both' }           
     ]
@@ -72,7 +71,7 @@ export default function OrderForm() {
   const [showMetallic, setShowMetallic] = useState(true);
   const [showPersonalization, setShowPersonalization] = useState(true);
   
-  // --- ADDED: TAX SETTINGS ---
+  // --- TAX SETTINGS ---
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxRate, setTaxRate] = useState(0);
 
@@ -86,9 +85,31 @@ export default function OrderForm() {
   const [backListConfirmed, setBackListConfirmed] = useState(false);
   const [metallicName, setMetallicName] = useState('');
   
-  // --- SETUP MODE STATE ---
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
+
+  // --- SMART PRODUCT DETECTION ---
+  const isBottomSelected = selectedProduct ? (
+    selectedProduct.type === 'bottom' || 
+    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/) || 
+    (selectedProduct.id || '').toLowerCase().match(/jogger|pant|short|sweat/)
+  ) : false;
+
+  // Filter out 'large' logos if it's a bottom
+  const availableMainOptions = mainOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
+  const availableAccentOptions = accentOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
+
+  // Auto-manage selected design when switching products
+  useEffect(() => {
+    if (availableMainOptions.length === 1) {
+        setSelectedMainDesign(availableMainOptions[0].label);
+    } else if (availableMainOptions.length === 0) {
+        setSelectedMainDesign('');
+    } else if (selectedMainDesign) {
+        const isValid = availableMainOptions.find(o => o.label === selectedMainDesign);
+        if (!isValid) setSelectedMainDesign('');
+    }
+  }, [selectedProduct, mainOptions]);
 
   // --- MASTER DATA FETCHER ---
   useEffect(() => {
@@ -112,13 +133,7 @@ export default function OrderForm() {
     const fetchData = async () => {
       if (!supabase) return;
 
-      // A. GET SETTINGS
-      const { data: settings } = await supabase
-        .from('event_settings')
-        .select('*')
-        .eq('slug', currentSlug)
-        .single();
-      
+      const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', currentSlug).single();
       if (settings) {
         setEventName(settings.event_name);
         setEventLogo(settings.event_logo_url);
@@ -128,53 +143,32 @@ export default function OrderForm() {
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
         setShowPersonalization(settings.offer_personalization ?? true);
-        
-        // --- ADDED: PULL TAX SETTINGS ---
         setTaxEnabled(settings.tax_enabled || false);
         setTaxRate(settings.tax_rate || 0);
       }
 
-      // B. GET PRODUCTS
       const { data: productData } = await supabase.from('products').select('*').order('sort_order');
       if (productData) setProducts(productData);
 
-      // C. GET LOGOS
-      const { data: logoData } = await supabase
-        .from('logos')
-        .select('label, image_url, category, placement')
-        .eq('active', true)
-        .eq('event_slug', currentSlug) 
-        .order('sort_order');
-
+      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', currentSlug).order('sort_order');
       if (logoData) {
           setLogoOptions(logoData);
           setMainOptions(logoData.filter(l => l.category === 'main'));
           setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
       }
 
-      // D. GET INVENTORY 
-      const { data: invData } = await supabase
-        .from('inventory')
-        .select('*')
-        .eq('event_slug', currentSlug); 
-        
+      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', currentSlug); 
       if (invData) {
-        const stockMap = {};
-        const activeMap = {};
-        const priceMap = {};
-
+        const stockMap = {}; const activeMap = {}; const priceMap = {};
         invData.forEach(item => {
             const key = `${item.product_id}_${item.size}`;
             stockMap[key] = item.count;
             activeMap[key] = item.active;
             if (item.override_price) priceMap[key] = item.override_price;
         });
-        setInventory(stockMap);
-        setActiveItems(activeMap);
-        setPriceOverrides(priceMap);
+        setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
       }
 
-      // E. GET GUESTS
       const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', currentSlug); 
       if (guestData) setGuests(guestData);
     };
@@ -203,9 +197,7 @@ export default function OrderForm() {
       if (match) {
           if (match.has_ordered) { setGuestError("❌ This name has already redeemed their item."); setSelectedGuest(null); } 
           else { 
-              setSelectedGuest(match); 
-              setCustomerName(match.name); 
-              setGuestError('');
+              setSelectedGuest(match); setCustomerName(match.name); setGuestError('');
               if (match.size && visibleSizes.includes(match.size)) { setSize(match.size); }
           }
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
@@ -215,9 +207,7 @@ export default function OrderForm() {
       const productKeys = Object.keys(activeItems).filter(k => k.startsWith(p.id));
       return productKeys.some(key => {
           const isActive = activeItems[key] === true;
-          if (paymentMode === 'hosted') {
-              return isActive && (inventory[key] || 0) > 0;
-          }
+          if (paymentMode === 'hosted') return isActive && (inventory[key] || 0) > 0;
           return isActive;
       });
   });
@@ -232,25 +222,17 @@ export default function OrderForm() {
     }
   }, [visibleProducts, selectedProduct]);
 
-  useEffect(() => {
-      if (mainOptions.length === 1) setSelectedMainDesign(mainOptions[0].label);
-  }, [mainOptions]);
-
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    
     const unsorted = Object.keys(activeItems).filter(key => {
         const isMatch = key.startsWith(selectedProduct.id + '_');
         const isActive = activeItems[key] === true;
-
         if (paymentMode === 'hosted') {
             const hasStock = (inventory[key] || 0) > 0;
             return isMatch && isActive && hasStock;
         }
-
         return isMatch && isActive;
     }).map(key => key.replace(`${selectedProduct.id}_`, ''));
-
     return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
   const visibleSizes = getVisibleSizes();
@@ -258,7 +240,6 @@ export default function OrderForm() {
   useEffect(() => {
     if (visibleSizes.length > 0 && selectedProduct) {
         const isCurrentSizeValid = size && visibleSizes.includes(size);
-
         if (!isCurrentSizeValid) { 
             if (paymentMode === 'hosted' && selectedGuest?.size && visibleSizes.includes(selectedGuest.size)) { 
                 setSize(selectedGuest.size); 
@@ -267,7 +248,6 @@ export default function OrderForm() {
                     const key = `${selectedProduct.id}_${s}`;
                     return (inventory[key] || 0) > 0;
                 });
-
                 if (firstInStock) setSize(firstInStock);
                 else setSize(visibleSizes[0]); 
             }
@@ -281,14 +261,7 @@ export default function OrderForm() {
 
   const getPositionOptions = (itemType, isAccent = false) => {
       if (!selectedProduct) return [];
-      
-      const name = (selectedProduct.name || '').toLowerCase();
-      const id = (selectedProduct.id || '').toLowerCase();
-      let pType = 'top'; 
-      if (selectedProduct.type === 'bottom' || name.includes('jogger') || name.includes('pant') || name.includes('short') || id.includes('jogger') || id.includes('pant') || id.includes('short')) {
-          pType = 'bottom';
-      }
-      
+      const pType = isBottomSelected ? 'bottom' : 'top';
       const availableZones = ZONES[pType] || ZONES.top;
       
       let options = [];
@@ -310,13 +283,11 @@ export default function OrderForm() {
 
   const calculateItemTotal = () => {
     if (!selectedProduct) return 0;
-    
     let basePrice = selectedProduct.base_price;
     if (size) {
         const key = `${selectedProduct.id}_${size}`;
         if (priceOverrides[key]) basePrice = priceOverrides[key];
     }
-
     let total = basePrice; 
     total += logos.length * 5;      
     total += names.length * 5;      
@@ -325,7 +296,6 @@ export default function OrderForm() {
     return total;
   };
 
-  // --- ADDED: TAX & GRAND TOTAL MATH ---
   const calculateSubtotal = () => cart.reduce((sum, item) => sum + item.finalPrice, 0);
   
   const calculateTax = () => {
@@ -339,14 +309,10 @@ export default function OrderForm() {
 
   const sendConfirmationSMS = async (name, phone) => {
       if (!phone || phone.length < 10) return;
-      console.log("📨 Sending Confirmation Text to:", phone);
       fetch('/api/send-sms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-              phone: phone, 
-              message: `Hi ${name}! Thanks for your order from Lev Custom Merch at ${eventName}. We will text you again when it's ready for pickup!` 
-          })
+          body: JSON.stringify({ phone: phone, message: `Hi ${name}! Thanks for your order from Lev Custom Merch at ${eventName}. We will text you again when it's ready for pickup!` })
       }).catch(err => console.error("SMS Failed:", err));
   };
 
@@ -358,18 +324,17 @@ export default function OrderForm() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email, name, cart: cartData, total: totalAmount, orderId, eventName })
           });
-          if (!res.ok) {
-              const err = await res.text();
-              console.error("Email Error:", err);
-          }
-      } catch (err) {
-          alert(`❌ NETWORK ERROR: ${err.message}`);
-      }
+          if (!res.ok) console.error("Email Error:", await res.text());
+      } catch (err) { console.error(`NETWORK ERROR: ${err.message}`); }
   };
   
   const handleAddToCart = () => {
     if (!selectedProduct) return;
-    if (mainOptions.length > 0 && !selectedMainDesign) { alert("Please select a Design."); return; }
+    
+    // Updated Validation: Use availableMainOptions
+    if (availableMainOptions.length > 0 && !selectedMainDesign) { 
+        alert("Please select a Design."); return; 
+    }
     
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
@@ -391,12 +356,12 @@ export default function OrderForm() {
           metallic: metallicHighlight,
           metallicName: metallicHighlight ? metallicName : ''
       },
-      finalPrice: calculateItemTotal() // Keeps track of individual item cost for subtotal
+      finalPrice: calculateItemTotal() 
     };
     
     setCart([...cart, newItem]);
     setLogos([]); setNames([]); setBackNameList(false); setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName('');
-    if (mainOptions.length > 1) setSelectedMainDesign(''); 
+    if (availableMainOptions.length > 1) setSelectedMainDesign(''); 
   };
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
@@ -409,7 +374,7 @@ export default function OrderForm() {
   const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
-    if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.\nAsk Admin to run Setup.");
+    if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.");
     if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
 
     const searchParams = new URLSearchParams(window.location.search);
@@ -427,15 +392,7 @@ export default function OrderForm() {
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                cart, 
-                customerName,
-                customerPhone: customerPhone,
-                customerEmail: customerEmail, 
-                total: calculateGrandTotal(), // NOW SENDS GRAND TOTAL (WITH TAX)
-                eventSlug: currentSlug, 
-                eventName: eventName
-            })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), eventSlug: currentSlug, eventName })
         });
 
         if (!createRes.ok) throw new Error("Order creation failed");
@@ -447,11 +404,7 @@ export default function OrderForm() {
         const payRes = await fetch('/api/terminal-pay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                orderId: orderId, 
-                amount: calculateGrandTotal(), // NOW REQUESTS GRAND TOTAL FROM CARD
-                deviceId: assignedTerminalId 
-            })
+            body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal(), deviceId: assignedTerminalId })
         });
 
         if (!payRes.ok) throw new Error("Terminal connection failed");
@@ -467,8 +420,6 @@ export default function OrderForm() {
         };
 
         const decrementInventory = async (cartItems) => {
-            const searchParams = new URLSearchParams(window.location.search);
-            const currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
             for (const item of cartItems) {
                 const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size).single();
                 if (current && current.count > 0) {
@@ -509,22 +460,13 @@ export default function OrderForm() {
     if (!currentSlug) currentSlug = 'default';
 
     if(!confirm("Confirm Pay with Cash?")) return;
-
     setIsSubmitting(true); 
 
     try {
         const res = await fetch('/api/create-cash-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                cart,
-                customerName,
-                customerPhone,
-                total: calculateGrandTotal(), // SAVES GRAND TOTAL
-                eventName,
-                eventSlug: currentSlug,
-                shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null
-            })
+            body: JSON.stringify({ cart, customerName, customerPhone, total: calculateGrandTotal(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
         });
 
         const data = await res.json();
@@ -570,15 +512,7 @@ export default function OrderForm() {
             const res = await fetch('/api/create-hosted-order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    cart, 
-                    guestName: selectedGuest.name,
-                    guestId: selectedGuest.id,
-                    eventName,
-                    eventSlug: currentSlug,
-                    customerPhone: customerPhone,
-                    customerEmail: customerEmail
-                }) 
+                body: JSON.stringify({ cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: currentSlug, customerPhone, customerEmail }) 
             });
 
             const data = await res.json();
@@ -608,7 +542,7 @@ export default function OrderForm() {
           customer_name: customerName, 
           phone: customerPhone || 'N/A', 
           cart_data: cart, 
-          total_price: calculateGrandTotal(), // STRIPE CREATES ORDER WITH GRAND TOTAL
+          total_price: calculateGrandTotal(), 
           shipping_address: cartRequiresShipping ? shippingAddress : null,
           shipping_city: cartRequiresShipping ? shippingCity : null,
           shipping_state: cartRequiresShipping ? shippingState : null,
@@ -623,11 +557,7 @@ export default function OrderForm() {
         const response = await fetch('/api/checkout', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ 
-                cart, 
-                customerName,
-                eventSlug: currentSlug 
-            }) 
+            body: JSON.stringify({ cart, customerName, eventSlug: currentSlug }) 
         });
         const data = await response.json();
         if (data.url) window.location.href = data.url; else alert("Payment Error");
@@ -734,12 +664,13 @@ export default function OrderForm() {
                         )}
                     </section>
 
-                    {selectedProduct && mainOptions.length > 0 && (
+                    {/* ONLY RENDER DESIGN SECTION IF THERE ARE OPTIONS AVAILABLE FOR THIS GARMENT */}
+                    {selectedProduct && availableMainOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
                             <div className="grid grid-cols-3 gap-4 mb-4">
                                 <div className="col-span-2 grid grid-cols-2 gap-3">
-                                    {mainOptions.map((opt) => (
+                                    {availableMainOptions.map((opt) => (
                                         <button key={opt.label} onClick={() => setSelectedMainDesign(opt.label)} className={`border-2 rounded-lg p-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${selectedMainDesign === opt.label ? 'border-green-600 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 bg-white hover:border-gray-400'}`}>
                                             {opt.image_url ? (<img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />) : (<div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>)}
                                             <span className={`text-xs font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
@@ -747,16 +678,16 @@ export default function OrderForm() {
                                         </button>
                                     ))}
                                 </div>
-                                <div className="col-span-1">{(() => { const currentLogoObj = mainOptions.find(o => o.label === selectedMainDesign); const sizeFromDB = currentLogoObj?.placement || 'large'; return (<PlacementVisualizer garmentType={selectedProduct.type || 'top'} logoSize={sizeFromDB} />); })()}</div>
+                                <div className="col-span-1">{(() => { const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign); const sizeFromDB = currentLogoObj?.placement || 'large'; return (<PlacementVisualizer garmentType={selectedProduct.type || (isBottomSelected ? 'bottom' : 'top')} logoSize={sizeFromDB} />); })()}</div>
                             </div>
                         </section>
                     )}
 
-                    {selectedProduct && accentOptions.length > 0 && (
+                    {selectedProduct && availableAccentOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                             <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
-                                {accentOptions.map((opt) => (
+                                {availableAccentOptions.map((opt) => (
                                     <button key={opt.label} onClick={() => addLogo(opt.label)} className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95">
                                         {opt.image_url ? <img src={opt.image_url} className="h-12 w-full object-contain" /> : <div className="h-12 w-full bg-gray-100 text-[10px] flex items-center justify-center">No Img</div>}
                                         <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{opt.label}</span>
@@ -844,7 +775,7 @@ export default function OrderForm() {
                     <p className="font-black text-black text-lg">{item.productName}</p>
                     {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
                     <p className="text-sm text-gray-800 font-medium">Size: {item.size}</p>
-                    <div className="text-xs text-blue-900 font-bold mt-1">Main Design: {item.customizations.mainDesign}</div>
+                    <div className="text-xs text-blue-900 font-bold mt-1">Main Design: {item.customizations.mainDesign || 'None'}</div>
                     <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">{item.customizations.logos.map((l, i) => <div key={i}>• {l.type} ({l.position})</div>)}{item.customizations.names.map((n, i) => <div key={i}>• "{n.text}" ({n.position})</div>)}</div>
                     {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice.toFixed(2)}</p>}
                     </div>
@@ -867,7 +798,6 @@ export default function OrderForm() {
                     <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once"><h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} /><div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div><input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} /></div>
                     )}
                     
-                    {/* --- ADDED: TAX & TOTALS BREAKDOWN --- */}
                     {showPrice && (
                         <div className="mt-6 border-t-2 border-gray-200 pt-4 space-y-2 mb-6">
                             <div className="flex justify-between text-sm font-bold text-gray-600 uppercase">
@@ -917,7 +847,33 @@ export default function OrderForm() {
 const PlacementVisualizer = ({ garmentType, logoSize }) => {
   const isTop = !garmentType || garmentType === 'top';
   const color = "#1e3a8a"; 
-  const renderTopZones = () => { if (logoSize === 'large') { return ( <rect x="75" y="70" width="50" height="50" fill={color} fillOpacity="0.8" rx="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></rect> ); } else { return ( <circle cx="125" cy="70" r="8" fill={color} fillOpacity="0.8"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></circle> ); } };
-  const renderBottomZones = () => { if (logoSize === 'large') { return ( <rect x="115" y="100" width="10" height="60" fill={color} fillOpacity="0.8" rx="2"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></rect> ); } else { return ( <circle cx="80" cy="50" r="6" fill={color} fillOpacity="0.8"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></circle> ); } };
-  if (isTop) { return ( <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 w-full h-full max-h-64"><svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-lg"><path d="M60 20 L40 50 L60 60 L60 180 L140 180 L140 60 L160 50 L140 20 Q100 40 60 20" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />{renderTopZones()}</svg><p className="text-xs font-bold text-gray-500 uppercase mt-2 text-center">{logoSize === 'large' ? "Center / Full Front" : "Left Chest / Pocket"}</p></div> ); } else { return ( <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 w-full h-full max-h-64"><svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-lg"><path d="M70 20 L130 20 L140 60 L130 180 L110 180 L100 80 L90 180 L70 180 L60 60 Z" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />{renderBottomZones()}</svg><p className="text-xs font-bold text-gray-500 uppercase mt-2 text-center">{logoSize === 'large' ? "Leg Print" : "Thigh / Pocket"}</p></div> ); }
+
+  const renderTopZones = () => { 
+      if (logoSize === 'large') { 
+          return ( <rect x="75" y="70" width="50" height="50" fill={color} fillOpacity="0.8" rx="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></rect> ); 
+      } else { 
+          return ( <circle cx="125" cy="70" r="8" fill={color} fillOpacity="0.8"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></circle> ); 
+      } 
+  };
+  
+  const renderBottomZones = () => { 
+      // ONLY THIGH/POCKET PRINT FOR BOTTOMS NOW
+      return ( <circle cx="80" cy="50" r="6" fill={color} fillOpacity="0.8"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></circle> ); 
+  };
+  
+  if (isTop) { 
+      return ( 
+          <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 w-full h-full max-h-64">
+              <svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-lg"><path d="M60 20 L40 50 L60 60 L60 180 L140 180 L140 60 L160 50 L140 20 Q100 40 60 20" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />{renderTopZones()}</svg>
+              <p className="text-xs font-bold text-gray-500 uppercase mt-2 text-center">{logoSize === 'large' ? "Center / Full Front" : "Left Chest / Pocket"}</p>
+          </div> 
+      ); 
+  } else { 
+      return ( 
+          <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 w-full h-full max-h-64">
+              <svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-lg"><path d="M70 20 L130 20 L140 60 L130 180 L110 180 L100 80 L90 180 L70 180 L60 60 Z" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />{renderBottomZones()}</svg>
+              <p className="text-xs font-bold text-gray-500 uppercase mt-2 text-center">Thigh / Pocket</p>
+          </div> 
+      ); 
+  }
 };
