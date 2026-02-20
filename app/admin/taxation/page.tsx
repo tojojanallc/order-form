@@ -8,27 +8,25 @@ export default function TaxationDashboard() {
   const [loading, setLoading] = useState(true);
   const [totals, setTotals] = useState({ gross: 0, taxable: 0, tax: 0 });
 
-  // Default to current calendar year
   const currentYear = new Date().getFullYear();
   const [startDate, setStartDate] = useState(`${currentYear}-01-01`);
   const [endDate, setEndDate] = useState(`${currentYear}-12-31`);
 
   useEffect(() => {
     fetchTaxData();
-  }, [startDate, endDate]); // Re-fetch whenever dates change
+  }, [startDate, endDate]);
 
   async function fetchTaxData() {
     setLoading(true);
 
-    // 1. Fetch all events where tax was turned on
     const { data: events } = await supabase
       .from('event_settings')
       .select('*')
       .eq('tax_enabled', true)
       .order('created_at', { ascending: false });
 
-    // 2. Fetch orders within the selected date range
-    let query = supabase.from('orders').select('event_slug, total_price, status, created_at');
+    // THE FIX: We now pull tax_collected from the database
+    let query = supabase.from('orders').select('event_slug, total_price, tax_collected, status, created_at');
     
     if (startDate) query = query.gte('created_at', `${startDate}T00:00:00.000Z`);
     if (endDate) query = query.lte('created_at', `${endDate}T23:59:59.999Z`);
@@ -41,22 +39,15 @@ export default function TaxationDashboard() {
       let masterTax = 0;
 
       const stats = events.map(evt => {
-        // Find valid orders for this specific event within the date range
-        // You can add `&& o.status === 'paid'` here if you only want to count fully paid orders
         const eventOrders = orders.filter(o => o.event_slug === evt.slug && Number(o.total_price) > 0);
         
-        // Skip events that had $0 in sales during this specific time period
         if (eventOrders.length === 0) return null;
 
-        // Sum up the Gross Revenue
-        const grossRevenue = eventOrders.reduce((sum, o) => sum + Number(o.total_price), 0);
-        
-        // The Math: Gross = Subtotal * (1 + TaxRate/100)
-        const taxRate = Number(evt.tax_rate) || 0;
-        const taxableRevenue = grossRevenue / (1 + (taxRate / 100));
-        const taxCollected = grossRevenue - taxableRevenue;
+        // THE NEW MATH: Just add up the columns directly! No guessing.
+        const grossRevenue = eventOrders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
+        const taxCollected = eventOrders.reduce((sum, o) => sum + Number(o.tax_collected || 0), 0);
+        const taxableRevenue = grossRevenue - taxCollected;
 
-        // Add to Grand Totals
         masterGross += grossRevenue;
         masterTaxable += taxableRevenue;
         masterTax += taxCollected;
@@ -65,13 +56,13 @@ export default function TaxationDashboard() {
           id: evt.id,
           name: evt.event_name,
           slug: evt.slug,
-          rate: taxRate,
+          rate: Number(evt.tax_rate) || 0,
           orderCount: eventOrders.length,
           grossRevenue,
           taxableRevenue,
           taxCollected
         };
-      }).filter(Boolean); // Remove the nulls (events with no sales in this period)
+      }).filter(Boolean);
 
       setEventStats(stats);
       setTotals({ gross: masterGross, taxable: masterTaxable, tax: masterTax });
@@ -93,7 +84,6 @@ export default function TaxationDashboard() {
 
     rows.push(['"GRAND TOTALS"', '---', '---', totals.gross.toFixed(2), totals.taxable.toFixed(2), totals.tax.toFixed(2)]);
 
-    // Add Date Range info to the top of the CSV
     const csvContent = "data:text/csv;charset=utf-8," 
       + `"Tax Report: ${startDate} to ${endDate}"\n\n`
       + [headers.join(','), ...rows.map(e => e.join(','))].join("\n");
@@ -111,14 +101,12 @@ export default function TaxationDashboard() {
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-[1400px] mx-auto">
         
-        {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
           <div>
             <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Command Center</Link>
             <h1 className="text-4xl font-black tracking-tight mt-1 uppercase">Tax Liability</h1>
           </div>
           
-          {/* DATE FILTER CONTROLS */}
           <div className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-gray-200 shadow-sm">
             <div className="flex flex-col px-4">
                 <label className="text-[9px] font-black uppercase text-gray-400 tracking-widest">Start Date</label>
@@ -149,7 +137,6 @@ export default function TaxationDashboard() {
           </button>
         </div>
 
-        {/* MASTER SUMMARY CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           <div className="bg-white p-8 rounded-[32px] border border-gray-100 shadow-sm">
             <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-1">Gross Revenue (Period)</p>
@@ -168,7 +155,6 @@ export default function TaxationDashboard() {
           </div>
         </div>
 
-        {/* EVENT BREAKDOWN TABLE */}
         <div className="bg-white rounded-[40px] border border-gray-100 shadow-2xl overflow-hidden mb-20">
           <div className="grid grid-cols-12 bg-slate-100 p-6 px-10 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 border-b">
             <div className="col-span-4">Event Name</div>
