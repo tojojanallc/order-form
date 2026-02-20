@@ -9,7 +9,7 @@ const supabase = createClient(
 export async function POST(req: any) {
   try {
     const body = await req.json();
-    const { cart, customerName, customerPhone, customerEmail, total, eventName, eventSlug, shippingInfo } = body;
+    const { cart, customerName, customerPhone, customerEmail, total, taxCollected, eventName, eventSlug, shippingInfo } = body;
 
     const currentEvent = eventSlug || 'default';
     const hasBackorder = cart.some((item: any) => item.needsShipping);
@@ -24,6 +24,7 @@ export async function POST(req: any) {
           phone: customerPhone || 'N/A',
           email: customerEmail,
           total_price: parseFloat(total),
+          tax_collected: taxCollected,
           status: hasBackorder ? 'pending_shipping' : 'pending',
           cart_data: cart,
           payment_status: 'pending', // Cash is usually marked paid immediately at the counter

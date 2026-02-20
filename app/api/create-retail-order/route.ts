@@ -14,7 +14,8 @@ export async function POST(req: any) {
       cart, 
       customerName, 
       customerPhone, 
-      customerEmail, 
+      customerEmail,
+      taxCollected, 
       total, 
       eventSlug, 
       eventName 
@@ -38,6 +39,7 @@ export async function POST(req: any) {
           phone: customerPhone || 'N/A', 
           email: customerEmail || '',    
           total_price: parseFloat(total),
+          tax_collected: taxCollected,
           status: hasBackorder ? 'pending_shipping' : 'completed',
           cart_data: cart,
           payment_status: 'paid',
