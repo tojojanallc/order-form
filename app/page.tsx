@@ -466,7 +466,7 @@ export default function OrderForm() {
         const res = await fetch('/api/create-cash-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, total: calculateGrandTotal(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
         });
 
         const data = await res.json();
@@ -540,7 +540,8 @@ export default function OrderForm() {
     try {
         const { data: orderData, error } = await supabase.from('orders').insert([{ 
           customer_name: customerName, 
-          phone: customerPhone || 'N/A', 
+          phone: customerPhone || 'N/A',
+          email: customerEmail, 
           cart_data: cart, 
           total_price: calculateGrandTotal(), 
           shipping_address: cartRequiresShipping ? shippingAddress : null,
