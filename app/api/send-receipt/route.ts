@@ -53,7 +53,7 @@ export async function POST(req: any) {
             </table>
             <div style="text-align: center; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">
                 <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Powered by</p>
-                <img src="${companyLogoUrl}" alt="Lev Custom Merch" style="max-width: 120px; height: auto;" />
+                <img src="https://assets.zyrosite.com/ulxsOaa5kyTQvVNU/lev-150-CtP7sCPqLTeMeyOY.png" alt="Lev Custom Merch" style="max-width: 120px; height: auto;" />
             </div>
         </div>`,
     });
