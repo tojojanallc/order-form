@@ -234,6 +234,17 @@ export default function AdminDashboard() {
 
             <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-orange-300 transition-all group flex flex-col justify-between">
                 <div>
+                    <div className="h-14 w-14 bg-orange-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🧾</div>
+                    <h3 className="text-2xl font-black text-slate-900 mb-2">Z-Report</h3>
+                    <p className="text-xs text-gray-500 font-medium">End of day cash drawer reconciliation.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-8">
+                    <Link href="/admin/z-report" className="bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-orange-500 transition-colors">Run Report</Link>
+                </div>
+            </div>
+
+            <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-orange-300 transition-all group flex flex-col justify-between">
+                <div>
                     <div className="h-14 w-14 bg-orange-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">📋</div>
                     <h3 className="text-2xl font-black text-slate-900 mb-2">Purchasing</h3>
                     <p className="text-xs text-gray-500 font-medium">Vendor Orders.</p>
