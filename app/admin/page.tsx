@@ -210,6 +210,15 @@ export default function AdminDashboard() {
                 <Link href="/admin/inventory/transfer" className="mt-8 block w-full bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-green-600 transition-colors">Start Loading →</Link>
             </div>
 
+            <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-green-200 transition-all group flex flex-col justify-between">
+                <div>
+                    <div className="h-14 w-14 bg-green-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🏛️</div>
+                    <h3 className="text-2xl font-black text-slate-900 mb-2">Tax Liability</h3>
+                    <p className="text-xs text-gray-500 font-medium">View and export tax collected per event.</p>
+                </div>
+                <Link href="/admin/taxation" className="mt-8 block w-full bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-green-600 transition-colors">Get Tax Info →</Link>
+            </div>
+
              <div className="bg-white p-8 rounded-[40px] border border-gray-200 shadow-sm hover:shadow-xl hover:border-purple-300 transition-all group relative overflow-hidden flex flex-col justify-between">
                 <div className="absolute top-0 right-0 bg-purple-600 text-white text-[9px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-widest">QB Sync</div>
                 <div>
@@ -262,12 +271,6 @@ export default function AdminDashboard() {
                 <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center mb-4 text-xl">🔧</div>
                 <h4 className="font-black text-slate-900">Adjustments</h4>
                 <p className="text-xs text-gray-400 font-medium mt-1">Write-offs.</p>
-            </Link>
-
-            <Link href="/admin/taxation" className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group">
-                <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-xl">🏛️</div>
-                <h4 className="font-black text-slate-900">Tax Liability</h4>
-                <p className="text-sm text-gray-400 font-medium mt-1">View and export tax collected per event.</p>
             </Link>
 
              <Link href="/admin/events" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-blue-300 transition-all group">
