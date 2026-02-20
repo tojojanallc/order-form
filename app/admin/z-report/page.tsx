@@ -10,7 +10,7 @@ export default function ZReportDashboard() {
   const [loading, setLoading] = useState(true);
 
   // Cash Drawer State
-  const [startingCash, setStartingCash] = useState<number>(100); // Standard $100 starting till
+  const [startingCash, setStartingCash] = useState<number>(100);
   const [actualCashCounted, setActualCashCounted] = useState<number | string>('');
 
   useEffect(() => {
@@ -25,14 +25,16 @@ export default function ZReportDashboard() {
 
   async function fetchEvents() {
     setLoading(true);
-    const { data } = await supabase
+    // FIX: Changed order('created_at') to order('id') to match your schema
+    const { data, error } = await supabase
       .from('event_settings')
-      .select('slug, event_name, status')
-      .order('created_at', { ascending: false });
+      .select('*')
+      .order('id');
+
+    if (error) console.error("Error loading events:", error);
 
     if (data && data.length > 0) {
       setEvents(data);
-      // Auto-select the first active event if possible
       const active = data.find(e => e.status === 'active');
       setSelectedEventSlug(active ? active.slug : data[0].slug);
     }
@@ -41,33 +43,29 @@ export default function ZReportDashboard() {
 
   async function fetchOrders() {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('orders')
-      .select('id, total_price, payment_method, payment_status, status, created_at')
+      .select('*') // Pulling everything just to be safe
       .eq('event_slug', selectedEventSlug);
 
+    if (error) console.error("Error loading orders:", error);
     if (data) setOrders(data);
     setLoading(false);
   }
 
   // --- RECONCILIATION MATH ---
-  // 1. Valid Orders (Not Refunded, Not Incomplete)
   const validOrders = orders.filter(o => o.status !== 'refunded' && o.status !== 'incomplete');
   
-  // 2. Separate by Payment Type
   const cashOrders = validOrders.filter(o => o.payment_method === 'cash');
-  const cardOrders = validOrders.filter(o => o.payment_method !== 'cash'); // Stripe, Terminal, etc.
+  const cardOrders = validOrders.filter(o => o.payment_method !== 'cash');
 
-  // 3. Sum it up
   const totalCashSales = cashOrders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
   const totalCardSales = cardOrders.reduce((sum, o) => sum + Number(o.total_price || 0), 0);
   const grandTotalSales = totalCashSales + totalCardSales;
 
-  // 4. Drawer Math
   const expectedCashInDrawer = startingCash + totalCashSales;
   const variance = Number(actualCashCounted) - expectedCashInDrawer;
   
-  // Is the drawer perfectly balanced?
   const isBalanced = actualCashCounted !== '' && variance === 0;
   const isOver = actualCashCounted !== '' && variance > 0;
   const isShort = actualCashCounted !== '' && variance < 0;
@@ -89,11 +87,11 @@ export default function ZReportDashboard() {
             <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest pl-3">Event:</span>
             <select 
               className="bg-gray-50 border border-gray-200 text-sm font-bold rounded-lg py-2 px-4 cursor-pointer outline-none focus:ring-2 focus:ring-blue-500"
-              value={selectedEventSlug}
+              value={selectedEventSlug || ''}
               onChange={(e) => setSelectedEventSlug(e.target.value)}
             >
               {events.map(evt => (
-                <option key={evt.slug} value={evt.slug}>
+                <option key={evt.id} value={evt.slug}>
                   {evt.event_name} {evt.status === 'archived' ? '(Archived)' : ''}
                 </option>
               ))}
@@ -106,9 +104,7 @@ export default function ZReportDashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             
-            {/* LEFT COLUMN: THE MATH */}
             <div className="space-y-6">
-                {/* Sales Breakdown */}
                 <div className="bg-white rounded-[32px] p-8 shadow-sm border border-gray-200">
                     <h2 className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-6">Gross Sales Breakdown</h2>
                     
@@ -126,7 +122,6 @@ export default function ZReportDashboard() {
                     </div>
                 </div>
 
-                {/* The Drawer Calculation */}
                 <div className="bg-slate-900 text-white rounded-[32px] p-8 shadow-xl">
                     <h2 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-6 border-b border-slate-700 pb-4">Cash Drawer Math</h2>
                     
@@ -155,7 +150,6 @@ export default function ZReportDashboard() {
                 </div>
             </div>
 
-            {/* RIGHT COLUMN: THE RECONCILIATION ACTION */}
             <div>
                 <div className={`rounded-[32px] p-8 shadow-2xl border-4 transition-all duration-500 ${isBalanced ? 'bg-emerald-50 border-emerald-400' : isOver ? 'bg-blue-50 border-blue-400' : isShort ? 'bg-red-50 border-red-400' : 'bg-white border-transparent'}`}>
                     <h2 className="text-sm font-black uppercase text-slate-800 tracking-widest mb-2">End of Day Count</h2>
@@ -172,7 +166,6 @@ export default function ZReportDashboard() {
                         />
                     </div>
 
-                    {/* DYNAMIC RESULT BADGE */}
                     <div className="h-32 flex items-center justify-center">
                         {actualCashCounted === '' ? (
                             <div className="text-slate-300 font-black uppercase tracking-widest text-xl">Awaiting Count...</div>
