@@ -205,7 +205,7 @@ export default function AdminDashboard() {
                 <div>
                     <div className="h-14 w-14 bg-green-50 rounded-2xl flex items-center justify-center text-3xl mb-6 group-hover:scale-110 transition-transform">🚛</div>
                     <h3 className="text-2xl font-black text-slate-900 mb-2">Load Truck</h3>
-                    <p className="text-xs text-gray-500 font-medium">Transfer stock to meets.</p>
+                    <p className="text-xs text-gray-500 font-medium">Transfer stock to events.</p>
                 </div>
                 <Link href="/admin/inventory/transfer" className="mt-8 block w-full bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-green-600 transition-colors">Start Loading →</Link>
             </div>
