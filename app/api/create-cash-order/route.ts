@@ -9,7 +9,7 @@ const supabase = createClient(
 export async function POST(req: any) {
   try {
     const body = await req.json();
-    const { cart, customerName, customerPhone, total, eventName, eventSlug, shippingInfo } = body;
+    const { cart, customerName, customerPhone, customerEmail, total, eventName, eventSlug, shippingInfo } = body;
 
     const currentEvent = eventSlug || 'default';
     const hasBackorder = cart.some((item: any) => item.needsShipping);
