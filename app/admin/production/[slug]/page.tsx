@@ -38,7 +38,7 @@ export default function ProductionScreen() {
 
     await supabase
       .from('orders')
-      .update({ status: 'completed' })
+      .update({ status: 'ready' })
       .eq('id', orderId);
   }
 
