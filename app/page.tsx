@@ -593,8 +593,52 @@ export default function OrderForm() {
   if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
 
-  const resetApp = () => {
-      setCart([]); setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setShippingAddress(''); setShippingCity(''); setShippingState(''); setShippingZip(''); setOrderComplete(false); setLogos([]); setNames([]); setSelectedProduct(null); setSize(''); setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
+  const resetApp = async () => {
+      // 1. Clear out the previous customer's data
+      setCart([]); 
+      setCustomerName(''); 
+      setCustomerEmail(''); 
+      setCustomerPhone(''); 
+      setShippingAddress(''); 
+      setShippingCity(''); 
+      setShippingState(''); 
+      setShippingZip(''); 
+      setOrderComplete(false); 
+      setLogos([]); 
+      setNames([]); 
+      setSelectedProduct(null); 
+      setSize(''); 
+      setIsSubmitting(false); 
+      setIsTerminalProcessing(false); 
+      setLastOrderId(''); 
+      
+      // 2. Silently fetch the freshest inventory numbers from the database
+      const searchParams = new URLSearchParams(window.location.search);
+      const currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
+      
+      const { data: invData } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('event_slug', currentSlug); 
+        
+      if (invData) {
+        const stockMap = {}; 
+        const activeMap = {}; 
+        const priceMap = {};
+        
+        invData.forEach(item => {
+            const key = `${item.product_id}_${item.size}`;
+            stockMap[key] = item.count;
+            activeMap[key] = item.active;
+            if (item.override_price) priceMap[key] = item.override_price;
+        });
+        
+        setInventory(stockMap); 
+        setActiveItems(activeMap); 
+        setPriceOverrides(priceMap);
+      }
+
+      // 3. Send the screen back to the top
       window.scrollTo(0, 0);
   };
 
