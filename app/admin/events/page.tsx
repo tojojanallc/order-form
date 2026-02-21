@@ -1512,10 +1512,14 @@ export default function AdminPage() {
                                         <tr key={prod.id} className="border-b hover:bg-gray-50">
 
                                             <td className="p-3">
-
-                                                {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-white" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px]">No Img</div>}
-
-                                            </td>
+    {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-white mb-2" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px] mb-2">No Img</div>}
+    <input 
+        className="text-[10px] w-full border border-gray-300 rounded p-1 text-gray-600 focus:bg-white bg-gray-50" 
+        placeholder="Paste Image URL..."
+        value={prod.image_url || ''}
+        onChange={(e) => updateProductInfo(prod.id, 'image_url', e.target.value)}
+    />
+</td>
 
                                             <td className="p-3">
 
@@ -1625,13 +1629,19 @@ export default function AdminPage() {
 
                                         <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
 
-                                            <td className="p-4 font-bold text-sm">
-
-                                                {getProductName(item.product_id)}
-
-                                                <div className="text-[10px] text-gray-400">Global: ${globalPrice}</div>
-
-                                            </td>
+                                            <td className="p-4">
+    <div className="flex items-center gap-3">
+        {globalProd?.image_url ? (
+            <img src={globalProd.image_url} className="w-12 h-12 object-contain bg-white border border-gray-200 rounded-md shadow-sm shrink-0" />
+        ) : (
+            <div className="w-12 h-12 bg-gray-100 border border-gray-200 rounded-md flex items-center justify-center text-[8px] text-gray-400 shrink-0">No Img</div>
+        )}
+        <div>
+            <div className="font-bold text-sm text-gray-900 leading-tight">{getProductName(item.product_id)}</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Global: ${globalPrice}</div>
+        </div>
+    </div>
+</td>
 
                                             <td className="p-4 text-sm">{item.size}</td>
 
