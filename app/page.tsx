@@ -22,7 +22,6 @@ const ZONES = {
         { id: 'back_bottom', label: 'Back Bottom', type: 'name' }
     ],
     bottom: [
-        // LEG PRINTS REMOVED PER REQUEST
         { id: 'left_thigh', label: 'Left Thigh (Upper)', type: 'both' },
         { id: 'right_thigh', label: 'Right Thigh (Upper)', type: 'both' },
         { id: 'back_pocket', label: 'Back Pocket', type: 'logo' },
@@ -70,7 +69,7 @@ export default function OrderForm() {
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
   const [showPersonalization, setShowPersonalization] = useState(true);
-  const [showNumbers, setShowNumbers] = useState(true); // NEW NUMBER TOGGLE
+  const [showNumbers, setShowNumbers] = useState(true); 
   
   // --- TAX SETTINGS ---
   const [taxEnabled, setTaxEnabled] = useState(false);
@@ -81,7 +80,7 @@ export default function OrderForm() {
   const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
   const [logos, setLogos] = useState([]); 
   const [names, setNames] = useState([]);
-  const [numbers, setNumbers] = useState([]); // NEW NUMBER DATA
+  const [numbers, setNumbers] = useState([]); 
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
   const [backListConfirmed, setBackListConfirmed] = useState(false);
@@ -90,18 +89,15 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
 
-  // --- SMART PRODUCT DETECTION ---
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
     (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/) || 
     (selectedProduct.id || '').toLowerCase().match(/jogger|pant|short|sweat/)
   ) : false;
 
-  // Filter out 'large' logos if it's a bottom
   const availableMainOptions = mainOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
   const availableAccentOptions = accentOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
 
-  // Auto-manage selected design when switching products
   useEffect(() => {
     if (availableMainOptions.length === 1) {
         setSelectedMainDesign(availableMainOptions[0].label);
@@ -113,7 +109,6 @@ export default function OrderForm() {
     }
   }, [selectedProduct, mainOptions]);
 
-  // --- MASTER DATA FETCHER ---
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let currentSlug = params.get('event');
@@ -145,12 +140,13 @@ export default function OrderForm() {
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
         setShowPersonalization(settings.offer_personalization ?? true);
-        setShowNumbers(settings.offer_numbers ?? true); // PULL FROM DB
+        setShowNumbers(settings.offer_numbers ?? true); 
         setTaxEnabled(settings.tax_enabled || false);
         setTaxRate(settings.tax_rate || 0);
       }
 
-      const { data: productData } = await supabase.from('products').select('*').order('sort_order');
+      // 1. Fetch Global Master Products and perfectly sort them
+      const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
       if (productData) setProducts(productData);
 
       const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', currentSlug).order('sort_order');
@@ -160,6 +156,7 @@ export default function OrderForm() {
           setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
       }
 
+      // 2. Fetch Event Specific Stock
       const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', currentSlug); 
       if (invData) {
         const stockMap = {}; const activeMap = {}; const priceMap = {};
@@ -206,8 +203,12 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
+  // --- BULLETPROOF PRODUCT FILTERING ---
   const visibleProducts = products.filter(p => {
-      const productKeys = Object.keys(activeItems).filter(k => k.startsWith(p.id));
+      // Must use explicit underscore to strictly match product ID (prevents 'tee' from matching 'teeshirt')
+      const strictPrefix = p.id + '_';
+      const productKeys = Object.keys(activeItems).filter(k => k.startsWith(strictPrefix));
+      
       return productKeys.some(key => {
           const isActive = activeItems[key] === true;
           if (paymentMode === 'hosted') return isActive && (inventory[key] || 0) > 0;
@@ -225,19 +226,25 @@ export default function OrderForm() {
     }
   }, [visibleProducts, selectedProduct]);
 
+  // --- BULLETPROOF SIZE FILTERING ---
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
+    const strictPrefix = selectedProduct.id + '_';
+    
     const unsorted = Object.keys(activeItems).filter(key => {
-        const isMatch = key.startsWith(selectedProduct.id + '_');
+        if (!key.startsWith(strictPrefix)) return false;
+        
         const isActive = activeItems[key] === true;
         if (paymentMode === 'hosted') {
             const hasStock = (inventory[key] || 0) > 0;
-            return isMatch && isActive && hasStock;
+            return isActive && hasStock;
         }
-        return isMatch && isActive;
-    }).map(key => key.replace(`${selectedProduct.id}_`, ''));
+        return isActive;
+    }).map(key => key.replace(strictPrefix, ''));
+    
     return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
+  
   const visibleSizes = getVisibleSizes();
 
   useEffect(() => {
@@ -261,11 +268,7 @@ export default function OrderForm() {
   // --- REAL-TIME CART MATH ---
   const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
   const baseStock = inventory[stockKey] ?? 0;
-  
-  // Count how many of this EXACT item (product + size) the customer already added to their cart
   const qtyInCart = cart.filter(item => item.productId === selectedProduct?.id && item.size === size).length;
-  
-  // The actual remaining stock they can grab right now
   const currentStock = baseStock - qtyInCart;
   const isOutOfStock = currentStock <= 0;
 
@@ -301,7 +304,7 @@ export default function OrderForm() {
     let total = basePrice; 
     total += logos.length * 5;      
     total += names.length * 5;      
-    total += numbers.length * 5; // INCLUDES NUMBERS IN MATH
+    total += numbers.length * 5; 
     if (backNameList) total += 5;   
     if (metallicHighlight) total += 5; 
     return total;
@@ -363,7 +366,7 @@ export default function OrderForm() {
           mainDesign: selectedMainDesign, 
           logos, 
           names, 
-          numbers, // ADD NUMBERS TO CART PAYLOAD
+          numbers, 
           backList: backNameList, 
           metallic: metallicHighlight,
           metallicName: metallicHighlight ? metallicName : ''
@@ -380,7 +383,7 @@ export default function OrderForm() {
   const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
-  const updateNumber = (i, f, v) => { const n = [...numbers]; n[i][f] = v; setNumbers(n); }; // NUMBER HELPER
+  const updateNumber = (i, f, v) => { const n = [...numbers]; n[i][f] = v; setNumbers(n); }; 
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
@@ -391,12 +394,7 @@ export default function OrderForm() {
     if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
 
     const searchParams = new URLSearchParams(window.location.search);
-    let currentSlug = searchParams.get('event');
-    if (!currentSlug) {
-        const path = window.location.pathname.replace(/^\//, '');
-        if (path && path !== '') currentSlug = path;
-    }
-    if (!currentSlug) currentSlug = 'default';
+    let currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
 
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
@@ -465,12 +463,7 @@ export default function OrderForm() {
     if (!customerName) return alert("Please enter Name");
     
     const searchParams = new URLSearchParams(window.location.search);
-    let currentSlug = searchParams.get('event');
-    if (!currentSlug) {
-        const path = window.location.pathname.replace(/^\//, '');
-        if (path && path !== '') currentSlug = path;
-    }
-    if (!currentSlug) currentSlug = 'default';
+    let currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
 
     if(!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
@@ -512,12 +505,7 @@ export default function OrderForm() {
 
   const handleCheckout = async () => {
     const searchParams = new URLSearchParams(window.location.search);
-    let currentSlug = searchParams.get('event');
-    if (!currentSlug) {
-        const path = window.location.pathname.replace(/^\//, '');
-        if (path && path !== '') currentSlug = path;
-    }
-    if (!currentSlug) currentSlug = 'default';
+    let currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
 
     if (paymentMode === 'hosted' && selectedGuest) {
         setIsSubmitting(true);
@@ -618,7 +606,7 @@ export default function OrderForm() {
       setOrderComplete(false); 
       setLogos([]); 
       setNames([]); 
-      setNumbers([]); // RESET NUMBERS
+      setNumbers([]); 
       setSelectedProduct(null); 
       setSize(''); 
       setIsSubmitting(false); 
