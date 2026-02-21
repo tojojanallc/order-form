@@ -38,6 +38,8 @@ const parseProductId = (id) => {
   return { baseName: id, size: null, color: null };
 };
 
+const mergedName = (name) => name.replace(/\s*Youth\s*/gi, '').trim();
+
 export default function OrderForm() {
   const params = useParams();
   
@@ -216,15 +218,15 @@ export default function OrderForm() {
     const key = `${p.id}_${sizeInId}`;
     const isActive = !!activeItems[key];
     const hasStock = paymentMode !== 'hosted' || (inventory[key] || 0) > 0;
-    if (isActive && hasStock && !seenNames.has(p.name)) {
-      seenNames.add(p.name);
+        if (isActive && hasStock && !seenNames.has(mergedName(p.name))) {
+            seenNames.add(mergedName(p.name));
       visibleProducts.push(p);
     }
   });
 
   useEffect(() => {
       if (visibleProducts.length > 0) {
-          if (!selectedProduct || !visibleProducts.find(p => p.name === selectedProduct.name)) {
+                    if (!selectedProduct || !visibleProducts.find(p => mergedName(p.name) === mergedName(selectedProduct.name))) {
               setSelectedProduct(visibleProducts[0]);
           }
       } else {
@@ -233,8 +235,8 @@ export default function OrderForm() {
   }, [JSON.stringify(visibleProducts.map(p => p.id)), selectedProduct]);
 
   // All product rows sharing the selected product's display name (one row per size+color variant)
-  const matchingProducts = selectedProduct
-    ? products.filter(p => p.name === selectedProduct.name)
+    const matchingProducts = selectedProduct
+    ? products.filter(p => mergedName(p.name) === mergedName(selectedProduct.name))
     : [];
 
   // Colors parsed from product id: "Name | Size | Color" → "Color"
@@ -688,7 +690,7 @@ export default function OrderForm() {
                                       className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium"
                                       value={selectedProduct.name}
                                       onChange={(e) => {
-                                        const found = visibleProducts.find(p => p.name === e.target.value);
+                                        const found = visibleProducts.find(p => mergedName(p.name) === mergedName(e.target.value));
                                         setSelectedProduct(found);
                                         setSelectedColor('');
                                         setSize('');
