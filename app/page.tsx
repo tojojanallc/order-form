@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
+import { useParams } from 'next/navigation';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -29,6 +30,10 @@ const ZONES = {
 };
 
 export default function OrderForm() {
+  const params = useParams();
+  // STRICT URL ENFORCEMENT: Never relies on cached history
+  const actualEventSlug = params?.slug || 'default'; 
+
   const [cart, setCart] = useState([]); 
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -106,29 +111,17 @@ export default function OrderForm() {
     }
   }, [selectedProduct, mainOptions]);
 
-  // RESTORED ORIGINAL URL LOGIC
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    let currentSlug = params.get('event');
-
-    if (currentSlug) {
-        localStorage.setItem('saved_event_slug', currentSlug);
-    } else {
-        currentSlug = localStorage.getItem('saved_event_slug') || 'default';
-    }
-
-    if (!params.get('event')) {
-        window.history.replaceState({}, '', `/?event=${currentSlug}`);
-    }
-
     const savedId = localStorage.getItem('square_terminal_id');
     if (savedId) setAssignedTerminalId(savedId);
-    if (params.get('setup') === 'true') { setShowSetup(true); fetchTerminals(); }
+
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('setup') === 'true') { setShowSetup(true); fetchTerminals(); }
 
     const fetchData = async () => {
       if (!supabase) return;
 
-      const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', currentSlug).single();
+      const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', actualEventSlug).single();
       if (settings) {
         setEventName(settings.event_name);
         setEventLogo(settings.event_logo_url);
@@ -144,16 +137,20 @@ export default function OrderForm() {
       }
 
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
-      if (productData) setProducts(productData);
+      if (productData) {
+          // DUPLICATE CRUSHER: Forces the dropdown to only show unique items
+          const uniqueProducts = Array.from(new Map(productData.map(p => [p.id, p])).values());
+          setProducts(uniqueProducts);
+      }
 
-      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', currentSlug).order('sort_order');
+      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', actualEventSlug).order('sort_order');
       if (logoData) {
           setLogoOptions(logoData);
           setMainOptions(logoData.filter(l => l.category === 'main'));
           setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
       }
 
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', currentSlug); 
+      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
       if (invData) {
         const stockMap = {}; const activeMap = {}; const priceMap = {};
         invData.forEach(item => {
@@ -165,12 +162,12 @@ export default function OrderForm() {
         setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
       }
 
-      const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', currentSlug); 
+      const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', actualEventSlug); 
       if (guestData) setGuests(guestData);
     };
 
     fetchData();
-  }, []);
+  }, [actualEventSlug]);
 
   const fetchTerminals = async () => {
       const { data } = await supabase.from('terminals').select('*');
@@ -182,7 +179,6 @@ export default function OrderForm() {
       setAssignedTerminalId(id);
       alert("✅ This iPad is now linked to terminal: " + id);
       setShowSetup(false);
-      window.history.replaceState({}, document.title, "/"); 
   };
 
   const verifyGuest = () => {
@@ -199,7 +195,6 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // --- STRICT DROPDOWN FILTER FIX ---
   const visibleProducts = products.filter(p => {
       const strictPrefix = p.id + '_';
       const productKeys = Object.keys(activeItems).filter(k => k.startsWith(strictPrefix));
@@ -271,19 +266,14 @@ export default function OrderForm() {
       const availableZones = ZONES[pType] || ZONES.top;
       
       let options = [];
-      if (itemType === 'logo') {
-          options = availableZones.filter(z => z.type === 'logo' || z.type === 'both');
-      } else if (itemType === 'name' || itemType === 'number') {
-          options = availableZones.filter(z => z.type === 'name' || z.type === 'both');
-      } else {
-          options = availableZones;
-      }
-
+      if (itemType === 'logo') options = availableZones.filter(z => z.type === 'logo' || z.type === 'both');
+      else if (itemType === 'name' || itemType === 'number') options = availableZones.filter(z => z.type === 'name' || z.type === 'both');
+      else options = availableZones;
+      
       if (isAccent && pType === 'top') {
           const forbidden = ['full_front', 'left_chest', 'center_chest'];
           options = options.filter(z => !forbidden.includes(z.id));
       }
-
       return options;
   };
 
@@ -304,15 +294,11 @@ export default function OrderForm() {
   };
 
   const calculateSubtotal = () => cart.reduce((sum, item) => sum + item.finalPrice, 0);
-  
   const calculateTax = () => {
       if (!taxEnabled || taxRate <= 0 || paymentMode === 'hosted') return 0;
       return calculateSubtotal() * (taxRate / 100);
   };
-
-  const calculateGrandTotal = () => {
-      return calculateSubtotal() + calculateTax();
-  };
+  const calculateGrandTotal = () => calculateSubtotal() + calculateTax();
 
   const sendConfirmationSMS = async (name, phone) => {
       if (!phone || phone.length < 10) return;
@@ -370,24 +356,11 @@ export default function OrderForm() {
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
-  // GET DYNAMIC SLUG HELPER FOR CHECKOUT
-  const getCheckoutSlug = () => {
-    const searchParams = new URLSearchParams(window.location.search);
-    let currentSlug = searchParams.get('event');
-    if (!currentSlug) {
-        const path = window.location.pathname.replace(/^\//, '');
-        if (path && path !== '') currentSlug = path;
-    }
-    return currentSlug || localStorage.getItem('saved_event_slug') || 'default';
-  };
-
   const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
     if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.");
     if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
-
-    const currentSlug = getCheckoutSlug();
 
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
@@ -396,7 +369,7 @@ export default function OrderForm() {
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: currentSlug, eventName })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: actualEventSlug, eventName })
         });
 
         if (!createRes.ok) throw new Error("Order creation failed");
@@ -425,9 +398,9 @@ export default function OrderForm() {
 
         const decrementInventory = async (cartItems) => {
             for (const item of cartItems) {
-                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size).single();
+                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
                 if (current && current.count > 0) {
-                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size);
+                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
                 }
             }
         };
@@ -454,8 +427,6 @@ export default function OrderForm() {
   const handleCashCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
-    
-    const currentSlug = getCheckoutSlug();
 
     if(!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
@@ -464,7 +435,7 @@ export default function OrderForm() {
         const res = await fetch('/api/create-cash-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: actualEventSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
         });
 
         const data = await res.json();
@@ -472,9 +443,9 @@ export default function OrderForm() {
 
         const decrementInventory = async (cartItems) => {
             for (const item of cartItems) {
-                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size).single();
+                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
                 if (current && current.count > 0) {
-                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size);
+                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
                 }
             }
         };
@@ -496,15 +467,13 @@ export default function OrderForm() {
   };
 
   const handleCheckout = async () => {
-    const currentSlug = getCheckoutSlug();
-
     if (paymentMode === 'hosted' && selectedGuest) {
         setIsSubmitting(true);
         try {
             const res = await fetch('/api/create-hosted-order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: currentSlug, customerPhone, customerEmail }) 
+                body: JSON.stringify({ cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: actualEventSlug, customerPhone, customerEmail }) 
             });
 
             const data = await res.json();
@@ -542,7 +511,7 @@ export default function OrderForm() {
           shipping_zip: cartRequiresShipping ? shippingZip : null,
           status: cartRequiresShipping ? 'pending_shipping' : 'pending',
           event_name: eventName,
-          event_slug: currentSlug 
+          event_slug: actualEventSlug 
         }]).select().single();
 
         if (error) throw error;
@@ -550,7 +519,7 @@ export default function OrderForm() {
         const response = await fetch('/api/checkout', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ cart, customerName, eventSlug: currentSlug }) 
+            body: JSON.stringify({ cart, customerName, eventSlug: actualEventSlug }) 
         });
         const data = await response.json();
         if (data.url) window.location.href = data.url; else alert("Payment Error");
@@ -594,9 +563,7 @@ export default function OrderForm() {
       setSelectedProduct(null); setSize(''); 
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
       
-      const currentSlug = getCheckoutSlug();
-      
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', currentSlug); 
+      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
       if (invData) {
         const stockMap = {}; const activeMap = {}; const priceMap = {};
         invData.forEach(item => {
