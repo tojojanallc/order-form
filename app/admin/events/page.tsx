@@ -1208,11 +1208,32 @@ export default function AdminPage() {
   
 
   const updateProductInfo = async (pid, field, value) => {
+    const finalValue = field === 'sort_order' ? parseInt(value) || 0 : value;
+    const updatedProducts = products.map(p => p.id === pid ? { ...p, [field]: finalValue } : p);
+    
+    // Instantly re-sort the admin screen when you type a new number
+    if (field === 'sort_order') {
+        updatedProducts.sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99));
+    }
+    
+    setProducts(updatedProducts);
+    await supabase.from('products').update({ [field]: finalValue }).eq('id', pid);
+  };
 
-    setProducts(products.map(p => p.id === pid ? { ...p, [field]: value } : p));
-
-    await supabase.from('products').update({ [field]: value }).eq('id', pid);
-
+  const toggleLogo = async (id, s) => { setLogos(logos.map(l => l.id === id ? { ...l, active: !s } : l)); await supabase.from('logos').update({ active: !s }).eq('id', id); };
+  const getProductName = (id) => products.find(p => p.id === id)?.name || id;
+  
+  const handleAddProduct = async (e) => { 
+      e.preventDefault(); 
+      if (!newProdId || !newProdName) return alert("Missing Info"); 
+      const safeId = newProdId.toLowerCase().replace(/\s/g, '_');
+      
+      // Auto-assign the next logical number instead of 99
+      const nextSort = products.length > 0 ? Math.max(...products.map(p => p.sort_order || 0)) + 1 : 1;
+      
+      await supabase.from('products').insert([{ id: safeId, name: newProdName, base_price: parseFloat(newProdPrice), image_url: newProdImage, type: newProdType, sort_order: nextSort }]); 
+      alert("Created Global Product!"); 
+      setNewProdId(''); setNewProdName(''); fetchInventory(); 
   };
 
 
@@ -1500,72 +1521,50 @@ export default function AdminPage() {
                         </div>
 
                         <div className="overflow-y-auto flex-1">
-
-                            <table className="w-full text-left">
-
-                                <thead className="bg-gray-100 border-b sticky top-0"><tr><th className="p-3 w-16">Img</th><th className="p-3">Product Name</th><th className="p-3 w-24">Base $</th><th className="p-3 text-right">Action</th></tr></thead>
-
-                                <tbody>
-
-                                    {products.map((prod) => (
-
-                                        <tr key={prod.id} className="border-b hover:bg-gray-50">
-
-                                            <td className="p-3">
-    {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-white mb-2" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px] mb-2">No Img</div>}
-    <input 
-        className="text-[10px] w-full border border-gray-300 rounded p-1 text-gray-600 focus:bg-white bg-gray-50" 
-        placeholder="Paste Image URL..."
-        value={prod.image_url || ''}
-        onChange={(e) => updateProductInfo(prod.id, 'image_url', e.target.value)}
-    />
-</td>
-
-                                            <td className="p-3">
-
-                                                <input className="font-bold text-gray-700 border-none bg-transparent w-full focus:bg-white focus:border focus:p-1" value={prod.name} onChange={(e) => updateProductInfo(prod.id, 'name', e.target.value)} />
-
-                                                <div className="text-xs text-gray-400">ID: {prod.id}</div>
-
-                                            </td>
-
-                                            <td className="p-3 font-mono text-gray-600">
-
-                                                <input type="number" className="w-16 border rounded text-center" value={prod.base_price} onChange={(e) => updateProductInfo(prod.id, 'base_price', e.target.value)} />
-
-                                            </td>
-
-                                            <td className="p-3 text-right">
-
-                                                <button 
-
-                                                    onClick={() => addProductToEvent(prod)}
-
-                                                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded shadow disabled:opacity-50"
-
-                                                    disabled={loading || !truckTargetEvent}
-
-                                                    title={!truckTargetEvent ? "Select an event top right first" : `Send to ${truckTargetEvent}`}
-
-                                                >
-
-                                                    🚚 Truck It
-
-                                                </button>
-
-                                                <button onClick={() => deleteProduct(prod.id)} className="ml-4 text-red-300 hover:text-red-500 font-bold" title="Delete from Global Catalog">×</button>
-
-                                            </td>
-
-                                        </tr>
-
-                                    ))}
-
-                                </tbody>
-
-                            </table>
-
-                        </div>
+    <table className="w-full text-left">
+        <thead className="bg-gray-100 border-b sticky top-0">
+            <tr>
+                <th className="p-3 w-16">Img</th>
+                <th className="p-3 text-center w-20">Sort</th>
+                <th className="p-3">Product Name</th>
+                <th className="p-3 w-24">Base $</th>
+                <th className="p-3 text-right">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {products.map((prod) => (
+                <tr key={prod.id} className="border-b hover:bg-gray-50">
+                    <td className="p-3">
+                        {prod.image_url ? <img src={prod.image_url} className="w-10 h-10 object-contain border bg-white mb-2" /> : <div className="w-10 h-10 bg-gray-200 flex items-center justify-center text-[10px] mb-2">No Img</div>}
+                        <input className="text-[10px] w-full border border-gray-300 rounded p-1 text-gray-600 focus:bg-white bg-gray-50" placeholder="Paste Image URL..." value={prod.image_url || ''} onChange={(e) => updateProductInfo(prod.id, 'image_url', e.target.value)} />
+                    </td>
+                    <td className="p-3 text-center">
+                        <input 
+                            type="number" 
+                            className="w-12 border border-gray-400 rounded text-center font-bold text-blue-900 bg-blue-50 focus:bg-white py-1" 
+                            value={prod.sort_order ?? 99} 
+                            onChange={(e) => updateProductInfo(prod.id, 'sort_order', e.target.value)} 
+                            title="Lower numbers appear first"
+                        />
+                    </td>
+                    <td className="p-3">
+                        <input className="font-bold text-gray-700 border-none bg-transparent w-full focus:bg-white focus:border focus:p-1" value={prod.name} onChange={(e) => updateProductInfo(prod.id, 'name', e.target.value)} />
+                        <div className="text-xs text-gray-400">ID: {prod.id}</div>
+                    </td>
+                    <td className="p-3 font-mono text-gray-600">
+                        <input type="number" className="w-16 border rounded text-center" value={prod.base_price} onChange={(e) => updateProductInfo(prod.id, 'base_price', e.target.value)} />
+                    </td>
+                    <td className="p-3 text-right">
+                        <button onClick={() => addProductToEvent(prod)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded shadow disabled:opacity-50" disabled={loading || !truckTargetEvent} title={!truckTargetEvent ? "Select an event top right first" : `Send to ${truckTargetEvent}`}>
+                            🚚 Truck It
+                        </button>
+                        <button onClick={() => deleteProduct(prod.id)} className="ml-4 text-red-300 hover:text-red-500 font-bold" title="Delete from Global Catalog">×</button>
+                    </td>
+                </tr>
+            ))}
+        </tbody>
+    </table>
+</div>
 
                     </div>
 
@@ -1618,82 +1617,66 @@ export default function AdminPage() {
                             </thead>
 
                             <tbody>
+    {(() => {
+        // Sort by Master Product Order first, then by Size Logic
+        const sortedInventory = [...inventory].sort((a, b) => {
+            const prodA = products.find(p => p.id === a.product_id);
+            const prodB = products.find(p => p.id === b.product_id);
+            const sortA = prodA?.sort_order ?? 99;
+            const sortB = prodB?.sort_order ?? 99;
+            
+            // If they are different products, sort by the number you typed
+            if (sortA !== sortB) return sortA - sortB;
+            
+            // If they are the same product, sort by Size (Youth XS -> Adult 4XL)
+            return SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size);
+        });
 
-                                {inventory.map((item) => {
-
-                                    const globalProd = products.find(p => p.id === item.product_id);
-
-                                    const globalPrice = globalProd ? globalProd.base_price : 0;
-
-                                    return (
-
-                                        <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
-
-                                            <td className="p-4">
-    <div className="flex items-center gap-3">
-        {globalProd?.image_url ? (
-            <img src={globalProd.image_url} className="w-12 h-12 object-contain bg-white border border-gray-200 rounded-md shadow-sm shrink-0" />
-        ) : (
-            <div className="w-12 h-12 bg-gray-100 border border-gray-200 rounded-md flex items-center justify-center text-[8px] text-gray-400 shrink-0">No Img</div>
-        )}
-        <div>
-            <div className="font-bold text-sm text-gray-900 leading-tight">{getProductName(item.product_id)}</div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Global: ${globalPrice}</div>
-        </div>
-    </div>
-</td>
-
-                                            <td className="p-4 text-sm">{item.size}</td>
-
-                                            <td className="p-4">
-
-                                                <input type="number" className="mx-auto block w-16 border rounded text-center text-sm" value={item.cost_price || ''} placeholder="8.50" onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} />
-
-                                            </td>
-
-                                            <td className="p-4">
-
-                                                <input type="number" className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`} value={item.override_price || ''} placeholder={globalPrice} onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} />
-
-                                            </td>
-
-                                            <td className="p-4">
-
-                                                <input type="number" className="mx-auto block w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} />
-
-                                            </td>
-
-                                            <td className="p-4 text-center">
-
-                                                <input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5 cursor-pointer" />
-
-                                            </td>
-
-                                            <td className="p-4 text-center">
-
-                                                <button 
-
-                                                    onClick={() => returnToWarehouse(item)}
-
-                                                    className="text-xs bg-gray-100 hover:bg-gray-200 border border-gray-300 px-3 py-1 rounded shadow text-gray-700 font-bold whitespace-nowrap"
-
-                                                    title="Send Stock Back to Warehouse"
-
-                                                >
-
-                                                    ↩️ Return
-
-                                                </button>
-
-                                            </td>
-
-                                        </tr>
-
-                                    );
-
-                                })}
-
-                            </tbody>
+        return sortedInventory.map((item) => {
+            const globalProd = products.find(p => p.id === item.product_id);
+            const globalPrice = globalProd ? globalProd.base_price : 0;
+            return (
+                <tr key={`${item.product_id}_${item.size}`} className={`border-b ${!item.active ? 'bg-gray-100 opacity-50' : ''}`}>
+                    <td className="p-4">
+                        <div className="flex items-center gap-3">
+                            {globalProd?.image_url ? (
+                                <img src={globalProd.image_url} className="w-12 h-12 object-contain bg-white border border-gray-200 rounded-md shadow-sm shrink-0" />
+                            ) : (
+                                <div className="w-12 h-12 bg-gray-100 border border-gray-200 rounded-md flex items-center justify-center text-[8px] text-gray-400 shrink-0">No Img</div>
+                            )}
+                            <div>
+                                <div className="font-bold text-sm text-gray-900 leading-tight">{getProductName(item.product_id)}</div>
+                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Global: ${globalPrice}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td className="p-4 text-sm">{item.size}</td>
+                    <td className="p-4">
+                        <input type="number" className="mx-auto block w-16 border rounded text-center text-sm" value={item.cost_price || ''} placeholder="8.50" onChange={(e) => updateStock(item.product_id, item.size, 'cost_price', parseFloat(e.target.value))} />
+                    </td>
+                    <td className="p-4">
+                        <input type="number" className={`mx-auto block w-20 border rounded text-center font-bold ${item.override_price ? 'bg-green-50 text-green-800 border-green-300' : 'bg-gray-50'}`} value={item.override_price || ''} placeholder={globalPrice} onChange={(e) => updateStock(item.product_id, item.size, 'override_price', e.target.value ? parseFloat(e.target.value) : null)} />
+                    </td>
+                    <td className="p-4">
+                        <input type="number" className="mx-auto block w-16 border text-center font-bold" value={item.count} onChange={(e) => updateStock(item.product_id, item.size, 'count', parseInt(e.target.value))} />
+                    </td>
+                    <td className="p-4 text-center">
+                        <input type="checkbox" checked={item.active ?? true} onChange={(e) => updateStock(item.product_id, item.size, 'active', e.target.checked)} className="w-5 h-5 cursor-pointer" />
+                    </td>
+                    <td className="p-4 text-center">
+                        <button 
+                            onClick={() => returnToWarehouse(item)}
+                            className="text-xs bg-gray-100 hover:bg-gray-200 border border-gray-300 px-3 py-1 rounded shadow text-gray-700 font-bold whitespace-nowrap"
+                            title="Send Stock Back to Warehouse"
+                        >
+                            ↩️ Return
+                        </button>
+                    </td>
+                </tr>
+            );
+        });
+    })()}
+</tbody>
 
                         </table>
 
