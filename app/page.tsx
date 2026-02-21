@@ -9,7 +9,13 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
+const SIZE_ORDER = [
+  'YXS', 'YS', 'YM', 'YL', 'YXL', 'YXL2',
+  'Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL',
+  'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL',
+  'Adult XS', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL',
+  '2T', '3T', '4T',
+];
 
 const ZONES = {
     top: [
@@ -24,7 +30,7 @@ const ZONES = {
     ]
 };
 
-// Parses "Colortone Spider T-Shirt | L | Silver" → { baseName: "Colortone Spider T-Shirt", size: "L", color: "Silver" }
+// Parses "Colortone Spider T-Shirt | L | Silver" → { baseName, size, color }
 const parseProductId = (id) => {
   const parts = id.split('|').map(s => s.trim());
   if (parts.length === 3) return { baseName: parts[0], size: parts[1], color: parts[2] };
@@ -86,13 +92,11 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
 
-  // ── FIX 1: Only use .name and .type — never .id (id is now "Name | Size | Color") ──
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
     (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/)
   ) : false;
 
-  // Tops: both large & small logos available. Bottoms: small/pocket only (no large/full-front).
   const availableMainOptions = mainOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
   const availableAccentOptions = accentOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
 
@@ -196,26 +200,26 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // ─── PRODUCT GROUPING ──────────────────────────────────────────
-  // product.id  = "Colortone Spider T-Shirt | Adult M | Pink"
-  // product.name = "Colortone Spider T-Shirt"   ← clean display name, shared across colors
-  // inventory key = product_id + "_" + size  (no color column in inventory table)
-  // ───────────────────────────────────────────────────────────────
+  // ─���─ PRODUCT VISIBILITY ───────────────────────────────────────────────────
+  // Each product row in the DB represents exactly ONE size+color variant.
+  // e.g. id = "Gildan Heavy Blend Hoodie | YL | Light Pink"
+  // The inventory key is: product_id + "_" + size
+  // e.g. "Gildan Heavy Blend Hoodie | YL | Light Pink_YL"
+  // We read the size directly out of p.id via parseProductId — no scanning needed.
+  // This guarantees youth products only ever show youth sizes and vice versa.
 
   const visibleProducts = [];
   const seenNames = new Set();
   products.forEach(p => {
-      const strictPrefix = p.id + '_';
-      const hasActiveStock = Object.keys(activeItems).some(key => {
-          if (!key.startsWith(strictPrefix)) return false;
-          if (!activeItems[key]) return false;
-          if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
-          return true;
-      });
-      if (hasActiveStock && !seenNames.has(p.name)) {
-          seenNames.add(p.name);
-          visibleProducts.push(p);
-      }
+    const { size: sizeInId } = parseProductId(p.id);
+    if (!sizeInId) return;
+    const key = `${p.id}_${sizeInId}`;
+    const isActive = !!activeItems[key];
+    const hasStock = paymentMode !== 'hosted' || (inventory[key] || 0) > 0;
+    if (isActive && hasStock && !seenNames.has(p.name)) {
+      seenNames.add(p.name);
+      visibleProducts.push(p);
+    }
   });
 
   useEffect(() => {
@@ -228,7 +232,7 @@ export default function OrderForm() {
       }
   }, [JSON.stringify(visibleProducts.map(p => p.id)), selectedProduct]);
 
-  // All product records that share the selected product's NAME (one per color variant)
+  // All product rows sharing the selected product's display name (one row per size+color variant)
   const matchingProducts = selectedProduct
     ? products.filter(p => p.name === selectedProduct.name)
     : [];
@@ -254,23 +258,28 @@ export default function OrderForm() {
     setSize('');
   }, [selectedProduct?.name]);
 
-  // Sizes: filtered to only those with active stock for the selected color
+  // Sizes: read directly from each matching product's id — no inventory scanning needed.
+  // Each product row IS one size. Filter by color if multi-color, then check active+stock.
   const getVisibleSizes = () => {
-      if (!selectedProduct) return [];
-      const validSizes = new Set();
-      matchingProducts.forEach(p => {
-          const parsed = parseProductId(p.id);
-          // If multiple colors exist, only show sizes for the selected color
-          if (hasMultipleColors && parsed.color !== selectedColor) return;
-          const prefix = p.id + '_';
-          Object.keys(activeItems).forEach(key => {
-              if (!key.startsWith(prefix)) return;
-              if (!activeItems[key]) return;
-              if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
-              validSizes.add(key.replace(prefix, ''));
-          });
-      });
-      return Array.from(validSizes).sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
+    if (!selectedProduct) return [];
+    const validSizes = new Set();
+    matchingProducts.forEach(p => {
+      const { size: sizeInId, color } = parseProductId(p.id);
+      if (!sizeInId) return;
+      if (hasMultipleColors && color !== selectedColor) return;
+      const key = `${p.id}_${sizeInId}`;
+      if (!activeItems[key]) return;
+      if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
+      validSizes.add(sizeInId);
+    });
+    return Array.from(validSizes).sort((a, b) => {
+      const ai = SIZE_ORDER.indexOf(a);
+      const bi = SIZE_ORDER.indexOf(b);
+      if (ai === -1 && bi === -1) return a.localeCompare(b);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
   };
 
   const visibleSizes = getVisibleSizes();
@@ -287,30 +296,38 @@ export default function OrderForm() {
       }
   }, [selectedProduct, selectedColor, visibleSizes.join(','), paymentMode, selectedGuest]);
 
-  // Stock lookup: color-aware via matching product id, key = product_id_size
+  // Stock lookup: find the product row matching the selected color, use its key
   const currentStock = (() => {
-      if (!selectedProduct || !size) return 0;
-      let totalBaseStock = 0;
-      matchingProducts.forEach(p => {
-          const parsed = parseProductId(p.id);
-          if (hasMultipleColors && parsed.color !== selectedColor) return;
-          totalBaseStock += (inventory[`${p.id}_${size}`] || 0);
-      });
-      const qtyInCart = cart.filter(item =>
-        item.productName === selectedProduct.name &&
-        item.size === size &&
-        (!hasMultipleColors || item.color === selectedColor)
-      ).length;
-      return totalBaseStock - qtyInCart;
+    if (!selectedProduct || !size) return 0;
+    let totalBaseStock = 0;
+    matchingProducts.forEach(p => {
+      const parsed = parseProductId(p.id);
+      if (hasMultipleColors && parsed.color !== selectedColor) return;
+      if (parsed.size !== size) return;
+      const key = `${p.id}_${size}`;
+      totalBaseStock += (inventory[key] || 0);
+    });
+    const qtyInCart = cart.filter(item =>
+      item.productName === selectedProduct.name &&
+      item.size === size &&
+      (!hasMultipleColors || item.color === selectedColor)
+    ).length;
+    return totalBaseStock - qtyInCart;
   })();
   
   const isOutOfStock = currentStock <= 0;
 
-  // ── FIX 2: selectedProductRecord is the color-specific record (has the correct image_url) ──
+  // The color-specific product record (has the correct image_url for the selected color)
   const selectedProductRecord = (() => {
     if (!selectedProduct) return null;
-    if (!hasMultipleColors) return matchingProducts[0] || selectedProduct;
-    return matchingProducts.find(p => parseProductId(p.id).color === selectedColor) || selectedProduct;
+    if (!hasMultipleColors) {
+      // Find the row matching the currently selected size, or fall back to first
+      return matchingProducts.find(p => parseProductId(p.id).size === size) || matchingProducts[0] || selectedProduct;
+    }
+    return matchingProducts.find(p => {
+      const parsed = parseProductId(p.id);
+      return parsed.color === selectedColor && parsed.size === size;
+    }) || matchingProducts.find(p => parseProductId(p.id).color === selectedColor) || selectedProduct;
   })();
 
   const getPositionOptions = (itemType, isAccent = false) => {
@@ -654,7 +671,6 @@ export default function OrderForm() {
                             <div className="text-center py-8 text-red-600 font-bold">Sorry, no products available.</div>
                         ) : (
                             <>
-                                {/* ── FIX 3: Use selectedProductRecord.image_url so Pink shows pink image, Black shows black image ── */}
                                 {selectedProductRecord?.image_url && (
                                   <div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center">
                                     <img src={selectedProductRecord.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
@@ -701,7 +717,7 @@ export default function OrderForm() {
                                     </div>
                                   )}
 
-                                  {/* SIZE — hidden until color is chosen (if multi-color product) */}
+                                  {/* SIZE */}
                                   {(!hasMultipleColors || selectedColor) && (
                                     <div>
                                       <label className="text-xs font-black text-gray-900 uppercase">Size</label>
@@ -723,7 +739,6 @@ export default function OrderForm() {
                         )}
                     </section>
 
-                    {/* DESIGN SECTION — availableMainOptions already filters large logos for bottoms (FIX 1) */}
                     {selectedProduct && availableMainOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
@@ -740,12 +755,10 @@ export default function OrderForm() {
                                         </button>
                                     ))}
                                 </div>
-                                {/* ── FIX 3 (placement viz): garmentType uses .type then .name — never .id ── */}
                                 <div className="col-span-1">
                                   {(() => {
                                     const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign);
                                     const placement = currentLogoObj?.placement || 'large';
-                                    // Triple-safe: DB type field → name keyword match → default top
                                     const garmentType =
                                       (selectedProduct.type === 'bottom') ? 'bottom' :
                                       ((selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/)) ? 'bottom' :
@@ -757,7 +770,6 @@ export default function OrderForm() {
                         </section>
                     )}
 
-                    {/* ACCENTS — availableAccentOptions already filters large logos for bottoms (FIX 1) */}
                     {selectedProduct && availableAccentOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
@@ -969,28 +981,21 @@ export default function OrderForm() {
   );
 }
 
-// ── PlacementVisualizer: shows where the logo sits on the garment ──
+// ── PlacementVisualizer ──
 const PlacementVisualizer = ({ garmentType, logoSize }) => {
-  // garmentType comes from product.type ('top' or 'bottom')
   const isBottom = garmentType === 'bottom';
   const accentColor = "#1e3a8a";
 
   const TopSVG = () => (
     <svg viewBox="0 0 200 220" className="w-28 h-28 drop-shadow">
-      {/* Hoodie body */}
       <path d="M60 30 L35 65 L60 75 L60 190 L140 190 L140 75 L165 65 L140 30 Q100 50 60 30Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="2" />
-      {/* Hood */}
       <path d="M75 30 Q100 10 125 30 Q110 45 100 48 Q90 45 75 30Z" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1.5" />
-      {/* Pocket */}
       <rect x="78" y="130" width="44" height="30" rx="3" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1" />
-
       {logoSize === 'large' ? (
-        // Full front — large centered rectangle
         <rect x="72" y="75" width="56" height="48" rx="4" fill={accentColor} fillOpacity="0.75">
           <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
         </rect>
       ) : (
-        // Left chest — small circle
         <circle cx="82" cy="85" r="10" fill={accentColor} fillOpacity="0.85">
           <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
         </circle>
@@ -1000,13 +1005,9 @@ const PlacementVisualizer = ({ garmentType, logoSize }) => {
 
   const BottomSVG = () => (
     <svg viewBox="0 0 200 220" className="w-28 h-28 drop-shadow">
-      {/* Jogger waistband */}
       <rect x="55" y="20" width="90" height="18" rx="4" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1.5" />
-      {/* Left leg */}
       <path d="M55 38 L65 200 L100 200 L100 38Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
-      {/* Right leg */}
       <path d="M145 38 L135 200 L100 200 L100 38Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
-      {/* Left thigh logo spot */}
       <circle cx="75" cy="80" r="10" fill={accentColor} fillOpacity="0.85">
         <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
       </circle>
