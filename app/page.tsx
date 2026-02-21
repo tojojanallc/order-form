@@ -266,7 +266,7 @@ export default function OrderForm() {
     matchingProducts.forEach(p => {
       const { size: sizeInId, color } = parseProductId(p.id);
       if (!sizeInId) return;
-      if (hasMultipleColors && selectedColor && color !== selectedColor) return;
+            if (hasMultipleColors && parsed.color !== selectedColor) return;
       const key = `${p.id}_${sizeInId}`;
       if (!activeItems[key]) return;
       if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
@@ -302,7 +302,7 @@ export default function OrderForm() {
     let totalBaseStock = 0;
     matchingProducts.forEach(p => {
       const parsed = parseProductId(p.id);
-if (hasMultipleColors && selectedColor && color !== selectedColor) return;
+      if (hasMultipleColors && parsed.color !== selectedColor) return;
       if (parsed.size !== size) return;
       const key = `${p.id}_${size}`;
       totalBaseStock += (inventory[key] || 0);
