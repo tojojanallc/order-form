@@ -773,4 +773,4 @@ const PlacementVisualizer = ({ garmentType, logoSize }) => {
           </div> 
       ); 
   }
-}; 
+};
