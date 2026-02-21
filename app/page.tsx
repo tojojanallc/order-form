@@ -38,7 +38,7 @@ const parseProductId = (id) => {
   return { baseName: id, size: null, color: null };
 };
 
-const mergedName = (name) => name.replace(/\s*Youth\s*/gi, '').trim();
+const mergedName = (name) => name.replace(/\s*Youth\s*/gi, ' ').trim();
 
 export default function OrderForm() {
   const params = useParams();
