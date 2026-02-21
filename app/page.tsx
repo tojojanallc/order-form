@@ -10,6 +10,7 @@ const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supaba
 
 const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
 
+// --- POSITION LOGIC CONFIG ---
 const ZONES = {
     top: [
         { id: 'full_front', label: 'Full Front', type: 'logo' },
@@ -21,6 +22,7 @@ const ZONES = {
         { id: 'back_bottom', label: 'Back Bottom', type: 'name' }
     ],
     bottom: [
+        // LEG PRINTS REMOVED PER REQUEST
         { id: 'left_thigh', label: 'Left Thigh (Upper)', type: 'both' },
         { id: 'right_thigh', label: 'Right Thigh (Upper)', type: 'both' },
         { id: 'back_pocket', label: 'Back Pocket', type: 'logo' },
@@ -42,6 +44,7 @@ export default function OrderForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   
+  // --- SQUARE TERMINAL STATE ---
   const [isTerminalProcessing, setIsTerminalProcessing] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState('');
   const [assignedTerminalId, setAssignedTerminalId] = useState('');
@@ -67,8 +70,8 @@ export default function OrderForm() {
   const [showBackNames, setShowBackNames] = useState(true);
   const [showMetallic, setShowMetallic] = useState(true);
   const [showPersonalization, setShowPersonalization] = useState(true);
-  const [showNumbers, setShowNumbers] = useState(true); 
   
+  // --- TAX SETTINGS ---
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxRate, setTaxRate] = useState(0);
 
@@ -77,7 +80,6 @@ export default function OrderForm() {
   const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
   const [logos, setLogos] = useState([]); 
   const [names, setNames] = useState([]);
-  const [numbers, setNumbers] = useState([]); 
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
   const [backListConfirmed, setBackListConfirmed] = useState(false);
@@ -86,15 +88,18 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
 
+  // --- SMART PRODUCT DETECTION ---
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
     (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/) || 
     (selectedProduct.id || '').toLowerCase().match(/jogger|pant|short|sweat/)
   ) : false;
 
+  // Filter out 'large' logos if it's a bottom
   const availableMainOptions = mainOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
   const availableAccentOptions = accentOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
 
+  // Auto-manage selected design when switching products
   useEffect(() => {
     if (availableMainOptions.length === 1) {
         setSelectedMainDesign(availableMainOptions[0].label);
@@ -106,7 +111,7 @@ export default function OrderForm() {
     }
   }, [selectedProduct, mainOptions]);
 
-  // RESTORED YOUR ORIGINAL EXACT URL LOGIC
+  // --- MASTER DATA FETCHER ---
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     let currentSlug = params.get('event');
@@ -138,17 +143,12 @@ export default function OrderForm() {
         setShowBackNames(settings.offer_back_names ?? true);
         setShowMetallic(settings.offer_metallic ?? true);
         setShowPersonalization(settings.offer_personalization ?? true);
-        setShowNumbers(settings.offer_numbers ?? true); 
         setTaxEnabled(settings.tax_enabled || false);
         setTaxRate(settings.tax_rate || 0);
       }
 
-      const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
-      if (productData) {
-          // DUPLICATE CRUSHER: Wipes out duplicate products instantly
-          const uniqueProducts = Array.from(new Map(productData.map(p => [p.id, p])).values());
-          setProducts(uniqueProducts);
-      }
+      const { data: productData } = await supabase.from('products').select('*').order('sort_order');
+      if (productData) setProducts(productData);
 
       const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', currentSlug).order('sort_order');
       if (logoData) {
@@ -203,10 +203,8 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // STRICT PRODUCT FILTER
   const visibleProducts = products.filter(p => {
-      const strictPrefix = p.id + '_';
-      const productKeys = Object.keys(activeItems).filter(k => k.startsWith(strictPrefix));
+      const productKeys = Object.keys(activeItems).filter(k => k.startsWith(p.id));
       return productKeys.some(key => {
           const isActive = activeItems[key] === true;
           if (paymentMode === 'hosted') return isActive && (inventory[key] || 0) > 0;
@@ -224,22 +222,19 @@ export default function OrderForm() {
     }
   }, [visibleProducts, selectedProduct]);
 
-  // STRICT SIZE FILTER
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
-    const strictPrefix = selectedProduct.id + '_';
     const unsorted = Object.keys(activeItems).filter(key => {
-        if (!key.startsWith(strictPrefix)) return false;
+        const isMatch = key.startsWith(selectedProduct.id + '_');
         const isActive = activeItems[key] === true;
         if (paymentMode === 'hosted') {
             const hasStock = (inventory[key] || 0) > 0;
-            return isActive && hasStock;
+            return isMatch && isActive && hasStock;
         }
-        return isActive;
-    }).map(key => key.replace(strictPrefix, ''));
+        return isMatch && isActive;
+    }).map(key => key.replace(`${selectedProduct.id}_`, ''));
     return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
-  
   const visibleSizes = getVisibleSizes();
 
   useEffect(() => {
@@ -261,9 +256,7 @@ export default function OrderForm() {
   }, [selectedProduct, visibleSizes, size, paymentMode, selectedGuest, inventory]);
 
   const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
-  const baseStock = inventory[stockKey] ?? 0;
-  const qtyInCart = cart.filter(item => item.productId === selectedProduct?.id && item.size === size).length;
-  const currentStock = baseStock - qtyInCart;
+  const currentStock = inventory[stockKey] ?? 0;
   const isOutOfStock = currentStock <= 0;
 
   const getPositionOptions = (itemType, isAccent = false) => {
@@ -272,14 +265,19 @@ export default function OrderForm() {
       const availableZones = ZONES[pType] || ZONES.top;
       
       let options = [];
-      if (itemType === 'logo') options = availableZones.filter(z => z.type === 'logo' || z.type === 'both');
-      else if (itemType === 'name' || itemType === 'number') options = availableZones.filter(z => z.type === 'name' || z.type === 'both');
-      else options = availableZones;
-      
+      if (itemType === 'logo') {
+          options = availableZones.filter(z => z.type === 'logo' || z.type === 'both');
+      } else if (itemType === 'name') {
+          options = availableZones.filter(z => z.type === 'name' || z.type === 'both');
+      } else {
+          options = availableZones;
+      }
+
       if (isAccent && pType === 'top') {
           const forbidden = ['full_front', 'left_chest', 'center_chest'];
           options = options.filter(z => !forbidden.includes(z.id));
       }
+
       return options;
   };
 
@@ -293,18 +291,21 @@ export default function OrderForm() {
     let total = basePrice; 
     total += logos.length * 5;      
     total += names.length * 5;      
-    total += numbers.length * 5; 
     if (backNameList) total += 5;   
     if (metallicHighlight) total += 5; 
     return total;
   };
 
   const calculateSubtotal = () => cart.reduce((sum, item) => sum + item.finalPrice, 0);
+  
   const calculateTax = () => {
       if (!taxEnabled || taxRate <= 0 || paymentMode === 'hosted') return 0;
       return calculateSubtotal() * (taxRate / 100);
   };
-  const calculateGrandTotal = () => calculateSubtotal() + calculateTax();
+
+  const calculateGrandTotal = () => {
+      return calculateSubtotal() + calculateTax();
+  };
 
   const sendConfirmationSMS = async (name, phone) => {
       if (!phone || phone.length < 10) return;
@@ -323,17 +324,21 @@ export default function OrderForm() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email, name, cart: cartData, total: totalAmount, orderId, eventName })
           });
+          if (!res.ok) console.error("Email Error:", await res.text());
       } catch (err) { console.error(`NETWORK ERROR: ${err.message}`); }
   };
   
   const handleAddToCart = () => {
     if (!selectedProduct) return;
-    if (availableMainOptions.length > 0 && !selectedMainDesign) { alert("Please select a Design."); return; }
+    
+    // Updated Validation: Use availableMainOptions
+    if (availableMainOptions.length > 0 && !selectedMainDesign) { 
+        alert("Please select a Design."); return; 
+    }
     
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
-    const missingNumberPos = numbers.some(n => !n.position);
-    if (missingLogoPos || missingNamePos || missingNumberPos) { alert("Please select a Position for every Accent, Name, and Number."); return; }
+    if (missingLogoPos || missingNamePos) { alert("Please select a Position for every Accent and Name."); return; }
 
     const newItem = {
       id: Date.now(),
@@ -344,13 +349,18 @@ export default function OrderForm() {
       custom_name: names.length > 0 ? names[0].text : (metallicHighlight ? metallicName : null),
       has_heat_sheet: backNameList,
       customizations: { 
-          mainDesign: selectedMainDesign, logos, names, numbers, backList: backNameList, metallic: metallicHighlight, metallicName: metallicHighlight ? metallicName : ''
+          mainDesign: selectedMainDesign, 
+          logos, 
+          names, 
+          backList: backNameList, 
+          metallic: metallicHighlight,
+          metallicName: metallicHighlight ? metallicName : ''
       },
       finalPrice: calculateItemTotal() 
     };
     
     setCart([...cart, newItem]);
-    setLogos([]); setNames([]); setNumbers([]); setBackNameList(false); setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName('');
+    setLogos([]); setNames([]); setBackNameList(false); setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName('');
     if (availableMainOptions.length > 1) setSelectedMainDesign(''); 
   };
 
@@ -358,19 +368,8 @@ export default function OrderForm() {
   const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
-  const updateNumber = (i, f, v) => { const n = [...numbers]; n[i][f] = v; setNumbers(n); }; 
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
-
-  const getCheckoutSlug = () => {
-      const searchParams = new URLSearchParams(window.location.search);
-      let currentSlug = searchParams.get('event');
-      if (!currentSlug) {
-          const path = window.location.pathname.replace(/^\//, '');
-          if (path && path !== '') currentSlug = path;
-      }
-      return currentSlug || localStorage.getItem('saved_event_slug') || 'default';
-  };
 
   const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
@@ -378,7 +377,13 @@ export default function OrderForm() {
     if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.");
     if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
 
-    const currentSlug = getCheckoutSlug();
+    const searchParams = new URLSearchParams(window.location.search);
+    let currentSlug = searchParams.get('event');
+    if (!currentSlug) {
+        const path = window.location.pathname.replace(/^\//, '');
+        if (path && path !== '') currentSlug = path;
+    }
+    if (!currentSlug) currentSlug = 'default';
 
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
@@ -387,7 +392,7 @@ export default function OrderForm() {
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: currentSlug, eventName })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), eventSlug: currentSlug, eventName })
         });
 
         if (!createRes.ok) throw new Error("Order creation failed");
@@ -399,7 +404,7 @@ export default function OrderForm() {
         const payRes = await fetch('/api/terminal-pay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal(), taxCollected: calculateTax(), deviceId: assignedTerminalId })
+            body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal(), deviceId: assignedTerminalId })
         });
 
         if (!payRes.ok) throw new Error("Terminal connection failed");
@@ -446,7 +451,13 @@ export default function OrderForm() {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
     
-    const currentSlug = getCheckoutSlug();
+    const searchParams = new URLSearchParams(window.location.search);
+    let currentSlug = searchParams.get('event');
+    if (!currentSlug) {
+        const path = window.location.pathname.replace(/^\//, '');
+        if (path && path !== '') currentSlug = path;
+    }
+    if (!currentSlug) currentSlug = 'default';
 
     if(!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
@@ -455,7 +466,7 @@ export default function OrderForm() {
         const res = await fetch('/api/create-cash-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
+            body: JSON.stringify({ cart, customerName, customerPhone, total: calculateGrandTotal(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
         });
 
         const data = await res.json();
@@ -487,7 +498,13 @@ export default function OrderForm() {
   };
 
   const handleCheckout = async () => {
-    const currentSlug = getCheckoutSlug();
+    const searchParams = new URLSearchParams(window.location.search);
+    let currentSlug = searchParams.get('event');
+    if (!currentSlug) {
+        const path = window.location.pathname.replace(/^\//, '');
+        if (path && path !== '') currentSlug = path;
+    }
+    if (!currentSlug) currentSlug = 'default';
 
     if (paymentMode === 'hosted' && selectedGuest) {
         setIsSubmitting(true);
@@ -523,8 +540,7 @@ export default function OrderForm() {
     try {
         const { data: orderData, error } = await supabase.from('orders').insert([{ 
           customer_name: customerName, 
-          phone: customerPhone || 'N/A',
-          email: customerEmail, 
+          phone: customerPhone || 'N/A', 
           cart_data: cart, 
           total_price: calculateGrandTotal(), 
           shipping_address: cartRequiresShipping ? shippingAddress : null,
@@ -576,27 +592,8 @@ export default function OrderForm() {
   if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
 
-  const resetApp = async () => {
-      setCart([]); 
-      setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); 
-      setShippingAddress(''); setShippingCity(''); setShippingState(''); setShippingZip(''); 
-      setOrderComplete(false); 
-      setLogos([]); setNames([]); setNumbers([]); 
-      setSelectedProduct(null); setSize(''); 
-      setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
-      
-      const currentSlug = getCheckoutSlug();
-      
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', currentSlug); 
-      if (invData) {
-        const stockMap = {}; const activeMap = {}; const priceMap = {};
-        invData.forEach(item => {
-            const key = `${item.product_id}_${item.size}`;
-            stockMap[key] = item.count; activeMap[key] = item.active;
-            if (item.override_price) priceMap[key] = item.override_price;
-        });
-        setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
-      }
+  const resetApp = () => {
+      setCart([]); setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); setShippingAddress(''); setShippingCity(''); setShippingState(''); setShippingZip(''); setOrderComplete(false); setLogos([]); setNames([]); setSelectedProduct(null); setSize(''); setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
       window.scrollTo(0, 0);
   };
 
@@ -619,6 +616,8 @@ export default function OrderForm() {
   return (
     <div className="min-h-screen bg-gray-100 py-6 px-4 font-sans text-gray-900 flex justify-center items-start">
       <div className="w-full max-w-6xl mx-auto grid md:grid-cols-3 gap-8" style={{ zoom: '1.25' }}>
+        
+        {/* LEFT COLUMN: PRODUCT BUILDER */}
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
             <div className="text-white p-6 text-center relative" style={{ backgroundColor: headerColor }}>
@@ -665,6 +664,7 @@ export default function OrderForm() {
                         )}
                     </section>
 
+                    {/* ONLY RENDER DESIGN SECTION IF THERE ARE OPTIONS AVAILABLE FOR THIS GARMENT */}
                     {selectedProduct && availableMainOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">2. Choose Design</h2><span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span></div>
@@ -713,34 +713,19 @@ export default function OrderForm() {
                         </section>
                     )}
 
-                    {selectedProduct && (showPersonalization || showNumbers) && (
+                    {selectedProduct && showPersonalization && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
-                            
                             {names.map((nameItem, index) => (
-                            <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                                <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-bold" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
+                            <div key={index} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
+                                <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
                                 <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}><option value="">Select Position...</option>{getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
                                 <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                             </div>
                             ))}
-
-                            {numbers.map((numItem, index) => (
-                            <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                                <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-mono font-bold text-center text-lg tracking-widest" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
-                                <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={numItem.position} onChange={(e) => updateNumber(index, 'position', e.target.value)}><option value="">Select Position...</option>{getPositionOptions('number').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
-                                <button onClick={() => setNumbers(numbers.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
-                            </div>
-                            ))}
-
-                            <div className="flex gap-2">
-                                {(paymentMode === 'retail' || names.length === 0) && showPersonalization && (
-                                    <button onClick={() => setNames([...names, { text: '', position: '' }])} className="flex-1 py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold bg-white">+ Add Name</button>
-                                )}
-                                {(paymentMode === 'retail' || numbers.length === 0) && showNumbers && (
-                                    <button onClick={() => setNumbers([...numbers, { text: '', position: '' }])} className="flex-1 py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold bg-white">+ Add Number</button>
-                                )}
-                            </div>
+                            {(paymentMode === 'retail' || names.length === 0) && (
+                                <button onClick={() => setNames([...names, { text: '', position: '' }])} className="w-full py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold">+ Add Your Name to Your Apparel</button>
+                            )}
                         </section>
                     )}
                     
@@ -767,6 +752,7 @@ export default function OrderForm() {
                     )}
                   </>
               )}
+
             </div>
             
             {(paymentMode === 'retail' || selectedGuest) && (
@@ -790,11 +776,7 @@ export default function OrderForm() {
                     {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
                     <p className="text-sm text-gray-800 font-medium">Size: {item.size}</p>
                     <div className="text-xs text-blue-900 font-bold mt-1">Main Design: {item.customizations.mainDesign || 'None'}</div>
-                    <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">
-                        {item.customizations.logos.map((l, i) => <div key={'logo'+i}>• {l.type} ({l.position})</div>)}
-                        {item.customizations.names.map((n, i) => <div key={'name'+i}>• "{n.text}" ({n.position})</div>)}
-                        {item.customizations.numbers?.map((num, i) => <div key={'num'+i}>• Number "{num.text}" ({num.position})</div>)}
-                    </div>
+                    <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">{item.customizations.logos.map((l, i) => <div key={i}>• {l.type} ({l.position})</div>)}{item.customizations.names.map((n, i) => <div key={i}>• "{n.text}" ({n.position})</div>)}</div>
                     {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice.toFixed(2)}</p>}
                     </div>
                 ))}
@@ -875,6 +857,7 @@ const PlacementVisualizer = ({ garmentType, logoSize }) => {
   };
   
   const renderBottomZones = () => { 
+      // ONLY THIGH/POCKET PRINT FOR BOTTOMS NOW
       return ( <circle cx="80" cy="50" r="6" fill={color} fillOpacity="0.8"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></circle> ); 
   };
   
