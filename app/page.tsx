@@ -13,26 +13,22 @@ const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL', 'Ad
 
 const ZONES = {
     top: [
-        { id: 'full_front', label: 'Full Front', type: 'logo' },
-        { id: 'left_chest', label: 'Left Chest', type: 'logo' },
-        { id: 'center_chest', label: 'Center Chest', type: 'logo' },
-        { id: 'left_sleeve', label: 'Left Sleeve', type: 'both' },
-        { id: 'right_sleeve', label: 'Right Sleeve', type: 'both' },
-        { id: 'back_center', label: 'Back Center', type: 'both' },
+        { id: 'full_front', label: 'Full Front', type: 'logo' }, { id: 'left_chest', label: 'Left Chest', type: 'logo' },
+        { id: 'center_chest', label: 'Center Chest', type: 'logo' }, { id: 'left_sleeve', label: 'Left Sleeve', type: 'both' },
+        { id: 'right_sleeve', label: 'Right Sleeve', type: 'both' }, { id: 'back_center', label: 'Back Center', type: 'both' },
         { id: 'back_bottom', label: 'Back Bottom', type: 'name' }
     ],
     bottom: [
-        { id: 'left_thigh', label: 'Left Thigh (Upper)', type: 'both' },
-        { id: 'right_thigh', label: 'Right Thigh (Upper)', type: 'both' },
-        { id: 'back_pocket', label: 'Back Pocket', type: 'logo' },
-        { id: 'rear', label: 'Rear (Center)', type: 'both' }           
+        { id: 'left_thigh', label: 'Left Thigh (Upper)', type: 'both' }, { id: 'right_thigh', label: 'Right Thigh (Upper)', type: 'both' },
+        { id: 'back_pocket', label: 'Back Pocket', type: 'logo' }, { id: 'rear', label: 'Rear (Center)', type: 'both' }           
     ]
 };
 
 export default function OrderForm() {
   const params = useParams();
-  const actualEventSlug = params?.slug || 'default'; 
-
+  
+  const [actualEventSlug, setActualEventSlug] = useState('');
+  
   const [cart, setCart] = useState([]); 
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -90,18 +86,11 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
 
-  // --- HARD OVERRIDE FOR SWEATSHIRTS ---
-  let isBottomSelected = false;
-  if (selectedProduct) {
-      const n = (selectedProduct.name || '').toLowerCase();
-      const id = (selectedProduct.id || '').toLowerCase();
-      
-      if (n.includes('sweatshirt') || id.includes('sweatshirt') || n.includes('hoodie') || id.includes('hoodie')) {
-          isBottomSelected = false; // FORCES TO TOP
-      } else if (selectedProduct.type === 'bottom' || n.includes('jogger') || n.includes('pant') || n.includes('short') || id.includes('jogger') || id.includes('pant') || id.includes('short')) {
-          isBottomSelected = true;
-      }
-  }
+  const isBottomSelected = selectedProduct ? (
+    selectedProduct.type === 'bottom' || 
+    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/) || 
+    (selectedProduct.id || '').toLowerCase().match(/jogger|pant|short|sweat/)
+  ) : false;
 
   const availableMainOptions = mainOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
   const availableAccentOptions = accentOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
@@ -115,7 +104,20 @@ export default function OrderForm() {
     }
   }, [selectedProduct, mainOptions]);
 
+  // STRICT URL RESOLVER - NO CACHE ALLOWED
   useEffect(() => {
+    let slug = params?.slug;
+    if (!slug && typeof window !== 'undefined') {
+        const searchParams = new URLSearchParams(window.location.search);
+        slug = searchParams.get('event');
+        if (!slug) {
+            const pathParts = window.location.pathname.split('/').filter(Boolean);
+            slug = pathParts[pathParts.length - 1];
+        }
+    }
+    const finalSlug = slug || 'default';
+    setActualEventSlug(finalSlug);
+
     const savedId = localStorage.getItem('square_terminal_id');
     if (savedId) setAssignedTerminalId(savedId);
 
@@ -125,9 +127,9 @@ export default function OrderForm() {
     }
 
     const fetchData = async () => {
-      if (!supabase || !actualEventSlug) return;
+      if (!supabase || !finalSlug) return;
 
-      const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', actualEventSlug).single();
+      const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', finalSlug).single();
       if (settings) {
         setEventName(settings.event_name);
         setEventLogo(settings.event_logo_url);
@@ -145,14 +147,14 @@ export default function OrderForm() {
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
       if (productData) setProducts(productData);
 
-      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', actualEventSlug).order('sort_order');
+      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', finalSlug).order('sort_order');
       if (logoData) {
           setLogoOptions(logoData);
           setMainOptions(logoData.filter(l => l.category === 'main'));
           setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
       }
 
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
+      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', finalSlug); 
       if (invData) {
         const stockMap = {}; const activeMap = {}; const priceMap = {};
         invData.forEach(item => {
@@ -164,12 +166,12 @@ export default function OrderForm() {
         setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
       }
 
-      const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', actualEventSlug); 
+      const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', finalSlug); 
       if (guestData) setGuests(guestData);
     };
 
     fetchData();
-  }, [actualEventSlug]);
+  }, [params]);
 
   const fetchTerminals = async () => {
       const { data } = await supabase.from('terminals').select('*');
@@ -196,21 +198,29 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // --- STRICT DROPDOWN FIX ---
-  const visibleProducts = products.filter(p => {
+  // --- THE DUPLICATE CRUSHER ---
+  // Aggressively filters the products list so a name can ONLY appear once
+  const visibleProducts = [];
+  const seenNames = new Set();
+
+  products.forEach(p => {
       const strictPrefix = p.id + '_';
-      const productKeys = Object.keys(activeItems).filter(k => k.startsWith(strictPrefix));
-      
-      return productKeys.some(key => {
-          const isActive = activeItems[key] === true;
-          if (paymentMode === 'hosted') return isActive && (inventory[key] || 0) > 0;
-          return isActive;
+      const hasActiveStock = Object.keys(activeItems).some(key => {
+          if (!key.startsWith(strictPrefix)) return false;
+          if (!activeItems[key]) return false;
+          if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
+          return true;
       });
+
+      if (hasActiveStock && !seenNames.has(p.name)) {
+          seenNames.add(p.name);
+          visibleProducts.push(p);
+      }
   });
 
   useEffect(() => {
       if (visibleProducts.length > 0) {
-          if (!selectedProduct || !visibleProducts.find(p => p.id === selectedProduct.id)) {
+          if (!selectedProduct || !visibleProducts.find(p => p.name === selectedProduct.name)) {
               setSelectedProduct(visibleProducts[0]);
           }
       } else {
@@ -218,22 +228,24 @@ export default function OrderForm() {
       }
   }, [JSON.stringify(visibleProducts.map(p => p.id)), selectedProduct]);
 
+  // Gathers sizes from ALL duplicate IDs sharing the same product name
   const getVisibleSizes = () => {
       if (!selectedProduct) return [];
-      const strictPrefix = selectedProduct.id + '_';
       
-      const unsorted = Object.keys(activeItems).filter(key => {
-          if (!key.startsWith(strictPrefix)) return false;
-          
-          const isActive = activeItems[key] === true;
-          if (paymentMode === 'hosted') {
-              const hasStock = (inventory[key] || 0) > 0;
-              return isActive && hasStock;
-          }
-          return isActive;
-      }).map(key => key.replace(strictPrefix, ''));
+      const matchingProductIds = products.filter(p => p.name === selectedProduct.name).map(p => p.id);
+      const validSizes = new Set();
       
-      return unsorted.sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
+      matchingProductIds.forEach(pid => {
+          const prefix = pid + '_';
+          Object.keys(activeItems).forEach(key => {
+              if (key.startsWith(prefix) && activeItems[key] === true) {
+                  if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
+                  validSizes.add(key.replace(prefix, ''));
+              }
+          });
+      });
+      
+      return Array.from(validSizes).sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
   };
 
   const visibleSizes = getVisibleSizes();
@@ -250,11 +262,22 @@ export default function OrderForm() {
       }
   }, [selectedProduct, visibleSizes, size, paymentMode, selectedGuest]);
 
-  const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
-  const baseStock = inventory[stockKey] ?? 0;
-  const qtyInCart = cart.filter(item => item.productId === selectedProduct?.id && item.size === size).length;
-  const currentStock = baseStock - qtyInCart;
+  // Aggregates total stock across any duplicate IDs
+  const currentStock = (() => {
+      if (!selectedProduct || !size) return 0;
+      let totalBaseStock = 0;
+      const matchingIds = products.filter(p => p.name === selectedProduct.name).map(p => p.id);
+      
+      matchingIds.forEach(id => {
+          totalBaseStock += (inventory[`${id}_${size}`] || 0);
+      });
+
+      const qtyInCart = cart.filter(item => item.productName === selectedProduct.name && item.size === size).length;
+      return totalBaseStock - qtyInCart;
+  })();
+  
   const isOutOfStock = currentStock <= 0;
+  // --- END OF FIX ---
 
   const getPositionOptions = (itemType, isAccent = false) => {
       if (!selectedProduct) return [];
@@ -520,6 +543,28 @@ export default function OrderForm() {
     }
   };
 
+  const resetApp = async () => {
+      setCart([]); 
+      setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); 
+      setShippingAddress(''); setShippingCity(''); setShippingState(''); setShippingZip(''); 
+      setOrderComplete(false); 
+      setLogos([]); setNames([]); setNumbers([]); 
+      setSelectedProduct(null); setSize(''); 
+      setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
+      
+      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
+      if (invData) {
+        const stockMap = {}; const activeMap = {}; const priceMap = {};
+        invData.forEach(item => {
+            const key = `${item.product_id}_${item.size}`;
+            stockMap[key] = item.count; activeMap[key] = item.active;
+            if (item.override_price) priceMap[key] = item.override_price;
+        });
+        setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
+      }
+      window.scrollTo(0, 0);
+  };
+
   if (showSetup) {
       return (
           <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
@@ -543,28 +588,6 @@ export default function OrderForm() {
 
   if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
-
-  const resetApp = async () => {
-      setCart([]); 
-      setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); 
-      setShippingAddress(''); setShippingCity(''); setShippingState(''); setShippingZip(''); 
-      setOrderComplete(false); 
-      setLogos([]); setNames([]); setNumbers([]); 
-      setSelectedProduct(null); setSize(''); 
-      setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
-      
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
-      if (invData) {
-        const stockMap = {}; const activeMap = {}; const priceMap = {};
-        invData.forEach(item => {
-            const key = `${item.product_id}_${item.size}`;
-            stockMap[key] = item.count; activeMap[key] = item.active;
-            if (item.override_price) priceMap[key] = item.override_price;
-        });
-        setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
-      }
-      window.scrollTo(0, 0);
-  };
 
   if (orderComplete) {
       return (
@@ -624,11 +647,17 @@ export default function OrderForm() {
                                 {selectedProduct.image_url && (<div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center"><img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" /></div>)}
                                 {isOutOfStock ? (<div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert"><p className="font-bold">⚠️ Out of Stock at Event</p><p className="text-sm">We can ship this to your home!</p></div>) : <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">✓ In Stock ({currentStock} available)</div>}
                                 <div className="grid md:grid-cols-2 gap-4">
-                                <div><label className="text-xs font-black text-gray-900 uppercase">Item</label>
-                                <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct?.id || ''}>{visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name} {showPrice ? `- $${p.base_price}` : ''}</option>)}</select>
+                                <div>
+                                    <label className="text-xs font-black text-gray-900 uppercase">Item</label>
+                                    <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.name === e.target.value))} value={selectedProduct.name}>
+                                        {visibleProducts.map(p => <option key={p.id} value={p.name}>{p.name} {showPrice ? `- $${p.base_price}` : ''}</option>)}
+                                    </select>
                                 </div>
-                                <div><label className="text-xs font-black text-gray-900 uppercase">Size</label>
-                                <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size || ''} onChange={(e) => setSize(e.target.value)}>{visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                                <div>
+                                    <label className="text-xs font-black text-gray-900 uppercase">Size</label>
+                                    <select className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium" value={size} onChange={(e) => setSize(e.target.value)}>
+                                        {visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
                                 </div>
                                 </div>
                             </>
@@ -687,7 +716,6 @@ export default function OrderForm() {
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                             
-                            {/* NAMES LIST */}
                             {names.map((nameItem, index) => (
                             <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                                 <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-bold" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
@@ -696,7 +724,6 @@ export default function OrderForm() {
                             </div>
                             ))}
 
-                            {/* NUMBERS LIST */}
                             {numbers.map((numItem, index) => (
                             <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                                 <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-mono font-bold text-center text-lg tracking-widest" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
