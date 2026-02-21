@@ -15,7 +15,6 @@ const SIZE_ORDER = [
   'Adult XS', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL',
   '2T', '3T', '4T',
 ];
-
 const ZONES = {
     top: [
         { id: 'full_front', label: 'Full Front', type: 'logo' }, { id: 'left_chest', label: 'Left Chest', type: 'logo' },
@@ -94,7 +93,7 @@ export default function OrderForm() {
   // ── FIX 1: Only use .name and .type — never .id (id is now "Name | Size | Color") ──
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
-    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/)
+    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short/)
   ) : false;
 
   // Tops: both large & small logos available. Bottoms: small/pocket only (no large/full-front).
