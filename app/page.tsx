@@ -89,7 +89,7 @@ export default function OrderForm() {
   // ── FIX 1: Only use .name and .type — never .id (id is now "Name | Size | Color") ──
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
-    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short/)
+    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/)
   ) : false;
 
   // Tops: both large & small logos available. Bottoms: small/pocket only (no large/full-front).
@@ -745,7 +745,11 @@ export default function OrderForm() {
                                   {(() => {
                                     const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign);
                                     const placement = currentLogoObj?.placement || 'large';
-                                    const garmentType = selectedProduct.type || (isBottomSelected ? 'bottom' : 'top');
+                                    // Triple-safe: DB type field → name keyword match → default top
+                                    const garmentType =
+                                      (selectedProduct.type === 'bottom') ? 'bottom' :
+                                      ((selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/)) ? 'bottom' :
+                                      'top';
                                     return <PlacementVisualizer garmentType={garmentType} logoSize={placement} />;
                                   })()}
                                 </div>
