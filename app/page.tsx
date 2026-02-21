@@ -745,14 +745,13 @@ export default function OrderForm() {
                                     ))}
                                 </div>
                                 {/* ── FIX 3 (placement viz): garmentType uses .type then .name — never .id ── */}
-                                <div className="col-span-1">
+                                                                <div className="col-span-1">
                                   {(() => {
                                     const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign);
                                     const placement = currentLogoObj?.placement || 'large';
-                                    // Triple-safe: DB type field → name keyword match → default top
                                     const garmentType =
                                       (selectedProduct.type === 'bottom') ? 'bottom' :
-                                      ((selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/)) ? 'bottom' :
+                                      ((selectedProduct.name || '').toLowerCase().match(/jogger|pant|short/)) ? 'bottom' :
                                       'top';
                                     return <PlacementVisualizer garmentType={garmentType} logoSize={placement} />;
                                   })()}
