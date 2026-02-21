@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, useRef } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
-import { useParams } from 'next/navigation'; // <-- THIS IS THE FIX
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -11,6 +10,7 @@ const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supaba
 
 const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
 
+// --- POSITION LOGIC CONFIG ---
 const ZONES = {
     top: [
         { id: 'full_front', label: 'Full Front', type: 'logo' },
@@ -30,9 +30,6 @@ const ZONES = {
 };
 
 export default function OrderForm() {
-  const params = useParams();
-  const actualEventSlug = params?.slug || 'default'; // MUST USE THE EXACT SLUG FROM THE URL
-
   const [cart, setCart] = useState([]); 
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -46,6 +43,7 @@ export default function OrderForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderComplete, setOrderComplete] = useState(false);
   
+  // --- SQUARE TERMINAL STATE ---
   const [isTerminalProcessing, setIsTerminalProcessing] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState('');
   const [assignedTerminalId, setAssignedTerminalId] = useState('');
@@ -73,6 +71,7 @@ export default function OrderForm() {
   const [showPersonalization, setShowPersonalization] = useState(true);
   const [showNumbers, setShowNumbers] = useState(true); 
   
+  // --- TAX SETTINGS ---
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxRate, setTaxRate] = useState(0);
 
@@ -111,13 +110,27 @@ export default function OrderForm() {
   }, [selectedProduct, mainOptions]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let currentSlug = params.get('event');
+
+    if (currentSlug) {
+        localStorage.setItem('saved_event_slug', currentSlug);
+    } else {
+        currentSlug = localStorage.getItem('saved_event_slug') || 'default';
+    }
+
+    if (!params.get('event')) {
+        window.history.replaceState({}, '', `/?event=${currentSlug}`);
+    }
+
     const savedId = localStorage.getItem('square_terminal_id');
     if (savedId) setAssignedTerminalId(savedId);
+    if (params.get('setup') === 'true') { setShowSetup(true); fetchTerminals(); }
 
     const fetchData = async () => {
       if (!supabase) return;
 
-      const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', actualEventSlug).single();
+      const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', currentSlug).single();
       if (settings) {
         setEventName(settings.event_name);
         setEventLogo(settings.event_logo_url);
@@ -132,17 +145,19 @@ export default function OrderForm() {
         setTaxRate(settings.tax_rate || 0);
       }
 
+      // 1. Fetch Global Master Products and perfectly sort them
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
       if (productData) setProducts(productData);
 
-      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', actualEventSlug).order('sort_order');
+      const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', currentSlug).order('sort_order');
       if (logoData) {
           setLogoOptions(logoData);
           setMainOptions(logoData.filter(l => l.category === 'main'));
           setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
       }
 
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
+      // 2. Fetch Event Specific Stock
+      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', currentSlug); 
       if (invData) {
         const stockMap = {}; const activeMap = {}; const priceMap = {};
         invData.forEach(item => {
@@ -154,12 +169,12 @@ export default function OrderForm() {
         setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
       }
 
-      const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', actualEventSlug); 
+      const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', currentSlug); 
       if (guestData) setGuests(guestData);
     };
 
     fetchData();
-  }, [actualEventSlug]);
+  }, []);
 
   const fetchTerminals = async () => {
       const { data } = await supabase.from('terminals').select('*');
@@ -171,6 +186,7 @@ export default function OrderForm() {
       setAssignedTerminalId(id);
       alert("✅ This iPad is now linked to terminal: " + id);
       setShowSetup(false);
+      window.history.replaceState({}, document.title, "/"); 
   };
 
   const verifyGuest = () => {
@@ -187,8 +203,9 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // STRICT PRODUCT FILTER
+  // --- BULLETPROOF PRODUCT FILTERING ---
   const visibleProducts = products.filter(p => {
+      // Must use explicit underscore to strictly match product ID (prevents 'tee' from matching 'teeshirt')
       const strictPrefix = p.id + '_';
       const productKeys = Object.keys(activeItems).filter(k => k.startsWith(strictPrefix));
       
@@ -209,7 +226,7 @@ export default function OrderForm() {
     }
   }, [visibleProducts, selectedProduct]);
 
-  // STRICT SIZE FILTER
+  // --- BULLETPROOF SIZE FILTERING ---
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
     const strictPrefix = selectedProduct.id + '_';
@@ -248,6 +265,7 @@ export default function OrderForm() {
     }
   }, [selectedProduct, visibleSizes, size, paymentMode, selectedGuest, inventory]);
 
+  // --- REAL-TIME CART MATH ---
   const stockKey = selectedProduct ? `${selectedProduct.id}_${size}` : '';
   const baseStock = inventory[stockKey] ?? 0;
   const qtyInCart = cart.filter(item => item.productId === selectedProduct?.id && item.size === size).length;
@@ -258,14 +276,21 @@ export default function OrderForm() {
       if (!selectedProduct) return [];
       const pType = isBottomSelected ? 'bottom' : 'top';
       const availableZones = ZONES[pType] || ZONES.top;
+      
       let options = [];
-      if (itemType === 'logo') options = availableZones.filter(z => z.type === 'logo' || z.type === 'both');
-      else if (itemType === 'name' || itemType === 'number') options = availableZones.filter(z => z.type === 'name' || z.type === 'both');
-      else options = availableZones;
+      if (itemType === 'logo') {
+          options = availableZones.filter(z => z.type === 'logo' || z.type === 'both');
+      } else if (itemType === 'name' || itemType === 'number') {
+          options = availableZones.filter(z => z.type === 'name' || z.type === 'both');
+      } else {
+          options = availableZones;
+      }
+
       if (isAccent && pType === 'top') {
           const forbidden = ['full_front', 'left_chest', 'center_chest'];
           options = options.filter(z => !forbidden.includes(z.id));
       }
+
       return options;
   };
 
@@ -286,11 +311,15 @@ export default function OrderForm() {
   };
 
   const calculateSubtotal = () => cart.reduce((sum, item) => sum + item.finalPrice, 0);
+  
   const calculateTax = () => {
       if (!taxEnabled || taxRate <= 0 || paymentMode === 'hosted') return 0;
       return calculateSubtotal() * (taxRate / 100);
   };
-  const calculateGrandTotal = () => calculateSubtotal() + calculateTax();
+
+  const calculateGrandTotal = () => {
+      return calculateSubtotal() + calculateTax();
+  };
 
   const sendConfirmationSMS = async (name, phone) => {
       if (!phone || phone.length < 10) return;
@@ -309,12 +338,16 @@ export default function OrderForm() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email, name, cart: cartData, total: totalAmount, orderId, eventName })
           });
+          if (!res.ok) console.error("Email Error:", await res.text());
       } catch (err) { console.error(`NETWORK ERROR: ${err.message}`); }
   };
   
   const handleAddToCart = () => {
     if (!selectedProduct) return;
-    if (availableMainOptions.length > 0 && !selectedMainDesign) { alert("Please select a Design."); return; }
+    
+    if (availableMainOptions.length > 0 && !selectedMainDesign) { 
+        alert("Please select a Design."); return; 
+    }
     
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
@@ -331,7 +364,12 @@ export default function OrderForm() {
       has_heat_sheet: backNameList,
       customizations: { 
           mainDesign: selectedMainDesign, 
-          logos, names, numbers, backList: backNameList, metallic: metallicHighlight, metallicName: metallicHighlight ? metallicName : ''
+          logos, 
+          names, 
+          numbers, 
+          backList: backNameList, 
+          metallic: metallicHighlight,
+          metallicName: metallicHighlight ? metallicName : ''
       },
       finalPrice: calculateItemTotal() 
     };
@@ -355,6 +393,9 @@ export default function OrderForm() {
     if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.");
     if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
 
+    const searchParams = new URLSearchParams(window.location.search);
+    let currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
+
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
 
@@ -362,7 +403,7 @@ export default function OrderForm() {
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: actualEventSlug, eventName })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: currentSlug, eventName })
         });
 
         if (!createRes.ok) throw new Error("Order creation failed");
@@ -391,9 +432,9 @@ export default function OrderForm() {
 
         const decrementInventory = async (cartItems) => {
             for (const item of cartItems) {
-                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
+                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size).single();
                 if (current && current.count > 0) {
-                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
+                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size);
                 }
             }
         };
@@ -420,6 +461,9 @@ export default function OrderForm() {
   const handleCashCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
+    
+    const searchParams = new URLSearchParams(window.location.search);
+    let currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
 
     if(!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
@@ -428,7 +472,7 @@ export default function OrderForm() {
         const res = await fetch('/api/create-cash-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: actualEventSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: currentSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
         });
 
         const data = await res.json();
@@ -436,9 +480,9 @@ export default function OrderForm() {
 
         const decrementInventory = async (cartItems) => {
             for (const item of cartItems) {
-                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
+                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size).single();
                 if (current && current.count > 0) {
-                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
+                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', currentSlug).eq('product_id', item.productId).eq('size', item.size);
                 }
             }
         };
@@ -460,13 +504,16 @@ export default function OrderForm() {
   };
 
   const handleCheckout = async () => {
+    const searchParams = new URLSearchParams(window.location.search);
+    let currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
+
     if (paymentMode === 'hosted' && selectedGuest) {
         setIsSubmitting(true);
         try {
             const res = await fetch('/api/create-hosted-order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: actualEventSlug, customerPhone, customerEmail }) 
+                body: JSON.stringify({ cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: currentSlug, customerPhone, customerEmail }) 
             });
 
             const data = await res.json();
@@ -504,7 +551,7 @@ export default function OrderForm() {
           shipping_zip: cartRequiresShipping ? shippingZip : null,
           status: cartRequiresShipping ? 'pending_shipping' : 'pending',
           event_name: eventName,
-          event_slug: actualEventSlug 
+          event_slug: currentSlug 
         }]).select().single();
 
         if (error) throw error;
@@ -512,7 +559,7 @@ export default function OrderForm() {
         const response = await fetch('/api/checkout', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ cart, customerName, eventSlug: actualEventSlug }) 
+            body: JSON.stringify({ cart, customerName, eventSlug: currentSlug }) 
         });
         const data = await response.json();
         if (data.url) window.location.href = data.url; else alert("Payment Error");
@@ -549,23 +596,48 @@ export default function OrderForm() {
 
   const resetApp = async () => {
       setCart([]); 
-      setCustomerName(''); setCustomerEmail(''); setCustomerPhone(''); 
-      setShippingAddress(''); setShippingCity(''); setShippingState(''); setShippingZip(''); 
+      setCustomerName(''); 
+      setCustomerEmail(''); 
+      setCustomerPhone(''); 
+      setShippingAddress(''); 
+      setShippingCity(''); 
+      setShippingState(''); 
+      setShippingZip(''); 
       setOrderComplete(false); 
-      setLogos([]); setNames([]); setNumbers([]); 
-      setSelectedProduct(null); setSize(''); 
-      setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
+      setLogos([]); 
+      setNames([]); 
+      setNumbers([]); 
+      setSelectedProduct(null); 
+      setSize(''); 
+      setIsSubmitting(false); 
+      setIsTerminalProcessing(false); 
+      setLastOrderId(''); 
       
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
+      const searchParams = new URLSearchParams(window.location.search);
+      const currentSlug = searchParams.get('event') || localStorage.getItem('saved_event_slug') || 'default';
+      
+      const { data: invData } = await supabase
+        .from('inventory')
+        .select('*')
+        .eq('event_slug', currentSlug); 
+        
       if (invData) {
-        const stockMap = {}; const activeMap = {}; const priceMap = {};
+        const stockMap = {}; 
+        const activeMap = {}; 
+        const priceMap = {};
+        
         invData.forEach(item => {
             const key = `${item.product_id}_${item.size}`;
-            stockMap[key] = item.count; activeMap[key] = item.active;
+            stockMap[key] = item.count;
+            activeMap[key] = item.active;
             if (item.override_price) priceMap[key] = item.override_price;
         });
-        setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
+        
+        setInventory(stockMap); 
+        setActiveItems(activeMap); 
+        setPriceOverrides(priceMap);
       }
+
       window.scrollTo(0, 0);
   };
 
@@ -588,6 +660,8 @@ export default function OrderForm() {
   return (
     <div className="min-h-screen bg-gray-100 py-6 px-4 font-sans text-gray-900 flex justify-center items-start">
       <div className="w-full max-w-6xl mx-auto grid md:grid-cols-3 gap-8" style={{ zoom: '1.25' }}>
+        
+        {/* LEFT COLUMN: PRODUCT BUILDER */}
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
             <div className="text-white p-6 text-center relative" style={{ backgroundColor: headerColor }}>
@@ -686,6 +760,7 @@ export default function OrderForm() {
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                             
+                            {/* NAMES LIST */}
                             {names.map((nameItem, index) => (
                             <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                                 <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-bold" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
@@ -694,6 +769,7 @@ export default function OrderForm() {
                             </div>
                             ))}
 
+                            {/* NUMBERS LIST */}
                             {numbers.map((numItem, index) => (
                             <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
                                 <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-mono font-bold text-center text-lg tracking-widest" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
@@ -736,6 +812,7 @@ export default function OrderForm() {
                     )}
                   </>
               )}
+
             </div>
             
             {(paymentMode === 'retail' || selectedGuest) && (
