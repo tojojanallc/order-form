@@ -46,7 +46,7 @@ const slugify = (str) => str.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-
 
 // Given a product record and a size, returns the inventory key that actually
 // exists in the activeItems map — handles both new composite IDs and old slugs.
-const resolveKey = (product, size) => `${product.id}_${size}`;
+const resolveKey = (product, size, activeItems) => {
   // 1. Exact match on composite id (new-style, the correct way)
   const compositeKey = `${product.id}_${size}`;
   if (compositeKey in activeItems) return compositeKey;
@@ -235,9 +235,11 @@ export default function OrderForm() {
   // We check BOTH the composite product.id prefix AND the slugified name prefix
   // because the admin "Truck It" writes rows with the slugified name as product_id.
   const productHasActiveStock = (p) => {
-    const prefix = p.id + '_';
+    const compositePrefix = p.id + '_';
+    const slugPrefix = slugify(p.name) + '_';
     return Object.keys(activeItems).some(key => {
-      if (!key.startsWith(prefix)) return false;
+      const matches = key.startsWith(compositePrefix) || key.startsWith(slugPrefix);
+      if (!matches) return false;
       if (!activeItems[key]) return false;
       if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
       return true;
