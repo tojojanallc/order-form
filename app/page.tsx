@@ -15,6 +15,7 @@ const SIZE_ORDER = [
   'Adult XS', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL',
   '2T', '3T', '4T',
 ];
+
 const ZONES = {
     top: [
         { id: 'full_front', label: 'Full Front', type: 'logo' }, { id: 'left_chest', label: 'Left Chest', type: 'logo' },
@@ -34,6 +35,36 @@ const parseProductId = (id) => {
   if (parts.length === 3) return { baseName: parts[0], size: parts[1], color: parts[2] };
   if (parts.length === 2) return { baseName: parts[0], size: parts[1], color: null };
   return { baseName: id, size: null, color: null };
+};
+
+// ─── KEY HELPER ──────────────────────────��─────────────────────────────────────
+// The inventory table may have been loaded with EITHER:
+//   (A) old-style keys:  "colortone_spider_tshirt_Adult M"
+//   (B) new-style keys:  "Colortone Spider T-Shirt | Adult M | Pink_Adult M"
+//
+// This function checks BOTH possible key formats for a given product record + size.
+// It returns the first key that actually exists in the activeItems / inventory maps.
+const resolveInventoryKey = (productId, size, activeItems, inventory) => {
+  // Primary: composite product id (new-style)
+  const primaryKey = `${productId}_${size}`;
+  if (primaryKey in activeItems) return primaryKey;
+
+  // Fallback: the product name base (parsed from composite id) may match a
+  // simple slug that was trucked before the id format changed.
+  // e.g. productId = "Colortone Spider T-Shirt | Adult M | Pink"
+  //      slug guess = "colortone_spider_tshirt"
+  // We can't reliably reverse-engineer the slug, so instead we scan activeItems
+  // for any key whose suffix matches the size and whose prefix matches
+  // the baseName (case-insensitive fuzzy).
+  const { baseName } = parseProductId(productId);
+  const baseNameLower = baseName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+  const sizeSuffix = `_${size}`;
+  const fuzzyMatch = Object.keys(activeItems).find(key => {
+    if (!key.endsWith(sizeSuffix)) return false;
+    const keyBase = key.slice(0, key.length - sizeSuffix.length).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    return keyBase === baseNameLower || keyBase.startsWith(baseNameLower) || baseNameLower.startsWith(keyBase);
+  });
+  return fuzzyMatch || primaryKey;
 };
 
 export default function OrderForm() {
@@ -90,13 +121,11 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
 
-  // ── FIX 1: Only use .name and .type — never .id (id is now "Name | Size | Color") ──
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
     (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short/)
   ) : false;
 
-  // Tops: both large & small logos available. Bottoms: small/pocket only (no large/full-front).
   const availableMainOptions = mainOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
   const availableAccentOptions = accentOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
 
@@ -200,26 +229,50 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // ─── PRODUCT GROUPING ──────────────────────────────────────────
-  // product.id  = "Colortone Spider T-Shirt | Adult M | Pink"
-  // product.name = "Colortone Spider T-Shirt"   ← clean display name, shared across colors
-  // inventory key = product_id + "_" + size  (no color column in inventory table)
-  // ───────────────────────────────────────────────────────────────
+  // ─── PRODUCT GROUPING ──────────────────────────────────────────────────────
+  // Checks if a product has active inventory using BOTH key formats:
+  //   New: "Colortone Spider T-Shirt | Adult M | Pink_Adult M"
+  //   Old: "colortone_spider_tshirt_Adult M"
+  // This makes the order form work regardless of which format was used when
+  // the event was stocked via admin "Truck It".
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const hasActiveStockForProduct = (p) => {
+    // Try new-style: product.id is composite, key = "product_id_size"
+    const newStylePrefix = p.id + '_';
+    const hasNew = Object.keys(activeItems).some(key => {
+      if (!key.startsWith(newStylePrefix)) return false;
+      if (!activeItems[key]) return false;
+      if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
+      return true;
+    });
+    if (hasNew) return true;
+
+    // Try old-style: product.name slugified, key = "slugified_name_size"
+    const slugifiedName = p.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const hasOld = Object.keys(activeItems).some(key => {
+      const keyBase = key.toLowerCase();
+      if (!keyBase.startsWith(slugifiedName + '_')) return false;
+      if (!activeItems[key]) return false;
+      if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
+      return true;
+    });
+    return hasOld;
+  };
+
+  // Build visibleProducts — one entry per unique product NAME that has any active stock
+  const visibleProductNames = new Set();
+  products.forEach(p => {
+    if (hasActiveStockForProduct(p)) visibleProductNames.add(p.name);
+  });
 
   const visibleProducts = [];
   const seenNames = new Set();
   products.forEach(p => {
-      const strictPrefix = p.id + '_';
-      const hasActiveStock = Object.keys(activeItems).some(key => {
-          if (!key.startsWith(strictPrefix)) return false;
-          if (!activeItems[key]) return false;
-          if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
-          return true;
-      });
-      if (hasActiveStock && !seenNames.has(p.name)) {
-          seenNames.add(p.name);
-          visibleProducts.push(p);
-      }
+    if (visibleProductNames.has(p.name) && !seenNames.has(p.name)) {
+      seenNames.add(p.name);
+      visibleProducts.push(p);
+    }
   });
 
   useEffect(() => {
@@ -237,12 +290,45 @@ export default function OrderForm() {
     ? products.filter(p => p.name === selectedProduct.name)
     : [];
 
-  // Colors parsed from product id: "Name | Size | Color" → "Color"
+  // ─── RESOLVE ACTUAL INVENTORY KEY FOR A PRODUCT + SIZE ────────────────────
+  // Given a product record and a size string, returns whichever inventory key
+  // actually exists (new-style composite or old-style slug).
+  const getInventoryKey = (prod, sizeStr) => {
+    const newKey = `${prod.id}_${sizeStr}`;
+    if (newKey in activeItems) return newKey;
+
+    // Fallback: slugify product name and try "name_size"
+    const slug = prod.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const oldKey = `${slug}_${sizeStr}`;
+    if (oldKey in activeItems) return oldKey;
+
+    // Last resort: fuzzy scan for any key ending in _size that starts with the slug
+    const suffix = `_${sizeStr}`;
+    const fuzzy = Object.keys(activeItems).find(k => k.endsWith(suffix) && k.toLowerCase().startsWith(slug));
+    return fuzzy || newKey;
+  };
+
+  // Colors — only show colors that have active stock for the selected product name
   const visibleColors = (() => {
     const colors = new Set();
     matchingProducts.forEach(p => {
       const { color } = parseProductId(p.id);
-      if (color) colors.add(color);
+      if (!color) return;
+      // Check if this color variant has any active stock
+      const hasStock = SIZE_ORDER.some(s => {
+        const key = getInventoryKey(p, s);
+        return activeItems[key] && (paymentMode !== 'hosted' || (inventory[key] || 0) > 0);
+      });
+      // Also check all keys in activeItems that belong to this product
+      const prefix = p.id + '_';
+      const slug = p.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      const hasStockAlt = Object.keys(activeItems).some(key => {
+        if (!key.startsWith(prefix) && !key.toLowerCase().startsWith(slug + '_')) return false;
+        if (!activeItems[key]) return false;
+        if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
+        return true;
+      });
+      if (hasStock || hasStockAlt) colors.add(color);
     });
     return Array.from(colors);
   })();
@@ -258,23 +344,44 @@ export default function OrderForm() {
     setSize('');
   }, [selectedProduct?.name]);
 
-  // Sizes: filtered to only those with active stock for the selected color
+  // Sizes — filtered to only those with active stock for the selected color
   const getVisibleSizes = () => {
-      if (!selectedProduct) return [];
-      const validSizes = new Set();
-      matchingProducts.forEach(p => {
-          const parsed = parseProductId(p.id);
-          // If multiple colors exist, only show sizes for the selected color
-          if (hasMultipleColors && parsed.color !== selectedColor) return;
-          const prefix = p.id + '_';
-          Object.keys(activeItems).forEach(key => {
-              if (!key.startsWith(prefix)) return;
-              if (!activeItems[key]) return;
-              if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
-              validSizes.add(key.replace(prefix, ''));
-          });
+    if (!selectedProduct) return [];
+    const validSizes = new Set();
+    matchingProducts.forEach(p => {
+      const parsed = parseProductId(p.id);
+      // If multiple colors exist, only show sizes for the selected color
+      if (hasMultipleColors && parsed.color !== selectedColor) return;
+      // Check all known sizes via both key formats
+      SIZE_ORDER.forEach(s => {
+        const key = getInventoryKey(p, s);
+        if (!activeItems[key]) return;
+        if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
+        validSizes.add(s);
       });
-      return Array.from(validSizes).sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
+      // Also catch any keys in activeItems that use arbitrary size strings
+      const prefix = p.id + '_';
+      const slug = p.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      Object.keys(activeItems).forEach(key => {
+        const matchesNew = key.startsWith(prefix);
+        const matchesOld = key.toLowerCase().startsWith(slug + '_');
+        if (!matchesNew && !matchesOld) return;
+        if (!activeItems[key]) return;
+        if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
+        const sizeFromKey = matchesNew
+          ? key.slice(prefix.length)
+          : key.slice(slug.length + 1);
+        if (sizeFromKey) validSizes.add(sizeFromKey);
+      });
+    });
+    return Array.from(validSizes).sort((a, b) => {
+      const ai = SIZE_ORDER.indexOf(a);
+      const bi = SIZE_ORDER.indexOf(b);
+      if (ai === -1 && bi === -1) return a.localeCompare(b);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
   };
 
   const visibleSizes = getVisibleSizes();
@@ -291,26 +398,27 @@ export default function OrderForm() {
       }
   }, [selectedProduct, selectedColor, visibleSizes.join(','), paymentMode, selectedGuest]);
 
-  // Stock lookup: color-aware via matching product id, key = product_id_size
+  // Stock lookup — color-aware, dual-format key
   const currentStock = (() => {
-      if (!selectedProduct || !size) return 0;
-      let totalBaseStock = 0;
-      matchingProducts.forEach(p => {
-          const parsed = parseProductId(p.id);
-          if (hasMultipleColors && parsed.color !== selectedColor) return;
-          totalBaseStock += (inventory[`${p.id}_${size}`] || 0);
-      });
-      const qtyInCart = cart.filter(item =>
-        item.productName === selectedProduct.name &&
-        item.size === size &&
-        (!hasMultipleColors || item.color === selectedColor)
-      ).length;
-      return totalBaseStock - qtyInCart;
+    if (!selectedProduct || !size) return 0;
+    let totalBaseStock = 0;
+    matchingProducts.forEach(p => {
+      const parsed = parseProductId(p.id);
+      if (hasMultipleColors && parsed.color !== selectedColor) return;
+      const key = getInventoryKey(p, size);
+      totalBaseStock += (inventory[key] || 0);
+    });
+    const qtyInCart = cart.filter(item =>
+      item.productName === selectedProduct.name &&
+      item.size === size &&
+      (!hasMultipleColors || item.color === selectedColor)
+    ).length;
+    return totalBaseStock - qtyInCart;
   })();
   
   const isOutOfStock = currentStock <= 0;
 
-  // ── FIX 2: selectedProductRecord is the color-specific record (has the correct image_url) ──
+  // selectedProductRecord — color-specific record for image_url and price
   const selectedProductRecord = (() => {
     if (!selectedProduct) return null;
     if (!hasMultipleColors) return matchingProducts[0] || selectedProduct;
@@ -336,7 +444,7 @@ export default function OrderForm() {
     if (!selectedProductRecord) return 0;
     let basePrice = selectedProductRecord.base_price;
     if (size) {
-        const key = `${selectedProductRecord.id}_${size}`;
+        const key = getInventoryKey(selectedProductRecord, size);
         if (priceOverrides[key]) basePrice = priceOverrides[key];
     }
     let total = basePrice; 
@@ -442,9 +550,11 @@ export default function OrderForm() {
         if (!payRes.ok) throw new Error("Terminal connection failed");
         const decrementInventory = async (cartItems) => {
             for (const item of cartItems) {
-                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
+                const key = getInventoryKey({ id: item.productId, name: item.productName }, item.size);
+                const productIdInDb = key.slice(0, key.lastIndexOf('_' + item.size));
+                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', productIdInDb).eq('size', item.size).single();
                 if (current && current.count > 0) {
-                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
+                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', productIdInDb).eq('size', item.size);
                 }
             }
         };
@@ -658,7 +768,6 @@ export default function OrderForm() {
                             <div className="text-center py-8 text-red-600 font-bold">Sorry, no products available.</div>
                         ) : (
                             <>
-                                {/* ── FIX 3: Use selectedProductRecord.image_url so Pink shows pink image, Black shows black image ── */}
                                 {selectedProductRecord?.image_url && (
                                   <div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center">
                                     <img src={selectedProductRecord.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
@@ -727,7 +836,6 @@ export default function OrderForm() {
                         )}
                     </section>
 
-                    {/* DESIGN SECTION — availableMainOptions already filters large logos for bottoms (FIX 1) */}
                     {selectedProduct && availableMainOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
@@ -744,8 +852,7 @@ export default function OrderForm() {
                                         </button>
                                     ))}
                                 </div>
-                                {/* ── FIX 3 (placement viz): garmentType uses .type then .name — never .id ── */}
-                                                                <div className="col-span-1">
+                                <div className="col-span-1">
                                   {(() => {
                                     const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign);
                                     const placement = currentLogoObj?.placement || 'large';
@@ -760,7 +867,6 @@ export default function OrderForm() {
                         </section>
                     )}
 
-                    {/* ACCENTS — availableAccentOptions already filters large logos for bottoms (FIX 1) */}
                     {selectedProduct && availableAccentOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
@@ -972,28 +1078,21 @@ export default function OrderForm() {
   );
 }
 
-// ── PlacementVisualizer: shows where the logo sits on the garment ──
+// ── PlacementVisualizer ──
 const PlacementVisualizer = ({ garmentType, logoSize }) => {
-  // garmentType comes from product.type ('top' or 'bottom')
   const isBottom = garmentType === 'bottom';
   const accentColor = "#1e3a8a";
 
   const TopSVG = () => (
     <svg viewBox="0 0 200 220" className="w-28 h-28 drop-shadow">
-      {/* Hoodie body */}
       <path d="M60 30 L35 65 L60 75 L60 190 L140 190 L140 75 L165 65 L140 30 Q100 50 60 30Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="2" />
-      {/* Hood */}
       <path d="M75 30 Q100 10 125 30 Q110 45 100 48 Q90 45 75 30Z" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1.5" />
-      {/* Pocket */}
       <rect x="78" y="130" width="44" height="30" rx="3" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1" />
-
       {logoSize === 'large' ? (
-        // Full front — large centered rectangle
         <rect x="72" y="75" width="56" height="48" rx="4" fill={accentColor} fillOpacity="0.75">
           <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
         </rect>
       ) : (
-        // Left chest — small circle
         <circle cx="82" cy="85" r="10" fill={accentColor} fillOpacity="0.85">
           <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
         </circle>
@@ -1003,13 +1102,9 @@ const PlacementVisualizer = ({ garmentType, logoSize }) => {
 
   const BottomSVG = () => (
     <svg viewBox="0 0 200 220" className="w-28 h-28 drop-shadow">
-      {/* Jogger waistband */}
       <rect x="55" y="20" width="90" height="18" rx="4" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1.5" />
-      {/* Left leg */}
       <path d="M55 38 L65 200 L100 200 L100 38Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
-      {/* Right leg */}
       <path d="M145 38 L135 200 L100 200 L100 38Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
-      {/* Left thigh logo spot */}
       <circle cx="75" cy="80" r="10" fill={accentColor} fillOpacity="0.85">
         <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
       </circle>
