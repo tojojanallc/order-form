@@ -10,8 +10,8 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const SIZE_ORDER = [
-  'Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL',
   'YXS', 'YS', 'YM', 'YL', 'YXL',
+  'Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL',
   'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL',
   'Adult XS', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL',
   '2T', '3T', '4T',
@@ -295,7 +295,10 @@ export default function OrderForm() {
     const validSizes = new Set();
     matchingProducts.forEach(p => {
       const parsed = parseProductId(p.id);
+      // If there are multiple colors, only process the selected color's variant
       if (hasMultipleColors && parsed.color !== selectedColor) return;
+      // p.id is the exact product_id in the inventory table
+      // so the key is literally `${p.id}_${size}`
       const prefix = p.id + '_';
       Object.keys(activeItems).forEach(key => {
         if (!key.startsWith(prefix)) return;
