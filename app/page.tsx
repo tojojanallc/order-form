@@ -24,6 +24,15 @@ const ZONES = {
     ]
 };
 
+// Parses "Colortone Spider T-Shirt | L | Silver" → { name: "Colortone Spider T-Shirt", size: "L", color: "Silver" }
+// Falls back gracefully if no pipes exist
+const parseProductId = (id) => {
+  const parts = id.split('|').map(s => s.trim());
+  if (parts.length === 3) return { baseName: parts[0], size: parts[1], color: parts[2] };
+  if (parts.length === 2) return { baseName: parts[0], size: parts[1], color: null };
+  return { baseName: id, size: null, color: null };
+};
+
 export default function OrderForm() {
   const params = useParams();
   
@@ -50,10 +59,6 @@ export default function OrderForm() {
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
-
-  // NEW: store raw inventory rows so we can look up color
-  const [rawInventory, setRawInventory] = useState([]);
-
   const [logoOptions, setLogoOptions] = useState([]); 
   const [mainOptions, setMainOptions] = useState([]); 
   const [accentOptions, setAccentOptions] = useState([]); 
@@ -69,7 +74,7 @@ export default function OrderForm() {
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxRate, setTaxRate] = useState(0);
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [selectedColor, setSelectedColor] = useState(''); // NEW
+  const [selectedColor, setSelectedColor] = useState('');
   const [size, setSize] = useState('');
   const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
   const [logos, setLogos] = useState([]); 
@@ -84,8 +89,8 @@ export default function OrderForm() {
 
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
-    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short/) || 
-    (selectedProduct.id || '').toLowerCase().match(/jogger|pant|short/)
+    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/) || 
+    (selectedProduct.id || '').toLowerCase().match(/jogger|pant|short|sweat/)
   ) : false;
 
   const availableMainOptions = mainOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
@@ -149,17 +154,12 @@ export default function OrderForm() {
           setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
       }
 
+      // inventory key is still product_id_size (no color column)
       const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', finalSlug); 
       if (invData) {
-        // Keep raw rows for color lookup
-        setRawInventory(invData);
-
         const stockMap = {}; const activeMap = {}; const priceMap = {};
         invData.forEach(item => {
-            // Key includes color if present: product_id_color_size
-            const key = item.color
-              ? `${item.product_id}_${item.color}_${item.size}`
-              : `${item.product_id}_${item.size}`;
+            const key = `${item.product_id}_${item.size}`;
             stockMap[key] = item.count;
             activeMap[key] = item.active;
             if (item.override_price) priceMap[key] = item.override_price;
@@ -197,13 +197,19 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // --- DUPLICATE CRUSHER: one entry per unique product NAME ---
+  // ─── PRODUCT GROUPING ──────────────────────────────────────────
+  // product.id = "Colortone Spider T-Shirt | L | Silver"
+  // product.name = "Colortone Spider T-Shirt"
+  // Color and size live inside the id, not in inventory columns.
+  // We group by product.name for the dropdown.
+  // ───────────────────────────────────────────────────────────────
+
   const visibleProducts = [];
   const seenNames = new Set();
   products.forEach(p => {
-      // Check active stock using product_id prefix across all color/size combos
+      const strictPrefix = p.id + '_';
       const hasActiveStock = Object.keys(activeItems).some(key => {
-          if (!key.startsWith(p.id + '_')) return false;
+          if (!key.startsWith(strictPrefix)) return false;
           if (!activeItems[key]) return false;
           if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
           return true;
@@ -224,48 +230,48 @@ export default function OrderForm() {
       }
   }, [JSON.stringify(visibleProducts.map(p => p.id)), selectedProduct]);
 
-  // --- COLORS: get unique colors for the selected product name ---
+  // All product records that share the selected product's NAME
+  const matchingProducts = selectedProduct
+    ? products.filter(p => p.name === selectedProduct.name)
+    : [];
+
+  // Colors parsed out of the product id: "Name | Size | Color" → "Color"
   const visibleColors = (() => {
-    if (!selectedProduct) return [];
-    // All product IDs sharing this name
-    const matchingIds = products.filter(p => p.name === selectedProduct.name).map(p => p.id);
     const colors = new Set();
-    rawInventory.forEach(row => {
-      if (matchingIds.includes(row.product_id) && row.active && row.color) {
-        colors.add(row.color);
-      }
+    matchingProducts.forEach(p => {
+      const { color } = parseProductId(p.id);
+      if (color) colors.add(color);
     });
     return Array.from(colors);
   })();
 
   const hasMultipleColors = visibleColors.length > 1;
 
-  // Auto-set color when product changes
+  // Reset color when product name changes
   useEffect(() => {
     if (!selectedProduct) return;
-    const matchingIds = products.filter(p => p.name === selectedProduct.name).map(p => p.id);
-    const colors = [...new Set(
-      rawInventory
-        .filter(row => matchingIds.includes(row.product_id) && row.active && row.color)
-        .map(row => row.color)
-    )];
+    const ids = products.filter(p => p.name === selectedProduct.name);
+    const colors = [...new Set(ids.map(p => parseProductId(p.id).color).filter(Boolean))];
     setSelectedColor(colors.length > 0 ? colors[0] : '');
     setSize('');
   }, [selectedProduct?.name]);
 
-  // --- SIZES: filtered by selected color ---
+  // Sizes: only from product ids that match the selected color
   const getVisibleSizes = () => {
       if (!selectedProduct) return [];
-      const matchingIds = products.filter(p => p.name === selectedProduct.name).map(p => p.id);
       const validSizes = new Set();
-      matchingIds.forEach(pid => {
-          rawInventory.forEach(row => {
-            if (row.product_id !== pid) return;
-            if (!row.active) return;
-            // If product has colors, only show sizes for selected color
-            if (hasMultipleColors && row.color !== selectedColor) return;
-            if (paymentMode === 'hosted' && (row.count || 0) <= 0) return;
-            validSizes.add(row.size);
+      matchingProducts.forEach(p => {
+          const parsed = parseProductId(p.id);
+          // If there are multiple colors, filter to selected color only
+          if (hasMultipleColors && parsed.color !== selectedColor) return;
+          // Check this specific product id has active stock
+          const prefix = p.id + '_';
+          Object.keys(activeItems).forEach(key => {
+              if (!key.startsWith(prefix)) return;
+              if (!activeItems[key]) return;
+              if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
+              // The size is encoded in the key after the prefix
+              validSizes.add(key.replace(prefix, ''));
           });
       });
       return Array.from(validSizes).sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b));
@@ -285,26 +291,31 @@ export default function OrderForm() {
       }
   }, [selectedProduct, selectedColor, visibleSizes.join(','), paymentMode, selectedGuest]);
 
-  // --- STOCK: color-aware ---
+  // Stock: find the right product id (matching color) then look up by product_id_size key
   const currentStock = (() => {
       if (!selectedProduct || !size) return 0;
-      const matchingIds = products.filter(p => p.name === selectedProduct.name).map(p => p.id);
       let totalBaseStock = 0;
-      matchingIds.forEach(id => {
-          const key = selectedColor
-            ? `${id}_${selectedColor}_${size}`
-            : `${id}_${size}`;
-          totalBaseStock += (inventory[key] || 0);
+      matchingProducts.forEach(p => {
+          const parsed = parseProductId(p.id);
+          if (hasMultipleColors && parsed.color !== selectedColor) return;
+          totalBaseStock += (inventory[`${p.id}_${size}`] || 0);
       });
       const qtyInCart = cart.filter(item =>
         item.productName === selectedProduct.name &&
         item.size === size &&
-        (hasMultipleColors ? item.color === selectedColor : true)
+        (!hasMultipleColors || item.color === selectedColor)
       ).length;
       return totalBaseStock - qtyInCart;
   })();
-
+  
   const isOutOfStock = currentStock <= 0;
+
+  // The exact product record for the current color selection (for price lookups)
+  const selectedProductRecord = (() => {
+    if (!selectedProduct) return null;
+    if (!hasMultipleColors) return matchingProducts[0] || selectedProduct;
+    return matchingProducts.find(p => parseProductId(p.id).color === selectedColor) || selectedProduct;
+  })();
 
   const getPositionOptions = (itemType, isAccent = false) => {
       if (!selectedProduct) return [];
@@ -322,12 +333,10 @@ export default function OrderForm() {
   };
 
   const calculateItemTotal = () => {
-    if (!selectedProduct) return 0;
-    let basePrice = selectedProduct.base_price;
+    if (!selectedProductRecord) return 0;
+    let basePrice = selectedProductRecord.base_price;
     if (size) {
-        const key = selectedColor
-          ? `${selectedProduct.id}_${selectedColor}_${size}`
-          : `${selectedProduct.id}_${size}`;
+        const key = `${selectedProductRecord.id}_${size}`;
         if (priceOverrides[key]) basePrice = priceOverrides[key];
     }
     let total = basePrice; 
@@ -358,7 +367,7 @@ export default function OrderForm() {
   const sendReceiptEmail = async (orderId, name, email, cartData, totalAmount) => {
       if (!email || !email.includes('@')) return;
       try {
-          await fetch('/api/send-receipt', {
+          const res = await fetch('/api/send-receipt', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email, name, cart: cartData, total: totalAmount, orderId, eventName })
@@ -378,10 +387,10 @@ export default function OrderForm() {
 
     const newItem = {
       id: Date.now(),
-      productId: selectedProduct.id,
+      productId: selectedProductRecord.id,  // exact variant id e.g. "Colortone Spider T-Shirt | L | Silver"
       productName: selectedProduct.name,
       size: size,
-      color: selectedColor || null,
+      color: hasMultipleColors ? selectedColor : null,
       needsShipping: isOutOfStock, 
       custom_name: names.length > 0 ? names[0].text : (metallicHighlight ? metallicName : null),
       has_heat_sheet: backNameList,
@@ -408,25 +417,6 @@ export default function OrderForm() {
   const cartRequiresShipping = cart.some(item => item.needsShipping);
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
-  const decrementInventory = async (cartItems) => {
-      for (const item of cartItems) {
-          let query = supabase.from('inventory').select('count')
-            .eq('event_slug', actualEventSlug)
-            .eq('product_id', item.productId)
-            .eq('size', item.size);
-          if (item.color) query = query.eq('color', item.color);
-          const { data: current } = await query.single();
-          if (current && current.count > 0) {
-              let updateQ = supabase.from('inventory').update({ count: current.count - 1 })
-                .eq('event_slug', actualEventSlug)
-                .eq('product_id', item.productId)
-                .eq('size', item.size);
-              if (item.color) updateQ = updateQ.eq('color', item.color);
-              await updateQ;
-          }
-      }
-  };
-
   const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
@@ -450,6 +440,14 @@ export default function OrderForm() {
             body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal(), taxCollected: calculateTax(), deviceId: assignedTerminalId })
         });
         if (!payRes.ok) throw new Error("Terminal connection failed");
+        const decrementInventory = async (cartItems) => {
+            for (const item of cartItems) {
+                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
+                if (current && current.count > 0) {
+                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
+                }
+            }
+        };
         const handleSuccess = () => {
             if (window.pollingRef) clearInterval(window.pollingRef);
             decrementInventory(cart);
@@ -474,7 +472,7 @@ export default function OrderForm() {
   const handleCashCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
     if (!customerName) return alert("Please enter Name");
-    if (!confirm("Confirm Pay with Cash?")) return;
+    if(!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
     try {
         const res = await fetch('/api/create-cash-order', {
@@ -484,6 +482,14 @@ export default function OrderForm() {
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
+        const decrementInventory = async (cartItems) => {
+            for (const item of cartItems) {
+                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
+                if (current && current.count > 0) {
+                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
+                }
+            }
+        };
         await decrementInventory(cart);
         setLastOrderId(data.orderId); 
         if (customerPhone) sendConfirmationSMS(customerName, customerPhone);
@@ -562,12 +568,9 @@ export default function OrderForm() {
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
       const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
       if (invData) {
-        setRawInventory(invData);
         const stockMap = {}; const activeMap = {}; const priceMap = {};
         invData.forEach(item => {
-            const key = item.color
-              ? `${item.product_id}_${item.color}_${item.size}`
-              : `${item.product_id}_${item.size}`;
+            const key = `${item.product_id}_${item.size}`;
             stockMap[key] = item.count; activeMap[key] = item.active;
             if (item.override_price) priceMap[key] = item.override_price;
         });
@@ -657,12 +660,12 @@ export default function OrderForm() {
                             <>
                                 {selectedProduct.image_url && (<div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center"><img src={selectedProduct.image_url} alt={selectedProduct.name} className="h-48 object-contain" /></div>)}
                                 {isOutOfStock ? (<div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert"><p className="font-bold">⚠️ Out of Stock at Event</p><p className="text-sm">We can ship this to your home!</p></div>) : <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">✓ In Stock ({currentStock} available)</div>}
-                                
+
                                 <div className="space-y-3">
 
                                   {/* PRODUCT */}
                                   <div>
-                                    <label className="text-xs font-black text-gray-900 uppercase">Product</label>
+                                    <label className="text-xs font-black text-gray-900 uppercase">Item</label>
                                     <select
                                       className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium"
                                       value={selectedProduct.name}
@@ -679,17 +682,14 @@ export default function OrderForm() {
                                     </select>
                                   </div>
 
-                                  {/* COLOR — only shown if 2+ colors */}
+                                  {/* COLOR — only when product has 2+ colors */}
                                   {hasMultipleColors && (
                                     <div>
                                       <label className="text-xs font-black text-gray-900 uppercase">Color</label>
                                       <select
                                         className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium"
                                         value={selectedColor}
-                                        onChange={(e) => {
-                                          setSelectedColor(e.target.value);
-                                          setSize('');
-                                        }}
+                                        onChange={(e) => { setSelectedColor(e.target.value); setSize(''); }}
                                       >
                                         <option value="" disabled>-- Select Color --</option>
                                         {visibleColors.map(c => (
@@ -741,29 +741,26 @@ export default function OrderForm() {
 
                     {selectedProduct && availableAccentOptions.length > 0 && (
                         <section>
-                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00 each</span>}</div>
+                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">Add Accents (Optional)</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                             <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
                                 {availableAccentOptions.map((opt) => (
-                                    <button key={opt.label} onClick={() => addLogo(opt.label)} className="bg-white border-2 border-gray-200 hover:border-blue-500 rounded-xl p-2 flex flex-col items-center gap-1 transition-all active:scale-95">
+                                    <button key={opt.label} onClick={() => addLogo(opt.label)} className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95">
                                         {opt.image_url ? <img src={opt.image_url} className="h-12 w-full object-contain" /> : <div className="h-12 w-full bg-gray-100 text-[10px] flex items-center justify-center">No Img</div>}
                                         <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{opt.label}</span>
                                     </button>
                                 ))}
                             </div>
                             {logos.length > 0 && (
-                                <div className="bg-gray-50 p-4 rounded-xl border border-gray-300 space-y-3">
+                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-300 space-y-3">
                                     <h3 className="text-xs font-bold uppercase text-gray-500">Selected Accents (Set Position)</h3>
                                     {logos.map((logo, index) => {
                                         const currentImage = getLogoImage(logo.type);
                                         return (
-                                            <div key={index} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                            <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
                                                 <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
                                                 <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
-                                                <select className={`border-2 p-2 rounded-lg font-bold text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
-                                                  <option value="">Position...</option>
-                                                  {getPositionOptions('logo', true).map(pos => (<option key={pos.id} value={pos.label}>{pos.label}</option>))}
-                                                </select>
-                                                <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-2xl px-2">×</button>
+                                                <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}><option value="">Position...</option>{getPositionOptions('logo', true).map(pos => (<option key={pos.id} value={pos.label}>{pos.label}</option>))}</select>
+                                                <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
                                             </div>
                                         );
                                     })}
@@ -774,36 +771,34 @@ export default function OrderForm() {
 
                     {selectedProduct && (showPersonalization || showNumbers) && (
                         <section>
-                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">3. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00 each</span>}</div>
-                            <div className="flex gap-4">
-                                {showPersonalization && <button onClick={() => setNames([...names, { text: '', position: '' }])} className="flex-1 py-4 border-2 border-dashed border-gray-400 rounded-xl font-bold bg-white text-gray-700">+ Add Name</button>}
-                                {showNumbers && <button onClick={() => setNumbers([...numbers, { text: '', position: '' }])} className="flex-1 py-4 border-2 border-dashed border-gray-400 rounded-xl font-bold bg-white text-gray-700">+ Add Number</button>}
-                            </div>
+                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2"><h2 className="font-bold text-black">4. Personalization</h2>{showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00</span>}</div>
                             {names.map((nameItem, index) => (
-                            <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mt-4 bg-gray-100 p-3 rounded-xl">
-                                <input type="text" maxLength={12} placeholder="NAME" className="border-2 border-gray-300 p-3 rounded-lg flex-1 uppercase text-black font-black" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
-                                <select className="border-2 border-gray-300 p-3 rounded-lg md:w-48 bg-white text-black font-bold" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}>
-                                  <option value="">Position...</option>
-                                  {getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
-                                </select>
-                                <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2 text-2xl">×</button>
+                            <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
+                                <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-bold" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
+                                <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}><option value="">Select Position...</option>{getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
+                                <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                             </div>
                             ))}
                             {numbers.map((numItem, index) => (
-                            <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mt-4 bg-gray-100 p-3 rounded-xl">
-                                <input type="text" maxLength={3} placeholder="00" className="border-2 border-gray-300 p-3 rounded-lg flex-1 uppercase text-black font-mono font-black text-center text-xl" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
-                                <select className="border-2 border-gray-300 p-3 rounded-lg md:w-48 bg-white text-black font-bold" value={numItem.position} onChange={(e) => updateNumber(index, 'position', e.target.value)}>
-                                  <option value="">Position...</option>
-                                  {getPositionOptions('number').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
-                                </select>
-                                <button onClick={() => setNumbers(numbers.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2 text-2xl">×</button>
+                            <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
+                                <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-mono font-bold text-center text-lg tracking-widest" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
+                                <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={numItem.position} onChange={(e) => updateNumber(index, 'position', e.target.value)}><option value="">Select Position...</option>{getPositionOptions('number').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}</select>
+                                <button onClick={() => setNumbers(numbers.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
                             </div>
                             ))}
+                            <div className="flex gap-2">
+                                {(paymentMode === 'retail' || names.length === 0) && showPersonalization && (
+                                    <button onClick={() => setNames([...names, { text: '', position: '' }])} className="flex-1 py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold bg-white">+ Add Name</button>
+                                )}
+                                {(paymentMode === 'retail' || numbers.length === 0) && showNumbers && (
+                                    <button onClick={() => setNumbers([...numbers, { text: '', position: '' }])} className="flex-1 py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold bg-white">+ Add Number</button>
+                                )}
+                            </div>
                         </section>
                     )}
                     
                     {selectedProduct && showBackNames && (
-                        <section className="bg-yellow-50 p-4 rounded-xl border border-yellow-300 space-y-3">
+                        <section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300 space-y-3">
                             <label className="flex items-center gap-3 cursor-pointer">
                                 <input type="checkbox" className="w-6 h-6 text-blue-800" checked={backNameList} onChange={(e) => { setBackNameList(e.target.checked); if(!e.target.checked) { setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName(''); } }} />
                                 <span className="font-bold text-black text-lg">Back Name List {showPrice && '(+$5)'}</span>
@@ -815,7 +810,7 @@ export default function OrderForm() {
                                         <div className="pt-2">
                                             <label className="flex items-center gap-3 cursor-pointer mb-2"><input type="checkbox" className="w-5 h-5 text-blue-800" checked={metallicHighlight} onChange={(e) => setMetallicHighlight(e.target.checked)} /><span className="font-bold text-black">Add Metallic Highlight {showPrice && '(+$5)'}</span></label>
                                             {metallicHighlight && (
-                                                <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Athlete Name to Highlight:</label><input type="text" className="w-full p-3 border-2 border-blue-400 rounded-lg font-bold uppercase text-black" placeholder="ENTER NAME HERE" value={metallicName} onChange={(e) => setMetallicName(e.target.value)} /></div>
+                                                <div className="animate-pulse-once"><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Athlete Name to Highlight:</label><input type="text" className="w-full p-3 border-2 border-blue-400 rounded font-bold uppercase text-black" placeholder="ENTER NAME HERE" value={metallicName} onChange={(e) => setMetallicName(e.target.value)} /></div>
                                             )}
                                         </div>
                                     )}
@@ -828,59 +823,59 @@ export default function OrderForm() {
             </div>
             
             {(paymentMode === 'retail' || selectedGuest) && (
-                <div className="p-6 sticky bottom-0 bg-white border-t flex justify-between items-center shadow-[0_-4px_10px_rgba(0,0,0,0.05)]">
-                    <div className="text-3xl font-black text-blue-900">{showPrice ? `$${calculateItemTotal()}` : 'Free'}</div>
-                    <button onClick={handleAddToCart} disabled={!selectedProduct || !size || (hasMultipleColors && !selectedColor)} className="bg-blue-900 disabled:bg-gray-300 text-white px-10 py-4 rounded-xl font-bold text-xl shadow-lg active:scale-95">Add to Cart</button>
+                <div className="text-white p-6 sticky bottom-0 flex justify-between items-center" style={{ backgroundColor: headerColor }}>
+                  <div><p className="text-white text-opacity-80 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p><p className="text-2xl font-bold">{showPrice ? `$${calculateItemTotal()}` : 'Free'}</p></div>
+                  <button onClick={handleAddToCart} disabled={!selectedProduct || !size || (hasMultipleColors && !selectedColor)} className="bg-white text-black px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform hover:opacity-90 disabled:opacity-40">Add to Cart</button>
                 </div>
             )}
           </div>
         </div>
         
         {(paymentMode === 'retail' || selectedGuest) && (
-            <div className="md:col-span-1 space-y-6">
-            <div className="bg-white shadow-xl rounded-2xl border border-gray-300 sticky top-4 overflow-hidden">
-                <div className="p-4 text-white font-bold text-center" style={{ backgroundColor: headerColor }}>Your Order ({cart.length})</div>
-                <div className="p-4 space-y-4 max-h-[40vh] overflow-y-auto">
-                {cart.length === 0 ? <p className="text-gray-400 text-center italic py-10">Cart is empty.</p> : cart.map((item) => (
-                    <div key={item.id} className="border-b border-gray-200 pb-3 last:border-0 relative group">
+            <div className="md:col-span-1">
+            <div className="bg-white shadow-xl rounded-xl border border-gray-300 sticky top-4">
+                <div className="text-white p-4 rounded-t-xl" style={{ backgroundColor: headerColor }}><h2 className="font-bold text-lg">Your Cart</h2><p className="text-white text-opacity-80 text-sm">{cart.length} items</p></div>
+                <div className="p-4 space-y-4 max-h-[50vh] overflow-y-auto">
+                {cart.length === 0 ? <p className="text-gray-500 text-center italic py-10">Cart is empty.</p> : cart.map((item) => (
+                    <div key={item.id} className="border-b border-gray-200 pb-4 last:border-0 relative group">
                     <button onClick={() => removeItem(item.id)} className="absolute top-0 right-0 text-red-500 hover:text-red-700 font-bold text-xs p-1">REMOVE</button>
-                    <p className="font-black text-black text-lg w-5/6 leading-tight">{item.productName}</p>
-                    {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded inline-block mt-1">Ship to Home</span>}
-                    {item.color && <p className="text-sm text-gray-600 font-bold mt-1">Color: {item.color}</p>}
-                    <p className="text-sm text-gray-800 font-bold mt-1">Size: {item.size}</p>
-                    <div className="text-xs text-blue-900 font-bold mt-1">Design: {item.customizations.mainDesign || 'None'}</div>
+                    <p className="font-black text-black text-lg">{item.productName}</p>
+                    {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
+                    {item.color && <p className="text-sm text-gray-600 font-bold">Color: {item.color}</p>}
+                    <p className="text-sm text-gray-800 font-medium">Size: {item.size}</p>
+                    <div className="text-xs text-blue-900 font-bold mt-1">Main Design: {item.customizations.mainDesign || 'None'}</div>
                     <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">
                         {item.customizations.logos.map((l, i) => <div key={'logo'+i}>• {l.type} ({l.position})</div>)}
                         {item.customizations.names.map((n, i) => <div key={'name'+i}>• "{n.text}" ({n.position})</div>)}
-                        {item.customizations.numbers?.map((num, i) => <div key={'num'+i}>• #{num.text} ({num.position})</div>)}
+                        {item.customizations.numbers?.map((num, i) => <div key={'num'+i}>• Number "{num.text}" ({num.position})</div>)}
                     </div>
-                    {showPrice && <p className="font-black text-right mt-2 text-blue-900 text-lg">${item.finalPrice.toFixed(2)}</p>}
+                    {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice.toFixed(2)}</p>}
                     </div>
                 ))}
                 </div>
                 {cart.length > 0 && (
-                <div className="p-4 bg-gray-50 border-t border-gray-300">
-                    <h3 className="font-bold text-black mb-3 text-lg">Checkout Details</h3>
+                <div className="p-4 bg-gray-100 border-t border-gray-300 rounded-b-xl">
+                    <h3 className="font-bold text-black mb-2">Customer Info</h3>
                     {paymentMode === 'hosted' && selectedGuest ? (
-                        <div className="bg-green-100 text-green-900 p-3 rounded-lg mb-4 font-bold">Guest: {selectedGuest.name}</div>
+                        <div className="bg-green-100 text-green-900 p-2 rounded mb-4 font-bold text-sm">Guest: {selectedGuest.name}</div>
                     ) : (
                         <>
-                            <input className="w-full p-3 border-2 border-gray-300 rounded-xl mb-3 font-bold text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-                            <input className="w-full p-3 border-2 border-gray-300 rounded-xl mb-3 font-bold text-black" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
-                            <input className="w-full p-3 border-2 border-gray-300 rounded-xl mb-2 font-bold text-black" placeholder="Phone Number" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                            <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                            <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
+                            <input className="w-full p-2 border border-gray-400 rounded mb-1 text-sm text-black" placeholder="Phone Number" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
                             <p className="text-[10px] text-gray-500 leading-tight mb-4">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p>
                         </>
                     )}
                     {cartRequiresShipping && paymentMode !== 'hosted' && (
-                    <div className="bg-orange-50 border border-orange-200 p-3 rounded-xl mb-4"><h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} /><div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div><input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} /></div>
+                    <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4 animate-pulse-once"><h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} /><div className="grid grid-cols-2 gap-2"><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} /><input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} /></div><input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} /></div>
                     )}
                     {showPrice && (
-                        <div className="mt-4 border-t-2 border-gray-200 pt-4 space-y-2 mb-6">
+                        <div className="mt-6 border-t-2 border-gray-200 pt-4 space-y-2 mb-6">
                             <div className="flex justify-between text-sm font-bold text-gray-600 uppercase"><span>Subtotal</span><span>${calculateSubtotal().toFixed(2)}</span></div>
                             {taxEnabled && taxRate > 0 && (<div className="flex justify-between text-sm font-bold text-gray-600 uppercase"><span>Sales Tax ({taxRate}%)</span><span>${calculateTax().toFixed(2)}</span></div>)}
                             <div className="flex justify-between items-center border-t border-gray-200 pt-2 mt-2">
-                                <span className="font-black text-black uppercase tracking-widest text-lg">Total Due</span>
-                                <span className="font-black text-3xl text-blue-900">${calculateGrandTotal().toFixed(2)}</span>
+                                <span className="font-black text-black uppercase tracking-widest">Total Due</span>
+                                <span className="font-black text-2xl text-blue-900">${calculateGrandTotal().toFixed(2)}</span>
                             </div>
                         </div>
                     )}
@@ -891,12 +886,12 @@ export default function OrderForm() {
                             </button>
                         )}
                         {((paymentMode === 'retail' && retailPaymentMethod !== 'terminal') || paymentMode === 'hosted') && (
-                            <button onClick={handleCheckout} disabled={isSubmitting || isTerminalProcessing || (paymentMode === 'hosted' && !selectedGuest)} className={`w-full py-4 rounded-xl font-bold text-lg shadow transition-colors text-white ${isSubmitting || isTerminalProcessing ? 'bg-gray-400' : 'hover:opacity-90'}`} style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}>
+                            <button onClick={handleCheckout} disabled={isSubmitting || isTerminalProcessing || (paymentMode === 'hosted' && !selectedGuest)} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting || isTerminalProcessing ? 'bg-gray-400' : 'hover:opacity-90'}`} style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}>
                                 {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link")}
                             </button>
                         )}
                         {paymentMode === 'retail' && (
-                            <button onClick={handleCashCheckout} disabled={isSubmitting || isTerminalProcessing} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl text-lg shadow hover:bg-green-700 transition-colors flex items-center justify-center gap-2">💵 Pay with Cash</button>
+                            <button onClick={handleCashCheckout} disabled={isSubmitting || isTerminalProcessing} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition-colors flex items-center justify-center gap-2">💵 Pay with Cash</button>
                         )}
                     </div>
                 </div>
@@ -910,23 +905,31 @@ export default function OrderForm() {
 }
 
 const PlacementVisualizer = ({ garmentType, logoSize }) => {
-  const isTop = garmentType !== 'bottom';
+  const isTop = !garmentType || garmentType === 'top';
   const color = "#1e3a8a"; 
   const renderTopZones = () => { 
-      if (logoSize === 'large') return <rect x="75" y="70" width="50" height="50" fill={color} fillOpacity="0.5" rx="4"><animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite" /></rect>;
-      return <circle cx="125" cy="70" r="10" fill={color} fillOpacity="0.5"><animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite" /></circle>;
+      if (logoSize === 'large') { 
+          return ( <rect x="75" y="70" width="50" height="50" fill={color} fillOpacity="0.8" rx="4"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></rect> ); 
+      } else { 
+          return ( <circle cx="125" cy="70" r="8" fill={color} fillOpacity="0.8"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></circle> ); 
+      } 
   };
-  const renderBottomZones = () => <circle cx="80" cy="50" r="10" fill={color} fillOpacity="0.5"><animate attributeName="opacity" values="0.3;0.7;0.3" dur="2s" repeatCount="indefinite" /></circle>;
-  if (isTop) return ( 
-      <div className="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-gray-200 h-full">
-          <svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-sm"><path d="M60 20 L40 50 L60 60 L60 180 L140 180 L140 60 L160 50 L140 20 Q100 40 60 20" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />{renderTopZones()}</svg>
-          <p className="text-xs font-black text-gray-400 uppercase mt-2 text-center">{logoSize === 'large' ? "Center / Full Front" : "Left Chest / Pocket"}</p>
-      </div> 
-  ); 
-  return ( 
-      <div className="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-gray-200 h-full">
-          <svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-sm"><path d="M70 20 L130 20 L140 60 L130 180 L110 180 L100 80 L90 180 L70 180 L60 60 Z" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />{renderBottomZones()}</svg>
-          <p className="text-xs font-black text-gray-400 uppercase mt-2 text-center">Thigh / Pocket</p>
-      </div> 
-  );
+  const renderBottomZones = () => { 
+      return ( <circle cx="80" cy="50" r="6" fill={color} fillOpacity="0.8"><animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" /></circle> ); 
+  };
+  if (isTop) { 
+      return ( 
+          <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 w-full h-full max-h-64">
+              <svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-lg"><path d="M60 20 L40 50 L60 60 L60 180 L140 180 L140 60 L160 50 L140 20 Q100 40 60 20" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />{renderTopZones()}</svg>
+              <p className="text-xs font-bold text-gray-500 uppercase mt-2 text-center">{logoSize === 'large' ? "Center / Full Front" : "Left Chest / Pocket"}</p>
+          </div> 
+      ); 
+  } else { 
+      return ( 
+          <div className="flex flex-col items-center justify-center p-4 bg-white rounded-lg border border-gray-200 w-full h-full max-h-64">
+              <svg viewBox="0 0 200 200" className="w-32 h-32 drop-shadow-lg"><path d="M70 20 L130 20 L140 60 L130 180 L110 180 L100 80 L90 180 L70 180 L60 60 Z" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="2" />{renderBottomZones()}</svg>
+              <p className="text-xs font-bold text-gray-500 uppercase mt-2 text-center">Thigh / Pocket</p>
+          </div> 
+      ); 
+  }
 };
