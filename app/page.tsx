@@ -302,7 +302,7 @@ export default function OrderForm() {
     let totalBaseStock = 0;
     matchingProducts.forEach(p => {
       const parsed = parseProductId(p.id);
-      if (hasMultipleColors && parsed.color !== selectedColor) return;
+if (hasMultipleColors && selectedColor && color !== selectedColor) return;
       if (parsed.size !== size) return;
       const key = `${p.id}_${size}`;
       totalBaseStock += (inventory[key] || 0);
