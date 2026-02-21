@@ -9,7 +9,12 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
-const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
+const SIZE_ORDER = [
+  'Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL',
+  'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL',
+  'Adult XS', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL',
+  '2T', '3T', '4T',
+];
 
 const ZONES = {
     top: [
@@ -97,11 +102,21 @@ export default function OrderForm() {
   const availableAccentOptions = accentOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
 
   useEffect(() => {
-    if (availableMainOptions.length === 1) setSelectedMainDesign(availableMainOptions[0].label);
-    else if (availableMainOptions.length === 0) setSelectedMainDesign('');
-    else if (selectedMainDesign) {
-        const isValid = availableMainOptions.find(o => o.label === selectedMainDesign);
-        if (!isValid) setSelectedMainDesign('');
+    if (availableMainOptions.length === 0) {
+      setSelectedMainDesign('');
+    } else if (availableMainOptions.length === 1) {
+      // Only one choice — auto-select it
+      setSelectedMainDesign(availableMainOptions[0].label);
+    } else {
+      // Multiple choices — for tops, default to the first 'large' placement option
+      // For bottoms, default to the first available option (large is already filtered out)
+      const currentIsValid = availableMainOptions.find(o => o.label === selectedMainDesign);
+      if (!currentIsValid) {
+        const defaultOpt = !isBottomSelected
+          ? (availableMainOptions.find(o => o.placement === 'large') || availableMainOptions[0])
+          : availableMainOptions[0];
+        setSelectedMainDesign(defaultOpt.label);
+      }
     }
   }, [selectedProduct, mainOptions]);
 
