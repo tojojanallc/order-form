@@ -29,7 +29,7 @@ const ZONES = {
     ]
 };
 
-// Parses "Colortone Spider T-Shirt | L | Silver" → { baseName: "Colortone Spider T-Shirt", size: "L", color: "Silver" }
+// Parses "Colortone Spider T-Shirt | L | Silver" → { baseName, size, color }
 const parseProductId = (id) => {
   const parts = id.split('|').map(s => s.trim());
   if (parts.length === 3) return { baseName: parts[0], size: parts[1], color: parts[2] };
@@ -37,34 +37,34 @@ const parseProductId = (id) => {
   return { baseName: id, size: null, color: null };
 };
 
-// ─── KEY HELPER ──────────────────────────��─────────────────────────────────────
-// The inventory table may have been loaded with EITHER:
-//   (A) old-style keys:  "colortone_spider_tshirt_Adult M"
-//   (B) new-style keys:  "Colortone Spider T-Shirt | Adult M | Pink_Adult M"
-//
-// This function checks BOTH possible key formats for a given product record + size.
-// It returns the first key that actually exists in the activeItems / inventory maps.
-const resolveInventoryKey = (productId, size, activeItems, inventory) => {
-  // Primary: composite product id (new-style)
-  const primaryKey = `${productId}_${size}`;
-  if (primaryKey in activeItems) return primaryKey;
+// Converts a product name to the slug the admin's Truck It creates:
+// "Colortone Spider T-Shirt" → "colortone_spider_tshirt"
+// We can't perfectly reverse-engineer slugification, so we check both the
+// composite product.id key AND a name-derived slug key against activeItems.
+const slugify = (str) => str.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 
-  // Fallback: the product name base (parsed from composite id) may match a
-  // simple slug that was trucked before the id format changed.
-  // e.g. productId = "Colortone Spider T-Shirt | Adult M | Pink"
-  //      slug guess = "colortone_spider_tshirt"
-  // We can't reliably reverse-engineer the slug, so instead we scan activeItems
-  // for any key whose suffix matches the size and whose prefix matches
-  // the baseName (case-insensitive fuzzy).
-  const { baseName } = parseProductId(productId);
-  const baseNameLower = baseName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-  const sizeSuffix = `_${size}`;
-  const fuzzyMatch = Object.keys(activeItems).find(key => {
-    if (!key.endsWith(sizeSuffix)) return false;
-    const keyBase = key.slice(0, key.length - sizeSuffix.length).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-    return keyBase === baseNameLower || keyBase.startsWith(baseNameLower) || baseNameLower.startsWith(keyBase);
-  });
-  return fuzzyMatch || primaryKey;
+// Given a product record and a size, returns the inventory key that actually
+// exists in the activeItems map — handles both new composite IDs and old slugs.
+const resolveKey = (product, size, activeItems) => {
+  // 1. Exact match on composite id (new-style, the correct way)
+  const compositeKey = `${product.id}_${size}`;
+  if (compositeKey in activeItems) return compositeKey;
+
+  // 2. Name-based slug (what the admin "Truck It" currently writes)
+  const slugKey = `${slugify(product.name)}_${size}`;
+  if (slugKey in activeItems) return slugKey;
+
+  // 3. Scan all keys for any that end with _<size> and whose base
+  //    fuzzy-matches the product name slug (handles minor slug variations)
+  const nameParts = slugify(product.name);
+  const suffix = `_${size}`;
+  const fuzzy = Object.keys(activeItems).find(k =>
+    k.endsWith(suffix) && slugify(k.slice(0, k.length - suffix.length)).startsWith(nameParts.slice(0, 8))
+  );
+  if (fuzzy) return fuzzy;
+
+  // 4. Fallback: return the composite key even if not found
+  return compositeKey;
 };
 
 export default function OrderForm() {
@@ -229,47 +229,26 @@ export default function OrderForm() {
       } else { setGuestError("❌ Name not found. Please type your full name exactly."); setSelectedGuest(null); }
   };
 
-  // ─── PRODUCT GROUPING ──────────────────────────────────────────────────────
-  // Checks if a product has active inventory using BOTH key formats:
-  //   New: "Colortone Spider T-Shirt | Adult M | Pink_Adult M"
-  //   Old: "colortone_spider_tshirt_Adult M"
-  // This makes the order form work regardless of which format was used when
-  // the event was stocked via admin "Truck It".
-  // ────────────────────────────────────────────────────────────────────────────
-
-  const hasActiveStockForProduct = (p) => {
-    // Try new-style: product.id is composite, key = "product_id_size"
-    const newStylePrefix = p.id + '_';
-    const hasNew = Object.keys(activeItems).some(key => {
-      if (!key.startsWith(newStylePrefix)) return false;
+  // ─── PRODUCT VISIBILITY ────────────────────────────────────────────────────
+  // A product has active stock if ANY inventory key that belongs to it is active.
+  // We check BOTH the composite product.id prefix AND the slugified name prefix
+  // because the admin "Truck It" writes rows with the slugified name as product_id.
+  const productHasActiveStock = (p) => {
+    const compositePrefix = p.id + '_';
+    const slugPrefix = slugify(p.name) + '_';
+    return Object.keys(activeItems).some(key => {
+      const matches = key.startsWith(compositePrefix) || key.startsWith(slugPrefix);
+      if (!matches) return false;
       if (!activeItems[key]) return false;
       if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
       return true;
     });
-    if (hasNew) return true;
-
-    // Try old-style: product.name slugified, key = "slugified_name_size"
-    const slugifiedName = p.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-    const hasOld = Object.keys(activeItems).some(key => {
-      const keyBase = key.toLowerCase();
-      if (!keyBase.startsWith(slugifiedName + '_')) return false;
-      if (!activeItems[key]) return false;
-      if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
-      return true;
-    });
-    return hasOld;
   };
-
-  // Build visibleProducts — one entry per unique product NAME that has any active stock
-  const visibleProductNames = new Set();
-  products.forEach(p => {
-    if (hasActiveStockForProduct(p)) visibleProductNames.add(p.name);
-  });
 
   const visibleProducts = [];
   const seenNames = new Set();
   products.forEach(p => {
-    if (visibleProductNames.has(p.name) && !seenNames.has(p.name)) {
+    if (productHasActiveStock(p) && !seenNames.has(p.name)) {
       seenNames.add(p.name);
       visibleProducts.push(p);
     }
@@ -285,50 +264,17 @@ export default function OrderForm() {
       }
   }, [JSON.stringify(visibleProducts.map(p => p.id)), selectedProduct]);
 
-  // All product records that share the selected product's NAME (one per color variant)
+  // All product records sharing the selected product's NAME (one per color variant)
   const matchingProducts = selectedProduct
     ? products.filter(p => p.name === selectedProduct.name)
     : [];
 
-  // ─── RESOLVE ACTUAL INVENTORY KEY FOR A PRODUCT + SIZE ────────────────────
-  // Given a product record and a size string, returns whichever inventory key
-  // actually exists (new-style composite or old-style slug).
-  const getInventoryKey = (prod, sizeStr) => {
-    const newKey = `${prod.id}_${sizeStr}`;
-    if (newKey in activeItems) return newKey;
-
-    // Fallback: slugify product name and try "name_size"
-    const slug = prod.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-    const oldKey = `${slug}_${sizeStr}`;
-    if (oldKey in activeItems) return oldKey;
-
-    // Last resort: fuzzy scan for any key ending in _size that starts with the slug
-    const suffix = `_${sizeStr}`;
-    const fuzzy = Object.keys(activeItems).find(k => k.endsWith(suffix) && k.toLowerCase().startsWith(slug));
-    return fuzzy || newKey;
-  };
-
-  // Colors — only show colors that have active stock for the selected product name
+  // Colors parsed from product id: "Name | Size | Color" → "Color"
   const visibleColors = (() => {
     const colors = new Set();
     matchingProducts.forEach(p => {
       const { color } = parseProductId(p.id);
-      if (!color) return;
-      // Check if this color variant has any active stock
-      const hasStock = SIZE_ORDER.some(s => {
-        const key = getInventoryKey(p, s);
-        return activeItems[key] && (paymentMode !== 'hosted' || (inventory[key] || 0) > 0);
-      });
-      // Also check all keys in activeItems that belong to this product
-      const prefix = p.id + '_';
-      const slug = p.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-      const hasStockAlt = Object.keys(activeItems).some(key => {
-        if (!key.startsWith(prefix) && !key.toLowerCase().startsWith(slug + '_')) return false;
-        if (!activeItems[key]) return false;
-        if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return false;
-        return true;
-      });
-      if (hasStock || hasStockAlt) colors.add(color);
+      if (color) colors.add(color);
     });
     return Array.from(colors);
   })();
@@ -344,34 +290,31 @@ export default function OrderForm() {
     setSize('');
   }, [selectedProduct?.name]);
 
-  // Sizes — filtered to only those with active stock for the selected color
+  // Sizes: filtered to only those with active stock for the selected color
   const getVisibleSizes = () => {
     if (!selectedProduct) return [];
     const validSizes = new Set();
     matchingProducts.forEach(p => {
       const parsed = parseProductId(p.id);
-      // If multiple colors exist, only show sizes for the selected color
       if (hasMultipleColors && parsed.color !== selectedColor) return;
-      // Check all known sizes via both key formats
+      // Check all SIZE_ORDER entries using resolveKey (handles both ID formats)
       SIZE_ORDER.forEach(s => {
-        const key = getInventoryKey(p, s);
+        const key = resolveKey(p, s, activeItems);
         if (!activeItems[key]) return;
         if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
         validSizes.add(s);
       });
-      // Also catch any keys in activeItems that use arbitrary size strings
-      const prefix = p.id + '_';
-      const slug = p.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      // Also catch any non-standard size strings that exist in activeItems
+      const compositePrefix = p.id + '_';
+      const slugPrefix = slugify(p.name) + '_';
       Object.keys(activeItems).forEach(key => {
-        const matchesNew = key.startsWith(prefix);
-        const matchesOld = key.toLowerCase().startsWith(slug + '_');
-        if (!matchesNew && !matchesOld) return;
+        if (!key.startsWith(compositePrefix) && !key.startsWith(slugPrefix)) return;
         if (!activeItems[key]) return;
         if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
-        const sizeFromKey = matchesNew
-          ? key.slice(prefix.length)
-          : key.slice(slug.length + 1);
-        if (sizeFromKey) validSizes.add(sizeFromKey);
+        const sizeStr = key.startsWith(compositePrefix)
+          ? key.slice(compositePrefix.length)
+          : key.slice(slugPrefix.length);
+        if (sizeStr) validSizes.add(sizeStr);
       });
     });
     return Array.from(validSizes).sort((a, b) => {
@@ -398,14 +341,14 @@ export default function OrderForm() {
       }
   }, [selectedProduct, selectedColor, visibleSizes.join(','), paymentMode, selectedGuest]);
 
-  // Stock lookup — color-aware, dual-format key
+  // Stock lookup using resolveKey so it works with both old-slug and composite keys
   const currentStock = (() => {
     if (!selectedProduct || !size) return 0;
     let totalBaseStock = 0;
     matchingProducts.forEach(p => {
       const parsed = parseProductId(p.id);
       if (hasMultipleColors && parsed.color !== selectedColor) return;
-      const key = getInventoryKey(p, size);
+      const key = resolveKey(p, size, activeItems);
       totalBaseStock += (inventory[key] || 0);
     });
     const qtyInCart = cart.filter(item =>
@@ -418,7 +361,7 @@ export default function OrderForm() {
   
   const isOutOfStock = currentStock <= 0;
 
-  // selectedProductRecord — color-specific record for image_url and price
+  // selectedProductRecord — color-specific record (has the correct image_url)
   const selectedProductRecord = (() => {
     if (!selectedProduct) return null;
     if (!hasMultipleColors) return matchingProducts[0] || selectedProduct;
@@ -444,7 +387,7 @@ export default function OrderForm() {
     if (!selectedProductRecord) return 0;
     let basePrice = selectedProductRecord.base_price;
     if (size) {
-        const key = getInventoryKey(selectedProductRecord, size);
+        const key = resolveKey(selectedProductRecord, size, activeItems);
         if (priceOverrides[key]) basePrice = priceOverrides[key];
     }
     let total = basePrice; 
@@ -550,11 +493,9 @@ export default function OrderForm() {
         if (!payRes.ok) throw new Error("Terminal connection failed");
         const decrementInventory = async (cartItems) => {
             for (const item of cartItems) {
-                const key = getInventoryKey({ id: item.productId, name: item.productName }, item.size);
-                const productIdInDb = key.slice(0, key.lastIndexOf('_' + item.size));
-                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', productIdInDb).eq('size', item.size).single();
+                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
                 if (current && current.count > 0) {
-                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', productIdInDb).eq('size', item.size);
+                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
                 }
             }
         };
@@ -814,7 +755,7 @@ export default function OrderForm() {
                                     </div>
                                   )}
 
-                                  {/* SIZE — hidden until color is chosen (if multi-color product) */}
+                                  {/* SIZE */}
                                   {(!hasMultipleColors || selectedColor) && (
                                     <div>
                                       <label className="text-xs font-black text-gray-900 uppercase">Size</label>
