@@ -254,7 +254,7 @@ export default function OrderForm() {
   // Reset color & size when product name changes
   useEffect(() => {
     if (!selectedProduct) return;
-    const ids = products.filter(p => p.name === selectedProduct.name);
+        const ids = products.filter(p => mergedName(p.name) === mergedName(selectedProduct.name));
     const colors = [...new Set(ids.map(p => parseProductId(p.id).color).filter(Boolean))];
     setSelectedColor(colors.length > 0 ? colors[0] : '');
     setSize('');
@@ -697,7 +697,7 @@ export default function OrderForm() {
                                       }}
                                     >
                                       {visibleProducts.map(p => (
-                                        <option key={p.id} value={p.name}>{p.name}{showPrice ? ` - $${p.base_price}` : ''}</option>
+                                        <option key={p.id} value={p.name}>{mergedName(p.name)}{showPrice ? ` - $${p.base_price}` : ''}</option>
                                       ))}
                                     </select>
                                   </div>
