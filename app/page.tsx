@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
+import { useParams } from 'next/navigation';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -29,6 +30,7 @@ const ZONES = {
 };
 
 export default function OrderForm() {
+  const params = useParams();
   const [actualEventSlug, setActualEventSlug] = useState('');
 
   // --- RAW DATABASE STATE ---
@@ -74,7 +76,6 @@ export default function OrderForm() {
   const [taxRate, setTaxRate] = useState(0);
 
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [selectedColor, setSelectedColor] = useState(''); // ← NEW
   const [size, setSize] = useState('');
   const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
   const [logos, setLogos] = useState([]); 
@@ -95,6 +96,7 @@ export default function OrderForm() {
       const id = String(selectedProduct.id || '').toLowerCase();
       const t = String(selectedProduct.type || '').toLowerCase();
       
+      // If it has sweatshirt or hoodie in the name/id, FORCE it to be a top.
       if (n.includes('sweatshirt') || n.includes('hoodie') || id.includes('sweatshirt') || id.includes('hoodie')) {
           return false; 
       }
@@ -151,9 +153,11 @@ export default function OrderForm() {
         setTaxEnabled(settings.tax_enabled || false); setTaxRate(settings.tax_rate || 0);
       }
 
+      // 1. Pull Global Products purely for names/images
       const { data: productData } = await supabase.from('products').select('*');
       if (productData) setGlobalProducts(productData);
 
+      // 2. Pull STRICT Event Stock (Only active rows for this specific event)
       const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', currentSlug).eq('active', true); 
       if (invData) setEventInventory(invData);
 
@@ -192,58 +196,30 @@ export default function OrderForm() {
   };
 
   // --- PURE, STRICT DROPDOWN BUILDER ---
-
-  // Unique product IDs from event inventory
+  
+  // Create a clean list of unique product IDs that literally exist in the Event Stock table
   const activeProductIds = Array.from(new Set(eventInventory.map(item => item.product_id)));
   
-  // Map to global product records for name/image
+  // Map those IDs to their real names/images from the global list
   const visibleProducts = activeProductIds.map(id => {
       const globalObj = globalProducts.find(p => p.id === id);
       return globalObj || { id: id, name: id, base_price: 0 };
   }).sort((a, b) => (a.sort_order || 99) - (b.sort_order || 99));
 
-  // Auto-select first product
+  // Auto-select the first product if none is selected
   useEffect(() => {
     if (visibleProducts.length > 0 && !selectedProduct) {
         setSelectedProduct(visibleProducts[0]);
     }
   }, [visibleProducts]);
 
-  // --- STEP 1: Colors available for selected product ---
-  const visibleColors = selectedProduct
-    ? [...new Set(
-        eventInventory
-          .filter(inv => inv.product_id === selectedProduct.id && inv.color)
-          .map(inv => inv.color)
-      )]
-    : [];
+  // Create a clean list of Sizes that literally exist in Event Stock FOR THIS EXACT PRODUCT
+  const visibleSizes = selectedProduct ? eventInventory
+      .filter(inv => inv.product_id === selectedProduct.id)
+      .map(inv => inv.size)
+      .sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b)) : [];
 
-  // Auto-select first color when product changes
-  useEffect(() => {
-    if (visibleColors.length > 0) {
-      if (!selectedColor || !visibleColors.includes(selectedColor)) {
-        setSelectedColor(visibleColors[0]);
-      }
-    } else {
-      setSelectedColor('');
-    }
-  }, [selectedProduct, eventInventory]);
-
-  // --- STEP 2: Sizes available for selected product + color ---
-  const visibleSizes = (selectedProduct)
-    ? [...new Set(
-        eventInventory
-          .filter(inv => {
-            const productMatch = inv.product_id === selectedProduct.id;
-            // If this product has colors, filter by selected color
-            const colorMatch = visibleColors.length > 0 ? inv.color === selectedColor : true;
-            return productMatch && colorMatch;
-          })
-          .map(inv => inv.size)
-      )].sort((a, b) => SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b))
-    : [];
-
-  // Auto-select first size when product or color changes
+  // Auto-select the first size if the product changes
   useEffect(() => {
     if (visibleSizes.length > 0) {
         if (!size || !visibleSizes.includes(size)) {
@@ -252,28 +228,19 @@ export default function OrderForm() {
     } else {
         setSize('');
     }
-  }, [selectedProduct, selectedColor, visibleSizes]);
+  }, [selectedProduct, visibleSizes]);
 
-  // --- STEP 3: Find exact inventory row using product + color + size ---
-  const currentInvRow = eventInventory.find(i => {
-    const productMatch = i.product_id === selectedProduct?.id;
-    const sizeMatch = i.size === size;
-    const colorMatch = visibleColors.length > 0 ? i.color === selectedColor : true;
-    return productMatch && sizeMatch && colorMatch;
-  });
-
+  // Grab the exact row from the database to check stock and price overrides
+  const currentInvRow = eventInventory.find(i => i.product_id === selectedProduct?.id && i.size === size);
   const baseStock = currentInvRow ? currentInvRow.count : 0;
-  const qtyInCart = cart.filter(item =>
-    item.productId === selectedProduct?.id &&
-    item.size === size &&
-    (visibleColors.length > 0 ? item.color === selectedColor : true)
-  ).length;
+  const qtyInCart = cart.filter(item => item.productId === selectedProduct?.id && item.size === size).length;
   const currentStock = baseStock - qtyInCart;
   const isOutOfStock = currentStock <= 0;
 
   const calculateItemTotal = () => {
     if (!selectedProduct) return 0;
     
+    // Direct Price Override check
     let price = selectedProduct.base_price || 0;
     if (currentInvRow && currentInvRow.override_price !== null && currentInvRow.override_price !== undefined) {
         price = currentInvRow.override_price;
@@ -341,7 +308,6 @@ export default function OrderForm() {
       productId: selectedProduct.id,
       productName: selectedProduct.name,
       size: size,
-      color: selectedColor || null, // ← NEW
       needsShipping: isOutOfStock, 
       custom_name: names.length > 0 ? names[0].text : (metallicHighlight ? metallicName : null),
       has_heat_sheet: backNameList,
@@ -475,31 +441,11 @@ export default function OrderForm() {
     } catch (err) { alert("Checkout failed."); setIsSubmitting(false); }
   };
 
-  // --- DECREMENT INVENTORY: now includes color ---
   const decrementInventory = async (cartItems) => {
       for (const item of cartItems) {
-          let query = supabase
-            .from('inventory')
-            .select('count')
-            .eq('event_slug', actualEventSlug)
-            .eq('product_id', item.productId)
-            .eq('size', item.size);
-
-          if (item.color) query = query.eq('color', item.color);
-
-          const { data: current } = await query.single();
-
+          const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
           if (current && current.count > 0) {
-              let updateQuery = supabase
-                .from('inventory')
-                .update({ count: current.count - 1 })
-                .eq('event_slug', actualEventSlug)
-                .eq('product_id', item.productId)
-                .eq('size', item.size);
-
-              if (item.color) updateQuery = updateQuery.eq('color', item.color);
-
-              await updateQuery;
+              await supabase.from('inventory').update({ count: current.count - 1 }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
           }
       }
   };
@@ -525,6 +471,8 @@ export default function OrderForm() {
       );
   }
 
+  // --- FIXED THE TYPO HERE ---
+  if (globalProducts.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
   if (visibleProducts.length === 0 && paymentMode !== 'hosted') return <div className="p-10 text-center text-red-600 font-bold text-xl mt-10">No active products assigned to Event ID: "{actualEventSlug}"</div>;
 
   if (orderComplete) {
@@ -584,36 +532,21 @@ export default function OrderForm() {
                             <>
                                 {selectedProduct.image_url && (<div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center"><img src={selectedProduct.image_url} className="h-48 object-contain" /></div>)}
                                 {isOutOfStock ? (<div className="bg-orange-100 text-orange-700 p-3 mb-4 rounded font-bold">⚠️ Out of Stock (Will Ship)</div>) : <div className="bg-green-100 text-green-700 p-2 mb-4 text-xs font-bold rounded">✓ In Stock ({currentStock} available)</div>}
-                                
                                 <div className="grid md:grid-cols-2 gap-4">
-                                  {/* Item */}
-                                  <div>
-                                      <label className="text-xs font-black text-gray-900 uppercase">Item</label>
-                                      <select className="w-full p-4 border-2 rounded-xl bg-white text-black font-bold text-lg" onChange={(e) => { setSelectedProduct(visibleProducts.find(p => p.id === e.target.value)); setSelectedColor(''); setSize(''); }} value={selectedProduct?.id || ''}>
-                                          <option value="" disabled>-- Select Item --</option>
-                                          {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                      </select>
-                                  </div>
-
-                                  {/* Color — only shown if colors exist */}
-                                  {visibleColors.length > 0 && (
-                                    <div>
-                                        <label className="text-xs font-black text-gray-900 uppercase">Color</label>
-                                        <select className="w-full p-4 border-2 rounded-xl bg-white text-black font-bold text-lg" value={selectedColor} onChange={(e) => { setSelectedColor(e.target.value); setSize(''); }}>
-                                            <option value="" disabled>-- Select Color --</option>
-                                            {visibleColors.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                    </div>
-                                  )}
-
-                                  {/* Size */}
-                                  <div>
-                                      <label className="text-xs font-black text-gray-900 uppercase">Size</label>
-                                      <select className="w-full p-4 border-2 rounded-xl bg-white text-black font-bold text-lg" value={size} onChange={(e) => setSize(e.target.value)}>
-                                          <option value="" disabled>-- Select Size --</option>
-                                          {visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}
-                                      </select>
-                                  </div>
+                                <div>
+                                    <label className="text-xs font-black text-gray-900 uppercase">Item</label>
+                                    <select className="w-full p-4 border-2 rounded-xl bg-white text-black font-bold text-lg" onChange={(e) => setSelectedProduct(visibleProducts.find(p => p.id === e.target.value))} value={selectedProduct?.id || ''}>
+                                        <option value="" disabled>-- Select Item --</option>
+                                        {visibleProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-black text-gray-900 uppercase">Size</label>
+                                    <select className="w-full p-4 border-2 rounded-xl bg-white text-black font-bold text-lg" value={size} onChange={(e) => setSize(e.target.value)}>
+                                        <option value="" disabled>-- Select Size --</option>
+                                        {visibleSizes.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
                                 </div>
                             </>
                         )}
@@ -738,7 +671,7 @@ export default function OrderForm() {
                     <button onClick={() => removeItem(item.id)} className="absolute top-0 right-0 text-red-500 hover:text-red-700 font-bold text-xs p-1">REMOVE</button>
                     <p className="font-black text-black text-lg w-5/6 leading-tight">{item.productName}</p>
                     {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded inline-block mt-1">Ship to Home</span>}
-                    <p className="text-sm text-gray-800 font-bold mt-1">Size: {item.size}{item.color ? ` / ${item.color}` : ''}</p>
+                    <p className="text-sm text-gray-800 font-bold mt-1">Size: {item.size}</p>
                     <div className="text-xs text-blue-900 font-bold mt-1">Main Design: {item.customizations.mainDesign || 'None'}</div>
                     <div className="text-xs text-gray-800 mt-1 space-y-1 font-medium">
                         {item.customizations.logos.map((l, i) => <div key={'logo'+i}>• {l.type} ({l.position})</div>)}
@@ -759,8 +692,7 @@ export default function OrderForm() {
                             <input className="w-full p-3 border-2 border-gray-300 rounded-xl mb-3 font-bold text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
                             <input className="w-full p-3 border-2 border-gray-300 rounded-xl mb-3 font-bold text-black" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
                             <input className="w-full p-3 border-2 border-gray-300 rounded-xl mb-2 font-bold text-black" placeholder="Phone Number" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
-                            <p className="text-[10px] text-gray-500 leading-tight mb-4">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p>
-                        </>
+                            <p className="text-[10px] text-gray-500 leading-tight mb-4">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p></>
                     )}
 
                     {cartRequiresShipping && paymentMode !== 'hosted' && (
