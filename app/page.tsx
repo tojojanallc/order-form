@@ -262,42 +262,43 @@ export default function OrderForm() {
 
   // Sizes: read directly from each matching product's id — no inventory scanning needed.
   // Each product row IS one size. Filter by color if multi-color, then check active+stock.
-  const getVisibleSizes = () => {
-    if (!selectedProduct) return [];
-    const validSizes = new Set();
+ const getVisibleSizes = () => {
+    const validSizes = new Map(); // size -> label
     matchingProducts.forEach(p => {
       const { size: sizeInId, color } = parseProductId(p.id);
       if (!sizeInId) return;
-            if (hasMultipleColors && color !== selectedColor) return;
+      if (hasMultipleColors && color !== selectedColor) return;
       const key = `${p.id}_${sizeInId}`;
       if (!activeItems[key]) return;
       if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
-      validSizes.add(sizeInId);
+      const isYouth = p.name.toLowerCase().includes('youth');
+      const label = isYouth && !sizeInId.startsWith('Y') ? `Youth ${sizeInId}` : sizeInId;
+      validSizes.set(sizeInId, { value: sizeInId, label });
     });
-    return Array.from(validSizes).sort((a, b) => {
-      const ai = SIZE_ORDER.indexOf(a);
-      const bi = SIZE_ORDER.indexOf(b);
-      if (ai === -1 && bi === -1) return a.localeCompare(b);
+    return Array.from(validSizes.values()).sort((a, b) => {
+      const ai = SIZE_ORDER.indexOf(a.value);
+      const bi = SIZE_ORDER.indexOf(b.value);
+      if (ai === -1 && bi === -1) return a.value.localeCompare(b.value);
       if (ai === -1) return 1;
       if (bi === -1) return -1;
       return ai - bi;
     });
-  };
+};
 
   const visibleSizes = getVisibleSizes();
 
   useEffect(() => {
       if (visibleSizes.length > 0 && selectedProduct) {
-          if (!size || !visibleSizes.includes(size)) {
-              if (paymentMode === 'hosted' && selectedGuest?.size && visibleSizes.includes(selectedGuest.size)) {
+          if (!size || !visibleSizes.some(s => s.value === size)) {
+              if (paymentMode === 'hosted' && selectedGuest?.size && visibleSizes.some(s => s.value === selectedGuest.size)) {
                   setSize(selectedGuest.size);
               } else {
-                  setSize(visibleSizes[0]);
+                  setSize(visibleSizes[0]?.value);
               }
           }
       }
-  }, [selectedProduct, selectedColor, visibleSizes.join(','), paymentMode, selectedGuest]);
-
+  }, [selectedProduct, selectedColor, visibleSizes.map(s => s.value).join(','), paymentMode, selectedGuest]);
+  
   // Stock lookup: find the product row matching the selected color, use its key
   const currentStock = (() => {
     if (!selectedProduct || !size) return 0;
@@ -730,8 +731,8 @@ export default function OrderForm() {
                                       >
                                         <option value="" disabled>-- Select Size --</option>
                                         {visibleSizes.map(s => (
-                                          <option key={s} value={s}>{s}</option>
-                                        ))}
+  <option key={s.value} value={s.value}>{s.label}</option>
+))}
                                       </select>
                                     </div>
                                   )}
