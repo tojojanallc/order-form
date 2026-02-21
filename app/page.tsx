@@ -10,7 +10,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const SIZE_ORDER = [
-  'YXS', 'YS', 'YM', 'YL', 'YXL', 'YXL2',
+  'YXS', 'YS', 'YM', 'YL', 'YXL',
   'Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL',
   'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', '4XL',
   'Adult XS', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL',
@@ -266,7 +266,7 @@ export default function OrderForm() {
     matchingProducts.forEach(p => {
       const { size: sizeInId, color } = parseProductId(p.id);
       if (!sizeInId) return;
-      if (hasMultipleColors && color !== selectedColor) return;
+if (hasMultipleColors && color !== selectedColor) return;
       const key = `${p.id}_${sizeInId}`;
       if (!activeItems[key]) return;
       if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
