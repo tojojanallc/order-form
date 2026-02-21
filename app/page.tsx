@@ -102,21 +102,11 @@ export default function OrderForm() {
   const availableAccentOptions = accentOptions.filter(opt => !(isBottomSelected && opt.placement === 'large'));
 
   useEffect(() => {
-    if (availableMainOptions.length === 0) {
-      setSelectedMainDesign('');
-    } else if (availableMainOptions.length === 1) {
-      // Only one choice — auto-select it
-      setSelectedMainDesign(availableMainOptions[0].label);
-    } else {
-      // Multiple choices — for tops, default to the first 'large' placement option
-      // For bottoms, default to the first available option (large is already filtered out)
-      const currentIsValid = availableMainOptions.find(o => o.label === selectedMainDesign);
-      if (!currentIsValid) {
-        const defaultOpt = !isBottomSelected
-          ? (availableMainOptions.find(o => o.placement === 'large') || availableMainOptions[0])
-          : availableMainOptions[0];
-        setSelectedMainDesign(defaultOpt.label);
-      }
+    if (availableMainOptions.length === 1) setSelectedMainDesign(availableMainOptions[0].label);
+    else if (availableMainOptions.length === 0) setSelectedMainDesign('');
+    else if (selectedMainDesign) {
+        const isValid = availableMainOptions.find(o => o.label === selectedMainDesign);
+        if (!isValid) setSelectedMainDesign('');
     }
   }, [selectedProduct, mainOptions]);
 
