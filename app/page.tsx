@@ -266,7 +266,7 @@ export default function OrderForm() {
     matchingProducts.forEach(p => {
       const { size: sizeInId, color } = parseProductId(p.id);
       if (!sizeInId) return;
-            if (hasMultipleColors && parsed.color !== selectedColor) return;
+            if (hasMultipleColors && color !== selectedColor) return;
       const key = `${p.id}_${sizeInId}`;
       if (!activeItems[key]) return;
       if (paymentMode === 'hosted' && (inventory[key] || 0) <= 0) return;
