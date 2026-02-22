@@ -57,14 +57,22 @@ export async function POST(req: any) {
         const qty = item.quantity || 1;
 
         // Log to sales ledger
-        const { data: invMaster } = await supabase
+        // Try matching by sku (new format) first, then fall back to product_id slug (old format)
+        const { data: invMasterBySku } = await supabase
           .from('inventory_master')
-          .select('cost_per_unit')
-          .eq('product_id', item.productId)
+          .select('cost_price')
+          .eq('sku', item.productId)
           .eq('size', item.size)
           .single();
 
-        const costBasis = invMaster?.cost_per_unit || 0;
+        const { data: invMasterBySlug } = !invMasterBySku ? await supabase
+          .from('inventory_master')
+          .select('cost_price')
+          .eq('product_id', item.productId)
+          .eq('size', item.size)
+          .single() : { data: null };
+
+        const costBasis = invMasterBySku?.cost_price || invMasterBySlug?.cost_price || 0;
 
         await supabase.from('sales_ledger').insert({
           event_slug: currentEvent,
