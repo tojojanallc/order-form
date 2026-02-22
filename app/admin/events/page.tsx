@@ -1018,7 +1018,54 @@ export default function AdminPage() {
                                     ))}
                                     <button onClick={() => handleAddAccent(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Accent</button>
                                 </div>
-                                <div className="space-y-2"><div className="text-xs font-bold text-gray-500 uppercase">Personalization ($5)</div>{item.customizations?.names?.map((n, nIdx) => (<div key={nIdx} className="flex gap-2"><input className="border p-2 rounded flex-1 text-sm uppercase font-bold" value={n.text} onChange={(e) => handleEditName(idx, nIdx, e.target.value)} placeholder="NAME" /><select className="border p-2 rounded w-40 text-sm" value={n.position} onChange={(e) => handleUpdateNamePos(idx, nIdx, e.target.value)}>{POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}</select></div>))}<button onClick={() => handleAddName(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Name</button></div>
+                                <div className="space-y-2">
+  <div className="text-xs font-bold text-gray-500 uppercase">Personalization ($5)</div>
+  {item.customizations?.names?.map((n, nIdx) => (
+    <div key={nIdx} className="flex gap-2">
+      <input className="border p-2 rounded flex-1 text-sm uppercase font-bold" value={n.text} onChange={(e) => handleEditName(idx, nIdx, e.target.value)} placeholder="NAME" />
+      <select className="border p-2 rounded w-40 text-sm" value={n.position} onChange={(e) => handleUpdateNamePos(idx, nIdx, e.target.value)}>
+        {POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}
+      </select>
+    </div>
+  ))}
+  <button onClick={() => handleAddName(idx)} className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded font-bold text-blue-600">+ Add Name</button>
+
+  {/* Numbers */}
+  {item.customizations?.numbers?.length > 0 && (
+    <div className="mt-2">
+      <div className="text-xs font-bold text-gray-500 uppercase">Numbers ($5)</div>
+      {item.customizations.numbers.map((n, nIdx) => (
+        <div key={nIdx} className="flex gap-2 mt-1">
+          <input
+            className="border p-2 rounded flex-1 text-sm font-bold"
+            value={n.text}
+            onChange={(e) => {
+              setEditingOrder(prev => {
+                const newCart = [...prev.cart_data];
+                newCart[idx].customizations.numbers[nIdx].text = e.target.value;
+                return { ...prev, cart_data: newCart };
+              });
+            }}
+            placeholder="NUMBER"
+          />
+          <select
+            className="border p-2 rounded w-40 text-sm"
+            value={n.position}
+            onChange={(e) => {
+              setEditingOrder(prev => {
+                const newCart = [...prev.cart_data];
+                newCart[idx].customizations.numbers[nIdx].position = e.target.value;
+                return { ...prev, cart_data: newCart };
+              });
+            }}
+          >
+            {POSITIONS.map(p => <option key={p.id} value={p.label}>{p.label}</option>)}
+          </select>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
                             </div>
                         )})}
                     </div>
