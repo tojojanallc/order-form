@@ -284,34 +284,29 @@ export default function AdminPage() {
       topItem: sortedItems.length > 0 ? `${sortedItems[0][0]} (${sortedItems[0][1]})` : '-'
     });
 
-    // --- DAILY BREAKDOWN ---
-const dailyStats = useMemo(() => {
-    const map = new Map<string, { revenue: number; cogs: number; orders: number }>();
-
-    orders.forEach(o => {
-        const pStatus = (o.payment_status || '').toLowerCase();
-        const isHosted = paymentMode === 'hosted';
-        const isPaid = isHosted
-            ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment')
-            : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
-        if (!isPaid || o.status === 'refunded') return;
-
-        const day = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        const cart = Array.isArray(o.cart_data) ? o.cart_data : [];
-        const rev = cart.reduce((sum: number, item: any) => sum + (Number(item.finalPrice) || 0), 0);
-        const cogs = cart.reduce((sum: number, item: any) => sum + (Number(item.costBasis) || 0), 0);
-
-        const existing = map.get(day) || { revenue: 0, cogs: 0, orders: 0 };
-        map.set(day, { revenue: existing.revenue + rev, cogs: existing.cogs + cogs, orders: existing.orders + 1 });
-    });
-
-    return Array.from(map.entries())
-        .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
-        .map(([day, data]) => ({ day, ...data, profit: data.revenue - data.cogs }));
-}, [orders, paymentMode]);
-
   }, [orders, selectedEventSlug, paymentMode, mounted, products]);
-    
+  const dailyStats = useMemo(() => {
+    const map = new Map();
+    orders.forEach(o => {
+      const pStatus = (o.payment_status || '').toLowerCase();
+      const isHosted = paymentMode === 'hosted';
+      const isPaid = isHosted
+        ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment')
+        : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
+      if (!isPaid || o.status === 'refunded') return;
+      const day = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const cart = Array.isArray(o.cart_data) ? o.cart_data : [];
+      const rev = cart.reduce((sum, item) => sum + (Number(item.finalPrice) || 0), 0);
+      const cogs = cart.reduce((sum, item) => sum + (Number(item.costBasis) || 0), 0);
+      const existing = map.get(day) || { revenue: 0, cogs: 0, orders: 0 };
+      map.set(day, { revenue: existing.revenue + rev, cogs: existing.cogs + cogs, orders: existing.orders + 1 });
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+      .map(([day, data]) => ({ day, ...data, profit: data.revenue - data.cogs }));
+  }, [orders, paymentMode]);
+
+  
   const handleLogin = async (e) => { 
       e.preventDefault(); 
       setLoading(true); 
