@@ -717,8 +717,11 @@ const dailyStats = useMemo(() => {
                             🧾 Z-Report
                         </Link>
                     </div>
+                )}
+            </div>
+        </div>
 
-                    {/* DAILY BREAKDOWN */}
+        {/* DAILY BREAKDOWN */}
 <div className="bg-white rounded shadow border border-gray-200">
     <button
         onClick={() => setShowDailyBreakdown(!showDailyBreakdown)}
@@ -775,9 +778,6 @@ const dailyStats = useMemo(() => {
         </div>
     )}
 </div>
-                )}
-            </div>
-        </div>
 
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
             {['orders', 'global catalog', 'event stock', 'guests', 'logos', 'terminals', 'settings'].map(tab => (
