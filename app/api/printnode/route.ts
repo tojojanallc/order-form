@@ -106,6 +106,16 @@ export async function POST(req: Request) {
                 });
             }
 
+            if (Array.isArray(c.numbers)) {
+                c.numbers.forEach((n: any) => {
+                    if(n.text) {
+                        const loc = n.position ? ` [${n.position}]` : '';
+                        page.drawText(`• Number: "${n.text}"${loc}`, { x: margin + 10, y: cursorY, size: 10, font });
+                        moveDown(10);
+                    }
+                });
+            }
+
             // 3. Logos/Accents
             if (Array.isArray(c.logos)) {
                 c.logos.forEach((l: any) => {
