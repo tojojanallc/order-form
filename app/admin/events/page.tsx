@@ -46,6 +46,7 @@ export default function AdminPage() {
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
+  const [showDailyBreakdown, setShowDailyBreakdown] = useState(false);
   const [newGuestName, setNewGuestName] = useState(''); 
   const [orders, setOrders] = useState([]);
 
@@ -282,6 +283,32 @@ export default function AdminPage() {
       net: calculatedRevenue - (calculatedRevenue * 0.03) - calculatedCOGS, 
       topItem: sortedItems.length > 0 ? `${sortedItems[0][0]} (${sortedItems[0][1]})` : '-'
     });
+
+    // --- DAILY BREAKDOWN ---
+const dailyStats = useMemo(() => {
+    const map = new Map<string, { revenue: number; cogs: number; orders: number }>();
+
+    orders.forEach(o => {
+        const pStatus = (o.payment_status || '').toLowerCase();
+        const isHosted = paymentMode === 'hosted';
+        const isPaid = isHosted
+            ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment')
+            : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
+        if (!isPaid || o.status === 'refunded') return;
+
+        const day = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const cart = Array.isArray(o.cart_data) ? o.cart_data : [];
+        const rev = cart.reduce((sum: number, item: any) => sum + (Number(item.finalPrice) || 0), 0);
+        const cogs = cart.reduce((sum: number, item: any) => sum + (Number(item.costBasis) || 0), 0);
+
+        const existing = map.get(day) || { revenue: 0, cogs: 0, orders: 0 };
+        map.set(day, { revenue: existing.revenue + rev, cogs: existing.cogs + cogs, orders: existing.orders + 1 });
+    });
+
+    return Array.from(map.entries())
+        .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+        .map(([day, data]) => ({ day, ...data, profit: data.revenue - data.cogs }));
+}, [orders, paymentMode]);
 
   }, [orders, selectedEventSlug, paymentMode, mounted, products]);
     
@@ -690,6 +717,64 @@ export default function AdminPage() {
                             🧾 Z-Report
                         </Link>
                     </div>
+
+                    {/* DAILY BREAKDOWN */}
+<div className="bg-white rounded shadow border border-gray-200">
+    <button
+        onClick={() => setShowDailyBreakdown(!showDailyBreakdown)}
+        className="w-full flex justify-between items-center p-4 font-black text-sm uppercase text-gray-700 hover:bg-gray-50"
+    >
+        <span>📅 Revenue &amp; Profit by Day</span>
+        <span>{showDailyBreakdown ? '▲' : '▼'}</span>
+    </button>
+    {showDailyBreakdown && (
+        <div className="overflow-x-auto border-t">
+            <table className="w-full text-left text-sm">
+                <thead className="bg-gray-100 text-xs uppercase font-black text-gray-500">
+                    <tr>
+                        <th className="p-3">Date</th>
+                        <th className="p-3 text-right">Orders</th>
+                        <th className="p-3 text-right">Gross Revenue</th>
+                        <th className="p-3 text-right">Est. COGS</th>
+                        <th className="p-3 text-right">Est. Profit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {dailyStats.map(({ day, revenue, cogs, profit, orders: cnt }) => (
+                        <tr key={day} className="border-t hover:bg-gray-50">
+                            <td className="p-3 font-bold">{day}</td>
+                            <td className="p-3 text-right">{cnt}</td>
+                            <td className={`p-3 text-right font-bold ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>
+                                {showFinancials ? `$${revenue.toFixed(2)}` : '$888.88'}
+                            </td>
+                            <td className={`p-3 text-right ${showFinancials ? 'text-gray-600' : 'text-gray-300 blur-sm select-none'}`}>
+                                {showFinancials ? `$${cogs.toFixed(2)}` : '$888.88'}
+                            </td>
+                            <td className={`p-3 text-right font-black ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>
+                                {showFinancials ? `$${profit.toFixed(2)}` : '$888.88'}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t-2 font-black text-sm">
+                    <tr>
+                        <td className="p-3">Total</td>
+                        <td className="p-3 text-right">{dailyStats.reduce((s, d) => s + d.orders, 0)}</td>
+                        <td className={`p-3 text-right ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>
+                            {showFinancials ? `$${dailyStats.reduce((s, d) => s + d.revenue, 0).toFixed(2)}` : '$888.88'}
+                        </td>
+                        <td className={`p-3 text-right ${showFinancials ? '' : 'text-gray-300 blur-sm select-none'}`}>
+                            {showFinancials ? `$${dailyStats.reduce((s, d) => s + d.cogs, 0).toFixed(2)}` : '$888.88'}
+                        </td>
+                        <td className={`p-3 text-right ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>
+                            {showFinancials ? `$${dailyStats.reduce((s, d) => s + d.profit, 0).toFixed(2)}` : '$888.88'}
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    )}
+</div>
                 )}
             </div>
         </div>
