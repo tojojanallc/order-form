@@ -75,6 +75,9 @@ export default function AdminPage() {
   const lastOrderCount = useRef(0);
   const processedIds = useRef(new Set());
 
+  const [salesLedger, setSalesLedger] = useState([]);
+  
+
   // Forms
   const [newProdId, setNewProdId] = useState('');
   const [newProdName, setNewProdName] = useState('');
@@ -243,6 +246,12 @@ export default function AdminPage() {
     let calculatedCOGS = 0;
     const itemCounts = {};
 
+// Build COGS lookup from sales_ledger
+const cogsByOrder = {};
+salesLedger.forEach(row => {
+  cogsByOrder[row.order_id] = (cogsByOrder[row.order_id] || 0) + (Number(row.cost_basis) * Number(row.qty || 1));
+});
+
     cleanOrders.forEach(order => {
       const cart = Array.isArray(order.cart_data) ? order.cart_data : [];
       let orderTotal = 0;
@@ -269,7 +278,7 @@ export default function AdminPage() {
       calculatedRevenue += orderTotal;
 
       cart.forEach(item => {
-        calculatedCOGS += 10; 
+        calculatedCOGS += cogsByOrder[order.id] || 0;
         const key = `${item.productName || 'Unknown'} (${item.size || '?'})`;
         itemCounts[key] = (itemCounts[key] || 0) + 1;
       });
@@ -286,25 +295,57 @@ export default function AdminPage() {
 
   }, [orders, selectedEventSlug, paymentMode, mounted, products]);
   const dailyStats = useMemo(() => {
-    const map = new Map();
-    orders.forEach(o => {
-      const pStatus = (o.payment_status || '').toLowerCase();
-      const isHosted = paymentMode === 'hosted';
-      const isPaid = isHosted
-        ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment')
-        : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
-      if (!isPaid || o.status === 'refunded') return;
-      const day = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      const cart = Array.isArray(o.cart_data) ? o.cart_data : [];
-      const rev = cart.reduce((sum, item) => sum + (Number(item.finalPrice) || 0), 0);
-      const cogs = cart.reduce((sum, item) => sum + (Number(item.costBasis) || 0), 0);
-      const existing = map.get(day) || { revenue: 0, cogs: 0, orders: 0 };
-      map.set(day, { revenue: existing.revenue + rev, cogs: existing.cogs + cogs, orders: existing.orders + 1 });
-    });
-    return Array.from(map.entries())
-      .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
-      .map(([day, data]) => ({ day, ...data, profit: data.revenue - data.cogs }));
-  }, [orders, paymentMode]);
+  const map = new Map();
+
+  // Build a lookup: order_id -> total cost_basis from sales_ledger
+  const cogsByOrder = {};
+  salesLedger.forEach(row => {
+    cogsByOrder[row.order_id] = (cogsByOrder[row.order_id] || 0) + (Number(row.cost_basis) * Number(row.qty || 1));
+  });
+
+  orders.forEach(o => {
+    const pStatus = (o.payment_status || '').toLowerCase();
+    const isHosted = paymentMode === 'hosted';
+    const isPaid = isHosted
+      ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment')
+      : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
+    if (!isPaid || o.status === 'refunded') return;
+
+    const day = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    // Match main gross revenue logic exactly
+    let rev = 0;
+    const cart = Array.isArray(o.cart_data) ? o.cart_data : [];
+    if (isHosted || Number(o.total_price || 0) === 0) {
+      cart.forEach(item => {
+        const prod = products.find(p => p.id === item.productId);
+        let itemPrice = Number(prod?.base_price ?? 30);
+        if (itemPrice > 500) itemPrice = itemPrice / 100;
+        if (item.customizations) {
+          itemPrice += (Number(item.customizations.logos?.length || 0) * 5);
+          itemPrice += (Number(item.customizations.names?.length || 0) * 5);
+          itemPrice += (Number(item.customizations.numbers?.length || 0) * 5);
+          if (item.customizations.metallic) itemPrice += 5;
+        }
+        rev += itemPrice;
+      });
+    } else {
+      let rawTotal = Number(o.total_price || 0);
+      if (rawTotal > 5000) rawTotal = rawTotal / 100;
+      rev = rawTotal;
+    }
+
+    // Real COGS from sales_ledger
+    const cogs = cogsByOrder[o.id] || 0;
+
+    const existing = map.get(day) || { revenue: 0, cogs: 0, orders: 0 };
+    map.set(day, { revenue: existing.revenue + rev, cogs: existing.cogs + cogs, orders: existing.orders + 1 });
+  });
+
+  return Array.from(map.entries())
+    .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+    .map(([day, data]) => ({ day, ...data, profit: data.revenue - data.cogs }));
+}, [orders, paymentMode, products, salesLedger]);
 
   
   const handleLogin = async (e) => { 
@@ -330,6 +371,11 @@ export default function AdminPage() {
   const fetchOrders = async () => { 
       if (!supabase || !selectedEventSlug) return; 
       const { data, error } = await supabase.from('orders').select('*').eq('event_slug', selectedEventSlug).order('created_at', { ascending: false }); 
+      const { data: ledgerData } = await supabase
+  .from('sales_ledger')
+  .select('order_id, cost_basis, qty')
+  .eq('event_slug', selectedEventSlug);
+setSalesLedger(ledgerData || []);
       if (error) return;
       const uniqueOrders = Array.from(new Map(data.map(item => [item.id, item])).values());
       setOrders(uniqueOrders); 
