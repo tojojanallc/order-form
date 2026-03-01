@@ -295,6 +295,12 @@ export default function AdminDashboard() {
                 <h4 className="font-black text-slate-900">Event History</h4>
                 <p className="text-xs text-gray-400 font-medium mt-1">Past Results.</p>
             </Link>
+
+            <Link href="/admin/events/create" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-blue-300 transition-all group">
+                <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center mb-4 text-xl">➕</div>
+                <h4 className="font-black text-slate-900">Add New Event</h4>
+                <p className="text-xs text-gray-400 font-medium mt-1">Create a new event.</p>
+            </Link>
         </div>
 
       </div>
