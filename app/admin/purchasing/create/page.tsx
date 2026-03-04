@@ -276,7 +276,7 @@ export default function CreatePO() {
                                     <button onClick={() => removeItem(idx)} className="absolute top-2 right-3 text-slate-600 hover:text-red-400 transition-colors">×</button>
                                     <div className="font-bold text-[11px] uppercase truncate pr-4">{line.name}</div>
                                     <div className="flex justify-between items-center mt-2">
-                                        <div className="text-[9px] text-gray-500 font-bold uppercase">{line.size} • {line.qty} Units</div>
+                                        <div className="text-[9px] text-gray-500 font-bold uppercase">{line.size}{line.color ? ` • ${line.color}` : ''} • {line.qty} Units</div>
                                         <div className="text-xs font-black text-green-400">${(line.qty * line.cost).toFixed(2)}</div>
                                     </div>
                                     {line.isNew && (
