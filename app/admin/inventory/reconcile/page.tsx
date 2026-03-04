@@ -103,7 +103,7 @@ export default function ReconcilePage() {
       {/* RESTORED HEADER WITH DASHBOARD LINK */}
       <div className="max-w-7xl mx-auto mb-10">
         <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase hover:underline mb-2 inline-block tracking-widest">
-            ← Dashboard
+            ← Command Center
         </Link>
         <h1 className="text-5xl font-black tracking-tighter uppercase leading-none">Unload & Audit</h1>
         <p className="text-gray-400 font-bold mt-2 uppercase text-[10px] tracking-widest">Finalize meet financials and return inventory to Glendale</p>
