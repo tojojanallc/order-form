@@ -225,7 +225,11 @@ export default function CreatePO() {
                                         value={selectedSku}
                                         onChange={e => setSelectedSku(e.target.value)}
                                     >
-                                        {masterItems.map(i => <option key={i.sku} value={i.sku}>{i.item_name} ({i.size})</option>)}
+                                        {masterItems.map(i => (
+  <option key={i.sku} value={i.sku}>
+    {i.item_name} ({i.size}{i.color ? ` • ${i.color}` : ''})
+  </option>
+))}
                                     </select>
                                 </>
                             ) : (
