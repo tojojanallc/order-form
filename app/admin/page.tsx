@@ -284,6 +284,12 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-400 font-medium mt-1">Write-offs.</p>
             </Link>
 
+          <Link href="/admin/events/create" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-green-300 transition-all group">
+  <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center mb-4 text-xl">➕</div>
+  <h4 className="font-black text-slate-900">Create Event</h4>
+  <p className="text-xs text-gray-400 font-medium mt-1">Launch a new kiosk.</p>
+</Link>
+
              <Link href="/admin/events" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-blue-300 transition-all group">
                 <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-xl">⚙️</div>
                 <h4 className="font-black text-slate-900">Event Settings</h4>
