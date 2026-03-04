@@ -98,6 +98,12 @@ export default function LoadTruck() {
   return (
     <div className="min-h-screen bg-gray-50 p-8 text-slate-900 font-sans">
       <div className="max-w-6xl mx-auto">
+        <Link
+        href="/admin"
+        className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-2 inline-block hover:underline"
+      >
+        ← Command Center
+      </Link>
         <div className="flex justify-between items-center mb-10">
             <h1 className="text-4xl font-black uppercase">Truck Transfer</h1>
             <button 
