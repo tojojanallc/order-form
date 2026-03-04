@@ -111,7 +111,7 @@ export default function LoadTruck() {
 
         <div className="grid grid-cols-12 gap-6 mb-8">
             <div className="col-span-4 bg-slate-900 p-6 rounded-3xl text-white">
-                <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Target Meet</p>
+                <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Target Event</p>
                 <select 
                     className="w-full bg-slate-800 p-3 rounded-xl border-none font-black text-blue-400"
                     value={selectedEvent}
