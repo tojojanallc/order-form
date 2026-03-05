@@ -319,8 +319,7 @@ export default function OrderForm() {
     ).length;
     return totalBaseStock - qtyInCart;
   })();
-  
-  const isOutOfStock = currentStock <= 0;
+  const isOutOfStock = ignoreInventory ? false : currentStock <= 0;
 
   // The color-specific product record (has the correct image_url for the selected color)
   const selectedProductRecord = (() => {
