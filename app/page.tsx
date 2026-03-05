@@ -698,7 +698,19 @@ if (!ignoreInventory) {
                                   </div>
                                 )}
 {!ignoreInventory && (
-                                {isOutOfStock ? (<div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4" role="alert"><p className="font-bold">⚠️ Out of Stock at Event</p><p className="text-sm">We can ship this to your home!</p></div>) : <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">✓ In Stock ({currentStock} available)</div>}
+  isOutOfStock ? (
+    <div
+      className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4"
+      role="alert"
+    >
+      <p className="font-bold">⚠️ Out of Stock at Event</p>
+      <p className="text-sm">We can ship this to your home!</p>
+    </div>
+  ) : (
+    <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-2 mb-4 text-xs font-bold uppercase">
+      ✓ In Stock ({currentStock} available)
+    </div>
+  )
 )}
                                 <div className="space-y-3">
 
