@@ -459,7 +459,7 @@ setSalesLedger(ledgerData || []);
           printnode_printer_id: pnPrinterId,
           tax_enabled: taxEnabled,
           tax_rate: taxRate,
-          ignore_inventory: ignoreInventory
+          ignore_inventory: ignoreInventory,
       }).eq('slug', selectedEventSlug); 
       alert("Saved settings for " + selectedEventSlug); 
   };
