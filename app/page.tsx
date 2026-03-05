@@ -507,7 +507,9 @@ export default function OrderForm() {
                 }
             }
         };
-        await decrementInventory(cart);
+        if (!ignoreInventory) {
+  await decrementInventory(cart);
+}
         setLastOrderId(data.orderId); 
         if (customerPhone) sendConfirmationSMS(customerName, customerPhone);
         if (customerEmail) sendReceiptEmail(data.orderId, customerName, customerEmail, cart, calculateGrandTotal());
