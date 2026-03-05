@@ -850,7 +850,7 @@ export default function OrderForm() {
                         <section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300 space-y-3">
                             <label className="flex items-center gap-3 cursor-pointer">
                                 <input type="checkbox" className="w-6 h-6 text-blue-800" checked={backNameList} onChange={(e) => { setBackNameList(e.target.checked); if (!e.target.checked) { setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName(''); } }} />
-                                <span className="font-bold text-black text-lg">Back Name List {showPrice && '(+$5)'}</span>
+                                <span className="font-bold text-black text-lg">Team Roster List {showPrice && '(+$5)'}</span>
                             </label>
                             {backNameList && (
                                 <div className="ml-8 space-y-3 border-l-4 border-yellow-300 pl-4">
