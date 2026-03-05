@@ -93,6 +93,7 @@ export default function OrderForm() {
   const [metallicName, setMetallicName] = useState('');
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
+  const [ignoreInventory, setIgnoreInventory] = useState(false);
 
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
@@ -148,6 +149,7 @@ export default function OrderForm() {
         setShowNumbers(settings.offer_numbers ?? true); 
         setTaxEnabled(settings.tax_enabled || false);
         setTaxRate(settings.tax_rate || 0);
+        setIgnoreInventory(!!settings.ignore_inventory);
       }
 
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
@@ -582,16 +584,33 @@ export default function OrderForm() {
       setLogos([]); setNames([]); setNumbers([]); 
       setSelectedProduct(null); setSize(''); setSelectedColor('');
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', actualEventSlug); 
-      if (invData) {
-        const stockMap = {}; const activeMap = {}; const priceMap = {};
-        invData.forEach(item => {
-            const key = `${item.product_id}_${item.size}`;
-            stockMap[key] = item.count; activeMap[key] = item.active;
-            if (item.override_price) priceMap[key] = item.override_price;
-        });
-        setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
-      }
+      
+      // inventory / stock maps
+if (!ignoreInventory) {
+  const { data: invData } = await supabase
+    .from('inventory')
+    .select('*')
+    .eq('event_slug', finalSlug);
+
+  if (invData) {
+    const stockMap = {};
+    const activeMap = {};
+    const priceMap = {};
+    invData.forEach((item) => {
+      const key = `${item.product_id}_${item.size}`;
+      stockMap[key] = item.count;
+      activeMap[key] = item.active;
+      if (item.override_price != null) priceMap[item.product_id] = item.override_price;
+    });
+    setInventory(stockMap);
+    setActiveItems(activeMap);
+    setPriceOverrides(priceMap);
+  }
+} else {
+  setInventory({});
+  setActiveItems({});
+  setPriceOverrides({});
+}
       window.scrollTo(0, 0);
   };
 
