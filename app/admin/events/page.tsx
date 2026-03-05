@@ -54,6 +54,7 @@ export default function AdminPage() {
   const [taxRate, setTaxRate] = useState(0);
   
   // --- INVENTORY STATE ---
+  const [ignoreInventory, setIgnoreInventory] = useState(false);
   const [inventory, setInventory] = useState([]); 
   const [products, setProducts] = useState([]); 
   const [logos, setLogos] = useState([]);
@@ -426,6 +427,7 @@ setSalesLedger(ledgerData || []);
           setPnPrinterId(data.printnode_printer_id || ''); 
           setTaxEnabled(data.tax_enabled || false);
           setTaxRate(data.tax_rate || 0);
+          setIgnoreInventory(!!data.ignore_inventory);
       } 
   };
 
@@ -456,7 +458,8 @@ setSalesLedger(ledgerData || []);
           printnode_api_key: pnApiKey, 
           printnode_printer_id: pnPrinterId,
           tax_enabled: taxEnabled,
-          tax_rate: taxRate
+          tax_rate: taxRate,
+          ignore_inventory: ignoreInventory
       }).eq('slug', selectedEventSlug); 
       alert("Saved settings for " + selectedEventSlug); 
   };
