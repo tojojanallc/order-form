@@ -1102,6 +1102,29 @@ setSalesLedger(ledgerData || []);
     )}
 </div>
 
+                {/* Inventory Configuration */}
+<div className="mb-6 bg-emerald-50 p-4 rounded border border-emerald-200 text-slate-900">
+  <label className="block text-emerald-900 font-bold mb-3 border-b border-emerald-200 pb-2 uppercase text-xs tracking-widest">
+    Inventory
+  </label>
+
+  <div className="flex items-center justify-between">
+    <div>
+      <div className="text-gray-800 font-bold">Ignore Inventory?</div>
+      <div className="text-[10px] text-emerald-800 mt-1 italic font-medium">
+        If enabled, kiosk will NOT show stock status, will NOT enforce stock limits, and will NOT decrement inventory.
+      </div>
+    </div>
+
+    <input
+      type="checkbox"
+      checked={ignoreInventory}
+      onChange={(e) => setIgnoreInventory(e.target.checked)}
+      className="w-6 h-6 cursor-pointer accent-emerald-600"
+    />
+  </div>
+</div>
+
                 <div className="mb-6 bg-purple-50 p-4 rounded border border-purple-200"><label className="block text-purple-900 font-bold mb-3 border-b border-purple-200 pb-2">Cloud Printing (PrintNode)</label><div className="flex items-center justify-between mb-3"><span className="text-gray-800">Enable Cloud Print?</span><input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)} className="w-5 h-5" /></div>{pnEnabled && (<div className="space-y-3"><input className="w-full p-2 border rounded text-sm" placeholder="API Key" value={pnApiKey} onChange={e => setPnApiKey(e.target.value)} /><div className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" placeholder="Printer ID" value={pnPrinterId} onChange={e => setPnPrinterId(e.target.value)} /><button onClick={discoverPrinters} className="bg-purple-600 text-white px-3 text-xs rounded font-bold">Find</button></div>{availablePrinters.length > 0 && (<div className="bg-white border p-2 rounded max-h-32 overflow-y-auto">{availablePrinters.map(p => (<div key={p.id} className="text-xs p-1 hover:bg-gray-100 cursor-pointer flex justify-between" onClick={() => setPnPrinterId(p.id)}><span>{p.name}</span><span className="font-mono text-gray-500">{p.id}</span></div>))}</div>)}</div>)}</div><div className="mb-6 bg-gray-100 p-4 rounded border border-gray-200"><label className="block text-gray-800 font-bold mb-3 border-b border-gray-300 pb-2">Printer Output (Local)</label><div className="space-y-2"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="label" checked={printerType === 'label'} onChange={() => setPrinterType('label')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Thermal Label (4x6)</span><span className="text-xs text-gray-500">Standard for fast packing.</span></div></label><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="standard" checked={printerType === 'standard'} onChange={() => setPrinterType('standard')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Standard Sheet (8.5x11)</span><span className="text-xs text-gray-500">Large font packing slip for laser printers.</span></div></label></div></div><div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200"><label className="block text-blue-900 font-bold mb-3 border-b border-blue-200 pb-2">Payment Mode</label><div className="space-y-4"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="retail" checked={paymentMode === 'retail'} onChange={() => setPaymentMode('retail')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Retail (Stripe / Square)</span><span className="text-xs text-gray-500">Collect credit card payments from guests.</span></div></label>{paymentMode === 'retail' && (<div className="ml-8 bg-white p-3 rounded border border-blue-100 flex gap-4"><span className="text-sm font-bold text-gray-600">Checkout Method:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="retail_method" value="stripe" checked={retailPaymentMethod === 'stripe'} onChange={() => setRetailPaymentMethod('stripe')} className="w-4 h-4 text-purple-600" /><span className="text-sm font-bold">Stripe Link (SMS/Email)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="retail_method" value="terminal" checked={retailPaymentMethod === 'terminal'} onChange={() => setRetailPaymentMethod('terminal')} className="w-4 h-4 text-green-600" /><span className="text-sm font-bold">Square Terminal</span></label></div>)}<label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="payment_mode" value="hosted" checked={paymentMode === 'hosted'} onChange={() => setPaymentMode('hosted')} className="w-5 h-5 text-blue-900" /><div><span className="font-bold block text-gray-800">Hosted (Party Mode)</span><span className="text-xs text-gray-500">Guests pay $0. Value is tracked for host invoice.</span></div></label></div></div><div className="mb-6 bg-gray-50 p-4 rounded border">
     <label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label>
     <div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Team Roster List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div>
