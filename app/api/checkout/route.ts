@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import { isInventoryEnabledForEvent } from '@/app/lib/inventory';
 
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeKey ? new Stripe(stripeKey) : null;
@@ -17,26 +18,33 @@ export async function POST(request) {
   try {
     const body = await request.json();
     // We now expect an 'orderId' if the order was already created in the frontend
-    const { cart, customerName, orderId } = body; 
-
+const { cart, customerName, orderId, eventSlug } = body;
+    
     // --- DECREMENT INVENTORY ---
-    for (const item of cart) {
-        if (!item.productId || !item.size) continue;
-        const { data: currentStock } = await supabase
-            .from('inventory')
-            .select('count')
-            .eq('product_id', item.productId)
-            .eq('size', item.size)
-            .single();
+    const inventoryEnabled = await isInventoryEnabledForEvent(eventSlug || 'default');
 
-        if (currentStock) {
-            await supabase
-                .from('inventory')
-                .update({ count: currentStock.count - 1 })
-                .eq('product_id', item.productId)
-                .eq('size', item.size);
-        }
+if (inventoryEnabled) {
+  for (const item of cart) {
+    if (!item.productId || !item.size) continue;
+
+    const { data: currentStock } = await supabase
+      .from('inventory')
+      .select('count')
+      .eq('event_slug', eventSlug || 'default')   // IMPORTANT: add event_slug filter
+      .eq('product_id', item.productId)
+      .eq('size', item.size)
+      .single();
+
+    if (currentStock) {
+      await supabase
+        .from('inventory')
+        .update({ count: currentStock.count - 1 })
+        .eq('event_slug', eventSlug || 'default') // IMPORTANT: add event_slug filter
+        .eq('product_id', item.productId)
+        .eq('size', item.size);
     }
+  }
+}
     // ---------------------------
 
     const lineItems = cart.map((item) => {
