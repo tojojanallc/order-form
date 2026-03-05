@@ -6,6 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+
+
 export async function POST(req: any) {
   try {
     const body = await req.json();
@@ -67,6 +69,10 @@ export async function POST(req: any) {
             // -------------------------------------------------------
 
             // EXISTING: STOCK DECREMENT LOGIC
+
+          const inventoryEnabled = await isInventoryEnabledForEvent(currentEvent);
+
+if (inventoryEnabled) {
             const { data: candidates } = await supabase
                 .from('inventory')
                 .select('*')
@@ -92,6 +98,7 @@ export async function POST(req: any) {
             }
         }
     }
+      }
 
     return NextResponse.json({ success: true, orderId: order.id });
   } catch (error: any) {
