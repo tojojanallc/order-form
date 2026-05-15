@@ -711,7 +711,7 @@ if (!ignoreInventory) {
                   <h1 className="text-3xl font-black text-green-800 mb-2">Order Received!</h1>
                   <p className="text-xl font-mono text-blue-600 mb-6 bg-blue-50 p-2 rounded border border-blue-200">Order #{lastOrderId || '---'}</p>
                   <p className="text-gray-600 mb-6">Your gear is being prepared.</p>
-                  <button onClick={resetApp} className="text-white font-bold py-4 px-8 rounded-lg shadow-lg hover:opacity-90 w-full text-xl" style={{ backgroundColor: headerColor }}>Next Order ➡️</button>
+                  <button onClick={resetApp} className="text-white font-black py-5 px-8 rounded-2xl shadow-xl hover:opacity-90 w-full text-2xl tracking-wide" style={{ backgroundColor: headerColor }}>Next Order ➡️</button>
               </div>
           </div>
       );
@@ -720,11 +720,11 @@ if (!ignoreInventory) {
   const showPrice = paymentMode === 'retail';
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans text-gray-900">
+    <div className="min-h-screen bg-slate-900 font-sans text-gray-900">
       <div className="w-[85%] mx-auto py-6 grid md:grid-cols-3 gap-8">
         <div className={`space-y-6 ${(paymentMode === 'retail' || selectedGuest) ? 'md:col-span-2' : 'md:col-span-3'}`}>
-          <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
-            <div className="text-white p-6 text-center relative" style={{ backgroundColor: headerColor }}>
+          <div className="bg-white shadow-2xl rounded-2xl overflow-hidden">
+            <div className="text-white py-9 px-6 text-center relative" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-36 mx-auto mb-3" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
               {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">ID: {assignedTerminalId.slice(-4)}</div>}
@@ -732,17 +732,17 @@ if (!ignoreInventory) {
             
             <div className="p-6 space-y-8">
               {paymentMode === 'hosted' && !selectedGuest && (
-                  <div className="text-center py-10">
-                      <h2 className="text-2xl font-bold mb-4">Welcome to the Party! 🎉</h2>
+                  <div className="text-center py-16 px-4">
+                      <h2 className="text-4xl font-black mb-5 tracking-tight text-gray-900">Welcome to the Party! 🎉</h2>
                       {welcomeMessage && (
-                        <p className="mb-3 text-gray-700 text-lg italic max-w-md mx-auto">{welcomeMessage}</p>
+                        <p className="mb-6 text-gray-500 text-xl max-w-lg mx-auto leading-relaxed">{welcomeMessage}</p>
                       )}
-                      <p className="mb-6 text-gray-500">
+                      <p className="mb-8 text-gray-400 font-semibold uppercase tracking-widest text-xs">
                         {openGuestEntry ? "Enter your name to get started." : "Please verify your name to get started."}
                       </p>
-                      <div className="flex gap-2 max-w-md mx-auto">
+                      <div className="flex gap-3 max-w-lg mx-auto">
                             <input
-                              className="flex-1 p-3 border-2 border-gray-400 rounded-lg text-lg text-black"
+                              className="flex-1 p-4 border-2 border-gray-200 rounded-xl text-xl text-black focus:border-blue-400 focus:outline-none"
                               placeholder="Enter full name"
                               value={guestSearch}
                               disabled={guestLoading}
@@ -752,7 +752,7 @@ if (!ignoreInventory) {
                             <button
                               onClick={verifyGuest}
                               disabled={guestLoading || !guestSearch.trim()}
-                              className="text-white font-bold px-6 rounded-lg shadow hover:opacity-90 disabled:opacity-50"
+                              className="text-white font-black px-8 rounded-xl shadow-lg hover:opacity-90 disabled:opacity-50 text-base"
                               style={{ backgroundColor: headerColor }}
                             >
                               {guestLoading ? "Checking..." : "Start"}
@@ -768,12 +768,12 @@ if (!ignoreInventory) {
 
               {(paymentMode === 'retail' || selectedGuest) && (
                   <>
-                    <section className="bg-gray-50 p-4 rounded-lg border border-gray-300">
-                        <h2 className="font-bold text-black mb-3 border-b border-gray-300 pb-2">1. Select Garment</h2>
+                    <section className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+                        <h2 className="sr-only">1. Select Garment</h2><div className="flex items-center gap-3 mb-5 pb-3 border-b border-gray-100"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>1</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Select Garment</h2></div>
                         {selectedGuest && (
-                            <div className="bg-green-50 border border-green-200 p-4 rounded-lg mb-6 text-center shadow-sm">
-                                <h2 className="text-xl font-bold text-green-900 mb-1">Hi {selectedGuest.name}! 👋</h2>
-                                {selectedGuest.size ? (<p className="text-green-700 text-sm">We've pre-selected size <span className="font-bold bg-white px-2 py-0.5 rounded border border-green-300">{selectedGuest.size}</span> for you.</p>) : (<p className="text-green-700 text-sm">Please select your apparel below.</p>)}
+                            <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl mb-6 text-center shadow-sm">
+                                <h2 className="text-2xl font-black text-emerald-900 mb-1">Hi {selectedGuest.name}! 👋</h2>
+                                {selectedGuest.size ? (<p className="text-emerald-700 text-sm font-medium">We've pre-selected size <span className="font-bold bg-white px-2 py-0.5 rounded border border-green-300">{selectedGuest.size}</span> for you.</p>) : (<p className="text-emerald-700 text-sm font-medium">Please select your apparel below.</p>)}
                                 <button onClick={() => { setSelectedGuest(null); setGuestSearch(''); setCart([]); }} className="text-xs text-green-600 underline mt-2 hover:text-green-800">Not you? Change Guest</button>
                             </div>
                         )}                        
@@ -782,7 +782,7 @@ if (!ignoreInventory) {
                         ) : (
                             <>
                                 {selectedProductRecord?.image_url && (
-                                  <div className="mb-4 bg-white p-2 rounded border border-gray-200 flex justify-center">
+                                  <div className="mb-5 bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-center">
                                     <img src={selectedProductRecord.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
                                   </div>
                                 )}
@@ -828,8 +828,8 @@ if (!ignoreInventory) {
                                               }}
                                               className={`flex flex-col items-center rounded-xl border-2 p-2 text-center transition-all ${
                                                 isSelected
-                                                  ? 'border-black bg-gray-100 shadow-md'
-                                                  : 'border-gray-200 bg-white hover:border-gray-400'
+                                                  ? 'border-blue-600 bg-blue-50 shadow-lg ring-2 ring-blue-100'
+                                                  : 'border-gray-100 bg-white hover:border-gray-300 hover:shadow-sm'
                                               }`}
                                             >
                                               {p.image_url ? (
@@ -887,14 +887,11 @@ if (!ignoreInventory) {
 
                     {selectedProduct && availableMainOptions.length > 0 && (
                         <section>
-                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
-                              <h2 className="font-bold text-black">2. Choose Design</h2>
-                              <span className="text-xs bg-green-100 text-green-900 px-2 py-1 rounded-full font-bold">Included</span>
-                            </div>
+                            <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>2</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Choose Design</h2></div><span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">Included</span></div>
                             <div className="grid grid-cols-3 gap-4 mb-4">
                                 <div className="col-span-2 grid grid-cols-2 gap-3">
                                     {availableMainOptions.map((opt) => (
-                                        <button key={opt.label} onClick={() => setSelectedMainDesign(opt.label)} className={`border-2 rounded-lg p-2 flex flex-col items-center gap-2 transition-all active:scale-95 ${selectedMainDesign === opt.label ? 'border-green-600 bg-green-50 ring-2 ring-green-200' : 'border-gray-200 bg-white hover:border-gray-400'}`}>
+                                        <button key={opt.label} onClick={() => setSelectedMainDesign(opt.label)} className={`border-2 rounded-xl p-2 flex flex-col items-center gap-2 transition-all active:scale-95 shadow-sm ${selectedMainDesign === opt.label ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-gray-100 bg-white hover:border-gray-300 hover:shadow-sm'}`}>
                                             {opt.image_url ? (<img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />) : (<div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>)}
                                             <span className={`text-xs font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
                                             {selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
@@ -915,25 +912,22 @@ if (!ignoreInventory) {
 
                     {selectedProduct && availableAccentOptions.length > 0 && (
                         <section>
-                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
-                              <h2 className="font-bold text-black">3. Add Accents (Optional)</h2>
-                              {showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00 each</span>}
-                            </div>
+                            <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>3</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Add Accents</h2></div>{showPrice && <span className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">+$5 each</span>}</div>
                             <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
                                 {availableAccentOptions.map((opt) => (
-                                    <button key={opt.label} onClick={() => addLogo(opt.label)} className="bg-white border border-gray-300 hover:border-blue-500 rounded p-2 flex flex-col items-center gap-1 transition-all active:scale-95">
+                                    <button key={opt.label} onClick={() => addLogo(opt.label)} className="bg-white border-2 border-gray-100 hover:border-blue-400 rounded-xl p-2 flex flex-col items-center gap-1 transition-all active:scale-95 shadow-sm">
                                         {opt.image_url ? <img src={opt.image_url} className="h-12 w-full object-contain" /> : <div className="h-12 w-full bg-gray-100 text-[10px] flex items-center justify-center">No Img</div>}
                                         <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{opt.label}</span>
                                     </button>
                                 ))}
                             </div>
                             {logos.length > 0 && (
-                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-300 space-y-3">
+                                <div className="bg-slate-50 p-4 rounded-xl border border-gray-100 space-y-3">
                                     <h3 className="text-xs font-bold uppercase text-gray-500">Selected Accents (Set Position)</h3>
                                     {logos.map((logo, index) => {
                                         const currentImage = getLogoImage(logo.type);
                                         return (
-                                            <div key={index} className="flex items-center gap-3 bg-white p-2 rounded border border-gray-200 shadow-sm">
+                                            <div key={index} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
                                                 <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
                                                 <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
                                                 <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
@@ -951,13 +945,10 @@ if (!ignoreInventory) {
 
                     {selectedProduct && (showPersonalization || showNumbers) && (
                         <section>
-                            <div className="flex justify-between items-center mb-3 border-b border-gray-300 pb-2">
-                              <h2 className="font-bold text-black">4. Personalization</h2>
-                              {showPrice && <span className="text-xs bg-blue-100 text-blue-900 px-2 py-1 rounded-full font-bold">+$5.00 each</span>}
-                            </div>
+                            <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>4</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Personalization</h2></div>{showPrice && <span className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">+$5 each</span>}</div>
                             {names.map((nameItem, index) => (
-                            <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                                <input type="text" maxLength={12} placeholder="NAME" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-bold" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
+                            <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                <input type="text" maxLength={12} placeholder="NAME" className="border-2 border-gray-200 p-2 rounded-lg flex-1 uppercase text-black font-bold focus:border-blue-400 focus:outline-none" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
                                 <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}>
                                   <option value="">Select Position...</option>
                                   {getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
@@ -966,8 +957,8 @@ if (!ignoreInventory) {
                             </div>
                             ))}
                             {numbers.map((numItem, index) => (
-                            <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-gray-50 p-3 rounded border border-gray-300">
-                                <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border border-gray-400 p-2 rounded flex-1 uppercase text-black font-mono font-bold text-center text-lg tracking-widest" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
+                            <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border-2 border-gray-200 p-2 rounded-lg flex-1 uppercase text-black font-mono font-bold text-center text-lg tracking-widest focus:border-blue-400 focus:outline-none" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
                                 <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={numItem.position} onChange={(e) => updateNumber(index, 'position', e.target.value)}>
                                   <option value="">Select Position...</option>
                                   {getPositionOptions('number').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
@@ -977,17 +968,17 @@ if (!ignoreInventory) {
                             ))}
                             <div className="flex gap-2 mt-3">
                                 {showPersonalization && (
-                                    <button onClick={() => setNames([...names, { text: '', position: '' }])} className="flex-1 py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold bg-white">+ Add Name</button>
+                                    <button onClick={() => setNames([...names, { text: '', position: '' }])} className="flex-1 py-3 border-2 border-dashed border-gray-200 text-gray-400 rounded-xl hover:border-blue-500 hover:text-blue-600 font-bold bg-white transition-all">+ Add Name</button>
                                 )}
                                 {showNumbers && (
-                                    <button onClick={() => setNumbers([...numbers, { text: '', position: '' }])} className="flex-1 py-2 border-2 border-dashed border-gray-400 text-gray-700 rounded hover:border-blue-600 hover:text-blue-600 font-bold bg-white">+ Add Number</button>
+                                    <button onClick={() => setNumbers([...numbers, { text: '', position: '' }])} className="flex-1 py-3 border-2 border-dashed border-gray-200 text-gray-400 rounded-xl hover:border-blue-500 hover:text-blue-600 font-bold bg-white transition-all">+ Add Number</button>
                                 )}
                             </div>
                         </section>
                     )}
                     
                     {selectedProduct && showBackNames && (
-                        <section className="bg-yellow-50 p-4 rounded-lg border border-yellow-300 space-y-3">
+                        <section className="bg-amber-50 p-5 rounded-2xl border border-amber-200 space-y-3">
                             <label className="flex items-center gap-3 cursor-pointer">
                                 <input type="checkbox" className="w-6 h-6 text-blue-800" checked={backNameList} onChange={(e) => { setBackNameList(e.target.checked); if (!e.target.checked) { setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName(''); } }} />
                                 <span className="font-bold text-black text-lg">Team Roster List {showPrice && '(+$5)'}</span>
@@ -1021,7 +1012,7 @@ if (!ignoreInventory) {
             </div>
             
             {(paymentMode === 'retail' || selectedGuest) && (
-                <div className="text-white p-6 sticky bottom-0 flex justify-between items-center" style={{ backgroundColor: headerColor }}>
+                <div className="text-white px-6 py-4 sticky bottom-0 flex justify-between items-center shadow-[0_-4px_24px_rgba(0,0,0,0.25)]" style={{ backgroundColor: headerColor }}>
                   <div>
                     <p className="text-white text-opacity-80 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p>
                     <p className="text-2xl font-bold">{showPrice ? `$${calculateItemTotal()}` : 'Free'}</p>
@@ -1029,7 +1020,7 @@ if (!ignoreInventory) {
                   <button
                     onClick={handleAddToCart}
                     disabled={!selectedProduct || !size || (hasMultipleColors && !selectedColor)}
-                    className="bg-white text-black px-6 py-3 rounded-lg font-bold shadow-lg active:scale-95 transition-transform hover:opacity-90 disabled:opacity-40"
+                    className="bg-white text-black px-8 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all hover:opacity-90 disabled:opacity-40 uppercase tracking-wide text-sm"
                   >
                     Add to Cart
                   </button>
@@ -1040,8 +1031,8 @@ if (!ignoreInventory) {
         
         {(paymentMode === 'retail' || selectedGuest) && (
             <div className="md:col-span-1">
-            <div className="bg-white shadow-xl rounded-xl border border-gray-300 sticky top-4">
-                <div className="text-white p-4 rounded-t-xl" style={{ backgroundColor: headerColor }}>
+            <div className="bg-white shadow-2xl rounded-2xl overflow-hidden sticky top-4">
+                <div className="text-white p-5" style={{ backgroundColor: headerColor }}>
                   <h2 className="font-bold text-lg">Your Cart</h2>
                   <p className="text-white text-opacity-80 text-sm">{cart.length} item{cart.length !== 1 ? 's' : ''}</p>
                 </div>
@@ -1066,15 +1057,15 @@ if (!ignoreInventory) {
                 ))}
                 </div>
                 {cart.length > 0 && (
-                <div className="p-4 bg-gray-100 border-t border-gray-300 rounded-b-xl">
+                <div className="p-5 bg-slate-50 border-t border-gray-100 rounded-b-2xl">
                     <h3 className="font-bold text-black mb-2">Checkout Details</h3>
                     {paymentMode === 'hosted' && selectedGuest ? (
                         <div className="bg-green-100 text-green-900 p-2 rounded mb-4 font-bold text-sm">Guest: {selectedGuest.name}</div>
                     ) : (
                         <>
-                            <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-                            <input className="w-full p-2 border border-gray-400 rounded mb-2 text-sm text-black" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
-                            <input className="w-full p-2 border border-gray-400 rounded mb-1 text-sm text-black" placeholder="Phone Number" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-2 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
+                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-2 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
+                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Phone Number" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
                             <p className="text-[10px] text-gray-500 leading-tight mb-4">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p>
                         </>
                     )}
@@ -1101,17 +1092,17 @@ if (!ignoreInventory) {
                     )}
                     <div className="space-y-3">
                         {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && (
-                            <button onClick={handleTerminalCheckout} disabled={isSubmitting || isTerminalProcessing} className={`w-full py-4 text-xl font-bold rounded-xl shadow-lg transition-all text-white flex items-center justify-center gap-2 ${isTerminalProcessing ? 'bg-purple-600 animate-pulse cursor-wait' : 'bg-purple-700 hover:bg-purple-800'}`}>
+                            <button onClick={handleTerminalCheckout} disabled={isSubmitting || isTerminalProcessing} className={`w-full py-4 text-xl font-black rounded-xl shadow-lg transition-all text-white flex items-center justify-center gap-2 ${isTerminalProcessing ? 'bg-purple-600 animate-pulse cursor-wait' : 'bg-purple-700 hover:bg-purple-800'}`}>
                                 {isTerminalProcessing ? <span>📟 {terminalStatus}</span> : <span>📟 Pay with Card (Terminal)</span>}
                             </button>
                         )}
                         {((paymentMode === 'retail' && retailPaymentMethod !== 'terminal') || paymentMode === 'hosted') && (
-                            <button onClick={handleCheckout} disabled={isSubmitting || isTerminalProcessing || (paymentMode === 'hosted' && !selectedGuest)} className={`w-full py-3 rounded-lg font-bold shadow transition-colors text-white ${isSubmitting || isTerminalProcessing ? 'bg-gray-400' : 'hover:opacity-90'}`} style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}>
+                            <button onClick={handleCheckout} disabled={isSubmitting || isTerminalProcessing || (paymentMode === 'hosted' && !selectedGuest)} className={`w-full py-4 rounded-xl font-black shadow-lg transition-all text-white text-lg ${isSubmitting || isTerminalProcessing ? 'bg-gray-400' : 'hover:opacity-90'}`} style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}>
                                 {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link")}
                             </button>
                         )}
                         {paymentMode === 'retail' && (
-                            <button onClick={handleCashCheckout} disabled={isSubmitting || isTerminalProcessing} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 transition-colors flex items-center justify-center gap-2">💵 Pay with Cash</button>
+                            <button onClick={handleCashCheckout} disabled={isSubmitting || isTerminalProcessing} className="w-full py-4 bg-emerald-600 text-white font-black rounded-xl shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 text-lg">💵 Pay with Cash</button>
                         )}
                     </div>
                 </div>
