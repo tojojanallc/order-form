@@ -447,7 +447,7 @@ setSalesLedger(ledgerData || []);
   };
 
   const saveSettings = async () => { 
-      await supabase.from('event_settings').update({ 
+      const { error } = await supabase.from('event_settings').update({ 
           event_name: eventName,
           welcome_message: welcomeMessage, 
           event_logo_url: eventLogo, 
@@ -467,7 +467,11 @@ setSalesLedger(ledgerData || []);
           ignore_inventory: ignoreInventory,
           open_guest_entry: openGuestEntry,
       }).eq('slug', selectedEventSlug); 
-      alert("Saved settings for " + selectedEventSlug); 
+      if (error) {
+          alert("❌ Save failed: " + error.message);
+      } else {
+          alert("✅ Saved settings for " + selectedEventSlug);
+      } 
   };
 
   const closeEvent = async () => { 
