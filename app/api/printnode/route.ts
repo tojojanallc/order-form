@@ -6,180 +6,155 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { order, printerId, apiKey } = body;
+    const { order, mode, printerId, apiKey } = body;
 
-    if (!apiKey || !printerId || !order) {
-      return NextResponse.json({ error: "Missing Config" }, { status: 400 });
+    if (!order) {
+      return NextResponse.json({ error: "Missing order" }, { status: 400 });
     }
 
-    // 1. Create PDF
+    // ── 1. Build PDF ────────────────────────────────────────────────────────────
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    // 2. Add Page (Standard 4x6 label)
-    // 288 pts wide x 432 pts high
-    let page = pdfDoc.addPage([288, 432]);
+    // 4x6 label: 288 x 432 pts
+    const page = pdfDoc.addPage([288, 432]);
     const { width } = page.getSize();
 
-    // --- BOTTOM-ANCHORED LAYOUT ---
-    // Starting from the MIDDLE (y=250) to avoid top cutoff
-    let cursorY = 250; 
-    const margin = 15; 
-    
-    // Helper to move the cursor down
+    let cursorY = 400;
+    const margin = 15;
     const moveDown = (amount: number) => { cursorY -= amount; };
 
-    // --- DEBUG MARKER (Optional - helps you see where print starts) ---
-    page.drawLine({ 
-        start: { x: margin, y: cursorY }, 
-        end: { x: width - margin, y: cursorY }, 
-        thickness: 1, 
-        color: rgb(0,0,0) 
+    // Header line
+    page.drawLine({
+      start: { x: margin, y: cursorY },
+      end: { x: width - margin, y: cursorY },
+      thickness: 1,
+      color: rgb(0, 0, 0),
     });
-    moveDown(15);
+    moveDown(18);
 
-    // --- HEADER ---
+    // Customer name
     page.drawText(order.customer_name || 'Guest', {
-        x: margin,
-        y: cursorY,
-        size: 16,
-        font: fontBold,
+      x: margin, y: cursorY, size: 18, font: fontBold,
     });
-    moveDown(15);
+    moveDown(16);
 
+    // Order ID + date
     page.drawText(`Order #${String(order.id).slice(0, 8)}`, {
-        x: margin,
-        y: cursorY,
-        size: 12,
-        font: font,
+      x: margin, y: cursorY, size: 11, font,
     });
-    moveDown(10);
-    
-    // Date
+    moveDown(11);
     page.drawText(new Date().toLocaleDateString(), {
-        x: margin,
-        y: cursorY,
-        size: 10,
-        font: font,
+      x: margin, y: cursorY, size: 10, font,
     });
-    moveDown(15);
+    moveDown(18);
 
-    // --- ITEMS ---
+    // ── 2. Items ────────────────────────────────────────────────────────────────
     const items = Array.isArray(order.cart_data) ? order.cart_data : [];
 
     items.forEach((item: any) => {
-        if (!item) return;
+      if (!item || cursorY < 40) return;
 
-        // If we get too close to the footer, stop (simple single-page safety)
-        if (cursorY < 40) return;
+      // Product name
+      let pName = item.productName || 'Item';
+      if (pName.length > 28) pName = pName.substring(0, 26) + '…';
+      page.drawText(pName, { x: margin, y: cursorY, size: 12, font: fontBold });
+      moveDown(13);
 
-        // A. Product Name (Bold)
-        let pName = item.productName || 'Item';
-        if (pName.length > 25) pName = pName.substring(0, 23) + '...';
-        
-        page.drawText(pName, { x: margin, y: cursorY, size: 12, font: fontBold });
+      // Size + color
+      const sizeColor = [item.size, item.color].filter(Boolean).join(' / ');
+      if (sizeColor) {
+        page.drawText(`Size: ${sizeColor}`, { x: margin, y: cursorY, size: 11, font });
         moveDown(12);
+      }
 
-        // B. Size
-        page.drawText(`Size: ${item.size || 'N/A'}`, { x: margin, y: cursorY, size: 12, font: font });
-        moveDown(12);
+      // Customizations
+      if (item.customizations) {
+        const c = item.customizations;
 
-        // C. Customizations (With Locations)
-        if (item.customizations) {
-            const c = item.customizations;
-
-            // 1. Main Design
-            if (c.mainDesign) {
-                page.drawText(`• Design: ${c.mainDesign}`, { x: margin + 10, y: cursorY, size: 10, font });
-                moveDown(10);
-            }
-
-            // 2. Names
-            if (Array.isArray(c.names)) {
-                c.names.forEach((n: any) => {
-                    if(n.text) {
-                        const loc = n.position ? ` [${n.position}]` : '';
-                        page.drawText(`• Name: "${n.text}"${loc}`, { x: margin + 10, y: cursorY, size: 10, font });
-                        moveDown(10);
-                    }
-                });
-            }
-
-            if (Array.isArray(c.numbers)) {
-                c.numbers.forEach((n: any) => {
-                    if(n.text) {
-                        const loc = n.position ? ` [${n.position}]` : '';
-                        page.drawText(`• Number: "${n.text}"${loc}`, { x: margin + 10, y: cursorY, size: 10, font });
-                        moveDown(10);
-                    }
-                });
-            }
-
-            // 3. Logos/Accents
-            if (Array.isArray(c.logos)) {
-                c.logos.forEach((l: any) => {
-                    if(l.type) {
-                        const loc = l.position ? ` [${l.position}]` : '';
-                        page.drawText(`• Add-on: ${l.type}${loc}`, { x: margin + 10, y: cursorY, size: 10, font });
-                        moveDown(10);
-                    }
-                });
-            }
-
-            // 4. Other Options
-            if (c.backList) {
-                page.drawText(`• Option: Back Name List`, { x: margin + 10, y: cursorY, size: 10, font });
-                moveDown(10);
-            }
-            if (c.metallic) {
-                page.drawText(`• Option: Metallic Upgrade`, { x: margin + 10, y: cursorY, size: 10, font });
-                moveDown(10);
-            }
+        if (c.mainDesign) {
+          page.drawText(`• Design: ${c.mainDesign}`, { x: margin + 8, y: cursorY, size: 10, font });
+          moveDown(11);
         }
-        
-        moveDown(5);
-        // Dash Separator
-        page.drawText("- - - - - - - - - - - - -", { x: margin, y: cursorY, size: 8, font });
-        moveDown(15);
+        (c.names || []).forEach((n: any) => {
+          if (n.text) {
+            const loc = n.position ? ` [${n.position}]` : '';
+            page.drawText(`• Name: "${n.text}"${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
+            moveDown(11);
+          }
+        });
+        (c.numbers || []).forEach((n: any) => {
+          if (n.text) {
+            const loc = n.position ? ` [${n.position}]` : '';
+            page.drawText(`• #${n.text}${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
+            moveDown(11);
+          }
+        });
+        (c.logos || []).forEach((l: any) => {
+          if (l.type) {
+            const loc = l.position ? ` [${l.position}]` : '';
+            page.drawText(`• Logo: ${l.type}${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
+            moveDown(11);
+          }
+        });
+        if (c.backList) {
+          page.drawText(`• Back Name List`, { x: margin + 8, y: cursorY, size: 10, font });
+          moveDown(11);
+        }
+        if (c.metallic) {
+          page.drawText(`• Metallic Upgrade`, { x: margin + 8, y: cursorY, size: 10, font });
+          moveDown(11);
+        }
+      }
+
+      moveDown(4);
+      page.drawText('- - - - - - - - - - - - - - -', { x: margin, y: cursorY, size: 8, font });
+      moveDown(14);
     });
 
-    // --- FOOTER ---
-    page.drawText("Lev Custom Merch", {
-        x: margin,
-        y: 15, // Absolute bottom
-        size: 8,
-        font: font,
-        color: rgb(0.5, 0.5, 0.5),
+    // Footer
+    page.drawText('Lev Custom Merch', {
+      x: margin, y: 12, size: 8, font, color: rgb(0.5, 0.5, 0.5),
     });
 
-    // 3. Output & Send to PrintNode
-    const pdfBytes = await pdfDoc.saveAsBase64();
+    const pdfBase64 = await pdfDoc.saveAsBase64();
 
-    const response = await fetch('https://api.printnode.com/printjobs', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + Buffer.from(apiKey + ':').toString('base64'),
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        printerId: parseInt(printerId),
-        title: `Order #${order.id}`,
-        contentType: 'pdf_base64', 
-        content: pdfBytes, 
-        source: 'Lev Custom Admin'
-      })
-    });
+    // ── 3. Cloud print via PrintNode ────────────────────────────────────────────
+    if (mode === 'cloud') {
+      if (!apiKey || !printerId) {
+        return NextResponse.json({ error: 'Missing PrintNode API key or printer ID' }, { status: 400 });
+      }
 
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText);
+      const pnRes = await fetch('https://api.printnode.com/printjobs', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(apiKey + ':').toString('base64'),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          printerId: parseInt(printerId),
+          title: `Order #${order.id}`,
+          contentType: 'pdf_base64',
+          content: pdfBase64,
+          source: 'Lev Custom Admin',
+        }),
+      });
+
+      if (!pnRes.ok) {
+        const errText = await pnRes.text();
+        console.error('PrintNode error:', errText);
+        return NextResponse.json({ error: errText }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ success: true });
+    // ── 4. Download mode — return PDF to browser ────────────────────────────────
+    return NextResponse.json({ success: true, pdfBase64 });
 
   } catch (error: any) {
-    console.error("Print Error:", error);
+    console.error('Print Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
