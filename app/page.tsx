@@ -720,7 +720,7 @@ if (!ignoreInventory) {
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-900">
       <div className="w-[85%] mx-auto py-6 grid md:grid-cols-3 gap-8">
-        <div className="md:col-span-2 space-y-6">
+        <div className={`space-y-6 ${(paymentMode === 'retail' || selectedGuest) ? 'md:col-span-2' : 'md:col-span-3'}`}>
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
             <div className="text-white p-6 text-center relative" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-24 mx-auto mb-3" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
