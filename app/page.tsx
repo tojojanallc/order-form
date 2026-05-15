@@ -718,8 +718,8 @@ if (!ignoreInventory) {
   const showPrice = paymentMode === 'retail';
 
   return (
-    <div className="min-h-screen bg-gray-100 py-6 px-4 font-sans text-gray-900 flex justify-center items-start" style={{ zoom: '1.25' }}>
-      <div className="w-full max-w-6xl mx-auto grid md:grid-cols-3 gap-8">
+    <div className="min-h-screen bg-gray-100 font-sans text-gray-900">
+      <div className="max-w-5xl mx-auto py-6 px-4 grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2 space-y-6">
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
             <div className="text-white p-6 text-center relative" style={{ backgroundColor: headerColor }}>
