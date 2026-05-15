@@ -82,7 +82,8 @@ export default function OrderForm() {
   const [accentOptions, setAccentOptions] = useState([]); 
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
-  const [headerColor, setHeaderColor] = useState('#1e3a8a'); 
+  const [headerColor, setHeaderColor] = useState('#1e3a8a');
+  const [welcomeMessage, setWelcomeMessage] = useState(''); 
   const [paymentMode, setPaymentMode] = useState('retail'); 
   const [retailPaymentMethod, setRetailPaymentMethod] = useState('stripe'); 
   const [showBackNames, setShowBackNames] = useState(true);
@@ -182,6 +183,7 @@ export default function OrderForm() {
         setTaxRate(settings.tax_rate || 0);
         setIgnoreInventory(!!settings.ignore_inventory);
         setOpenGuestEntry(!!settings.open_guest_entry);
+        setWelcomeMessage(settings.welcome_message || '');
       }
 
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
@@ -732,7 +734,10 @@ if (!ignoreInventory) {
               {paymentMode === 'hosted' && !selectedGuest && (
                   <div className="text-center py-10">
                       <h2 className="text-2xl font-bold mb-4">Welcome to the Party! 🎉</h2>
-                      <p className="mb-6 text-gray-600">
+                      {welcomeMessage && (
+                        <p className="mb-3 text-gray-700 text-lg italic max-w-md mx-auto">{welcomeMessage}</p>
+                      )}
+                      <p className="mb-6 text-gray-500">
                         {openGuestEntry ? "Enter your name to get started." : "Please verify your name to get started."}
                       </p>
                       <div className="flex gap-2 max-w-md mx-auto">
