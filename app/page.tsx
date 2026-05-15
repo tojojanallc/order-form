@@ -705,25 +705,77 @@ if (!ignoreInventory) {
 
   if (orderComplete) {
       return (
-          <div className="min-h-screen bg-green-50 flex flex-col items-center justify-center p-8 text-center">
-              <div className="bg-white p-8 rounded-xl shadow-lg border border-green-200 max-w-md w-full">
-                  <div className="text-6xl mb-4">🎉</div>
-                  <h1 className="text-3xl font-black text-green-800 mb-2">Order Received!</h1>
-                  <p className="text-xl font-mono text-blue-600 mb-6 bg-blue-50 p-2 rounded border border-blue-200">Order #{lastOrderId || '---'}</p>
-                  <p className="text-gray-600 mb-6">Your gear is being prepared.</p>
-                  <button onClick={resetApp} className="text-white font-black py-5 px-8 rounded-2xl shadow-xl hover:opacity-90 w-full text-2xl tracking-wide" style={{ backgroundColor: headerColor }}>Next Order ➡️</button>
+          <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center relative overflow-hidden" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 60%)` }}>
+              <style>{`
+                @keyframes confettiFall {
+                  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+                  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+                }
+                .confetti-piece {
+                  position: fixed;
+                  width: 12px;
+                  height: 12px;
+                  animation: confettiFall linear infinite;
+                  border-radius: 2px;
+                }
+                @keyframes popIn {
+                  0% { transform: scale(0.5); opacity: 0; }
+                  70% { transform: scale(1.1); }
+                  100% { transform: scale(1); opacity: 1; }
+                }
+                .pop-in { animation: popIn 0.6s cubic-bezier(0.34,1.56,0.64,1) both; }
+              `}</style>
+              {[...Array(24)].map((_, i) => (
+                <div key={i} className="confetti-piece" style={{
+                  left: `${Math.random() * 100}%`,
+                  animationDuration: `${2 + Math.random() * 3}s`,
+                  animationDelay: `${Math.random() * 2}s`,
+                  backgroundColor: ['#facc15','#f87171','#34d399','#60a5fa','#c084fc','#fb923c'][i % 6],
+                  transform: `rotate(${Math.random()*360}deg)`,
+                  borderRadius: i % 3 === 0 ? '50%' : '2px',
+                }} />
+              ))}
+              <div className="pop-in bg-white/10 backdrop-blur-xl border border-white/20 p-10 rounded-3xl shadow-2xl max-w-md w-full relative z-10">
+                  <div className="text-7xl mb-4">🎉</div>
+                  <h1 className="text-4xl font-black text-white mb-3 tracking-tight">You're all set!</h1>
+                  <p className="text-white/60 text-sm uppercase tracking-widest font-semibold mb-4">Order confirmed</p>
+                  <p className="text-2xl font-mono text-white font-black mb-2 bg-white/10 py-2 px-4 rounded-xl inline-block">#{lastOrderId || '---'}</p>
+                  <p className="text-white/70 mt-4 mb-8 text-lg">Your custom gear is being prepared. We'll text you when it's ready! 🙌</p>
+                  <button onClick={resetApp} className="text-gray-900 font-black py-4 px-8 rounded-2xl shadow-xl hover:opacity-90 w-full text-xl tracking-wide bg-white">Next Guest ➡️</button>
               </div>
           </div>
       );
   }
 
   const showPrice = paymentMode === 'retail';
+  const step1Done = !!(size && selectedProduct && (!hasMultipleColors || selectedColor));
+  const step2Done = !!(selectedMainDesign);
+  const step3Done = true; // optional
+  const step4Done = true; // optional
 
   return (
-    <div className="min-h-screen font-sans text-gray-900" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)` }}>
+    <>
+      <style>{`
+        @keyframes gradientShift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        @keyframes fadeSlideUp {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .section-card { animation: fadeSlideUp 0.35s ease both; }
+        .glass-card {
+          background: rgba(255,255,255,0.92) !important;
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+        }
+      `}</style>
+      <div className="min-h-screen font-sans text-gray-900" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)`, animation: 'gradientShift 8s ease infinite', backgroundSize: '200% 200%' }}>
       <div className="w-[85%] mx-auto py-6 grid md:grid-cols-3 gap-8">
         <div className={`space-y-6 ${(paymentMode === 'retail' || selectedGuest) ? 'md:col-span-2' : 'md:col-span-3'}`}>
-          <div className="bg-white shadow-2xl rounded-2xl overflow-hidden">
+          <div className="glass-card shadow-2xl rounded-2xl overflow-hidden">
             <div className="text-white py-9 px-6 text-center relative" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-36 mx-auto mb-3" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
@@ -768,8 +820,8 @@ if (!ignoreInventory) {
 
               {(paymentMode === 'retail' || selectedGuest) && (
                   <>
-                    <section className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-                        <h2 className="sr-only">1. Select Garment</h2><div className="flex items-center gap-3 mb-5 pb-3 border-b border-gray-100"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>1</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Select Garment</h2></div>
+                    <section className="section-card bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-white/60 shadow-sm">
+                        <h2 className="sr-only">1. Select Garment</h2><div className="flex items-center gap-3 mb-5 pb-3 border-b border-gray-100">{step1Done ? <span className="w-8 h-8 rounded-full flex items-center justify-center bg-emerald-500 text-white font-black text-sm shrink-0 transition-all">✓</span> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>1</span>}<h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Select Garment</h2></div>
                         {selectedGuest && (
                             <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl mb-6 text-center shadow-sm">
                                 <h2 className="text-2xl font-black text-emerald-900 mb-1">Hi {selectedGuest.name}! 👋</h2>
@@ -887,7 +939,7 @@ if (!ignoreInventory) {
 
                     {selectedProduct && availableMainOptions.length > 0 && (
                         <section>
-                            <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>2</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Choose Design</h2></div><span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">Included</span></div>
+                            <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3">{step2Done ? <span className="w-8 h-8 rounded-full flex items-center justify-center bg-emerald-500 text-white font-black text-sm shrink-0 transition-all">✓</span> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>2</span>}<h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Choose Design</h2></div><span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">Included</span></div>
                             <div className="grid grid-cols-3 gap-4 mb-4">
                                 <div className="col-span-2 grid grid-cols-2 gap-3">
                                     {availableMainOptions.map((opt) => (
@@ -1031,7 +1083,7 @@ if (!ignoreInventory) {
         
         {(paymentMode === 'retail' || selectedGuest) && (
             <div className="md:col-span-1">
-            <div className="bg-white shadow-2xl rounded-2xl overflow-hidden sticky top-4">
+            <div className="glass-card shadow-2xl rounded-2xl overflow-hidden sticky top-4">
                 <div className="text-white p-5" style={{ backgroundColor: headerColor }}>
                   <h2 className="font-bold text-lg">Your Cart</h2>
                   <p className="text-white text-opacity-80 text-sm">{cart.length} item{cart.length !== 1 ? 's' : ''}</p>
@@ -1112,6 +1164,7 @@ if (!ignoreInventory) {
         )}
       </div>
     </div>
+    </>
   );
 }
 
