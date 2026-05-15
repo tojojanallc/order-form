@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { supabase } from '@/supabase';
 
 export default function CreateEventPage() {
-  const [form, setForm] = useState({ name: '', slug: '', mode: 'retail' as 'retail' | 'hosted' });
+  const [form, setForm] = useState({ name: '', slug: '', mode: 'retail' as 'retail' | 'hosted', openGuestEntry: false });
   const [loading, setLoading] = useState(false);
 
   const buildSafeSlug = (value: string) =>
@@ -30,6 +30,7 @@ export default function CreateEventPage() {
         status: 'active',
         payment_mode: form.mode,
         header_color: '#1e3a8a',
+        open_guest_entry: form.mode === 'hosted' ? form.openGuestEntry : false,
       },
     ]);
 
@@ -132,6 +133,21 @@ export default function CreateEventPage() {
                   Hosted (No Checkout)
                 </button>
               </div>
+
+              {form.mode === 'hosted' && (
+                <div className="mt-4 bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-black text-slate-800">Open Guest Entry</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Guests type their own name — no pre-loaded list needed.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={form.openGuestEntry}
+                    onChange={(e) => setForm((f) => ({ ...f, openGuestEntry: e.target.checked }))}
+                    className="w-5 h-5 cursor-pointer accent-indigo-600"
+                  />
+                </div>
+              )}
             </div>
 
             {/* ACTIONS */}
