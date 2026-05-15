@@ -1139,7 +1139,7 @@ const PlacementVisualizer = ({ garmentType, logoSize }) => {
           <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
         </rect>
       ) : (
-        <circle cx="82" cy="85" r="10" fill={accentColor} fillOpacity="0.85">
+        <circle cx="118" cy="85" r="10" fill={accentColor} fillOpacity="0.85">
           <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
         </circle>
       )}
