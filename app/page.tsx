@@ -726,7 +726,7 @@ if (!ignoreInventory) {
           <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-gray-300">
             <div className="text-white p-6 text-center relative" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-24 mx-auto mb-3" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
-              <p className="text-white text-opacity-80 text-sm mt-1">{eventLogo ? eventName : 'Order Form'}</p>
+              {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
               {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">ID: {assignedTerminalId.slice(-4)}</div>}
             </div>
             
