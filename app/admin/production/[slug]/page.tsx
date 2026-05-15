@@ -127,21 +127,41 @@ export default function ProductionScreen() {
                         </span>
                       </div>
                       
-                      {/* ONLY SHOW DESIGNS (Ignore pricing/tax info here) */}
-                      <div className="space-y-1 mt-2">
-                        {item.customizations?.mainDesign && (
+                      {/* CUSTOMIZATIONS */}
+                      <div className="space-y-1 mt-3">
+                        {item.color && (
                           <div className="flex items-center gap-2 text-slate-300 font-bold">
+                            <span className="text-slate-500">▶</span> Color: <span className="text-white">{item.color}</span>
+                          </div>
+                        )}
+                        {item.customizations?.mainDesign && (
+                          <div className="flex items-center gap-2 text-blue-300 font-bold">
                             <span className="text-slate-500">▶</span> Design: <span className="text-white">{item.customizations.mainDesign}</span>
                           </div>
                         )}
+                        {(item.customizations?.logos || []).map((l: any, li: number) => l.type && (
+                          <div key={li} className="flex items-center gap-2 text-blue-300 font-bold">
+                            <span className="text-slate-500">▶</span> Logo: <span className="text-white">{l.type}{l.position ? ` — ${l.position}` : ''}</span>
+                          </div>
+                        ))}
+                        {(item.customizations?.names || []).map((n: any, ni: number) => n.text && (
+                          <div key={ni} className="flex items-center gap-2 text-emerald-300 font-bold">
+                            <span className="text-slate-500">▶</span> Name: <span className="text-white">"{n.text}"{n.position ? ` — ${n.position}` : ''}</span>
+                          </div>
+                        ))}
+                        {(item.customizations?.numbers || []).map((n: any, ni: number) => n.text && (
+                          <div key={ni} className="flex items-center gap-2 text-emerald-300 font-bold">
+                            <span className="text-slate-500">▶</span> Number: <span className="text-white">#{n.text}{n.position ? ` — ${n.position}` : ''}</span>
+                          </div>
+                        ))}
                         {item.customizations?.metallic && (
                           <div className="flex items-center gap-2 text-yellow-400 font-bold">
-                            <span className="text-slate-500">▶</span> FOIL: {item.customizations.metallicName || 'Yes'}
+                            <span className="text-slate-500">▶</span> METALLIC UPGRADE
                           </div>
                         )}
-                        {item.customizations?.nameOnSleeve && (
-                          <div className="flex items-center gap-2 text-emerald-400 font-bold">
-                            <span className="text-slate-500">▶</span> SLEEVE: {item.customizations.nameOnSleeveText}
+                        {item.customizations?.backList && (
+                          <div className="flex items-center gap-2 text-orange-300 font-bold">
+                            <span className="text-slate-500">▶</span> Back Name List
                           </div>
                         )}
                       </div>

@@ -550,6 +550,16 @@ setSalesLedger(ledgerData || []);
       } catch (e) { console.error(e); }
   };
 
+  const printAllUnprinted = async () => {
+      const unprinted = orders.filter(o => !o.printed);
+      if (unprinted.length === 0) return alert('No unprinted orders!');
+      if (!confirm(`Print ${unprinted.length} unprinted order(s)?`)) return;
+      for (const order of unprinted) {
+          await printLabel(order);
+          await new Promise(r => setTimeout(r, 400)); // small delay between jobs
+      }
+  };
+
   const saveCustomerInfo = async () => {
       if (!editingCustomer) return;
       try {
@@ -846,6 +856,7 @@ setSalesLedger(ledgerData || []);
             </div>
             <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
                 <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4 accent-blue-900 cursor-pointer" /><label htmlFor="autoPrint" className="text-xs font-black text-gray-800 cursor-pointer uppercase">Auto-Print Paid</label></div>
+                <button onClick={printAllUnprinted} className="text-xs font-black uppercase bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 mb-2 w-full">🖨️ Print All Unprinted</button>
                 <div className="flex items-center gap-2 border-t pt-2"><input type="checkbox" id="hideUnpaid" checked={hideUnpaid} onChange={(e) => setHideUnpaid(e.target.checked)} className="w-4 h-4 accent-red-600 cursor-pointer" /><label htmlFor="hideUnpaid" className="text-xs font-bold text-red-600 cursor-pointer uppercase">Hide Unpaid</label></div>
             </div> 
           </div> 
