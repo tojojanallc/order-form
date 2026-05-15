@@ -124,8 +124,9 @@ export default function OrderForm() {
             slug = pathParts[pathParts.length - 1];
         }
     }
-    const finalSlug = slug || 'default';
-    setActualEventSlug(finalSlug);
+    // If no slug was found in the URL, leave it blank — fetchData will find the active event
+    const urlSlug = slug || '';
+    setActualEventSlug(urlSlug); // may be updated below once we resolve the active event
 
     const savedId = localStorage.getItem('square_terminal_id');
     if (savedId) setAssignedTerminalId(savedId);
@@ -136,7 +137,21 @@ export default function OrderForm() {
     }
 
     const fetchData = async () => {
-      if (!supabase || !finalSlug) return;
+      if (!supabase) return;
+
+      // Resolve slug: use URL slug if provided, otherwise find the active event
+      let finalSlug = urlSlug;
+      if (!finalSlug || finalSlug === 'default') {
+        const { data: activeEvent } = await supabase
+          .from('event_settings')
+          .select('slug')
+          .eq('status', 'active')
+          .order('id', { ascending: false })
+          .limit(1)
+          .single();
+        finalSlug = activeEvent?.slug || 'default';
+      }
+      setActualEventSlug(finalSlug);
 
       const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', finalSlug).single();
       if (settings) {
