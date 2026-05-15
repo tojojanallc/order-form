@@ -54,6 +54,7 @@ export default function OrderForm() {
   
   const [actualEventSlug, setActualEventSlug] = useState('');
   const [cart, setCart] = useState([]); 
+  const [cartPulse, setCartPulse] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -484,6 +485,23 @@ export default function OrderForm() {
     };
     
     setCart([...cart, newItem]);
+    // Pulse the add-to-cart bar
+    setCartPulse(true); setTimeout(() => setCartPulse(false), 500);
+    // Play a subtle success chime
+    try {
+      const ctx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
+      const play = (freq: number, t: number, dur: number) => {
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.setValueAtTime(freq, t);
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        o.start(t); o.stop(t + dur);
+      };
+      play(523, ctx.currentTime, 0.12);
+      play(659, ctx.currentTime + 0.1, 0.15);
+      play(784, ctx.currentTime + 0.2, 0.2);
+    } catch(e) {}
     setLogos([]); setNames([]); setNumbers([]);
     setBackNameList(false); setMetallicHighlight(false);
     setBackListConfirmed(false); setMetallicName('');
@@ -700,7 +718,25 @@ if (!ignoreInventory) {
       );
   }
 
-  if (products.length === 0) return <div className="p-10 text-center font-bold">Loading Menu...</div>;
+  if (products.length === 0) return (
+    <div className="min-h-screen font-sans" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)` }}>
+      <div className="w-[85%] mx-auto py-8">
+        <div className="glass-card shadow-2xl rounded-2xl overflow-hidden">
+          <div className="h-44 shimmer-line" style={{ opacity: 0.6 }} />
+          <div className="p-6 space-y-5">
+            <div className="h-5 shimmer-line rounded-full w-2/3" />
+            <div className="h-4 shimmer-line rounded-full w-1/2" />
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              {[...Array(3)].map((_,i) => <div key={i} className="h-28 shimmer-line rounded-xl" />)}
+            </div>
+            <div className="flex gap-2 mt-2">
+              {['XS','S','M','L','XL','2XL'].map(s => <div key={s} className="h-10 w-14 shimmer-line rounded-xl" />)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
 
   if (orderComplete) {
@@ -765,7 +801,32 @@ if (!ignoreInventory) {
           from { opacity: 0; transform: translateY(16px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes slideInRight {
+          from { opacity: 0; transform: translateX(32px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slideInUp {
+          from { opacity: 0; transform: translateY(40px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes cartPulseAnim {
+          0%,100% { transform: scale(1); }
+          40% { transform: scale(1.03); }
+          70% { transform: scale(0.98); }
+        }
+        @keyframes shimmer {
+          0% { background-position: -700px 0; }
+          100% { background-position: 700px 0; }
+        }
         .section-card { animation: fadeSlideUp 0.35s ease both; }
+        .slide-in-right { animation: slideInRight 0.4s cubic-bezier(0.34,1.2,0.64,1) both; }
+        .slide-in-up { animation: slideInUp 0.45s cubic-bezier(0.34,1.2,0.64,1) both; }
+        .cart-pulse { animation: cartPulseAnim 0.5s ease; }
+        .shimmer-line {
+          background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+          background-size: 700px 100%;
+          animation: shimmer 1.4s infinite linear;
+        }
         .glass-card {
           background: rgba(255,255,255,0.92) !important;
           backdrop-filter: blur(20px);
@@ -819,7 +880,7 @@ if (!ignoreInventory) {
               )}
 
               {(paymentMode === 'retail' || selectedGuest) && (
-                  <>
+                  <div className="slide-in-up">
                     <section className="section-card bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-white/60 shadow-sm">
                         <h2 className="sr-only">1. Select Garment</h2><div className="flex items-center gap-3 mb-5 pb-3 border-b border-gray-100">{step1Done ? <span className="w-8 h-8 rounded-full flex items-center justify-center bg-emerald-500 text-white font-black text-sm shrink-0 transition-all">✓</span> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>1</span>}<h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Select Garment</h2></div>
                         {selectedGuest && (
@@ -898,37 +959,35 @@ if (!ignoreInventory) {
                                     )}
                                   </div>
 
-                                  {/* COLOR — only shown when 2+ colors exist */}
+                                  {/* COLOR — chips */}
                                   {hasMultipleColors && (
                                     <div>
-                                      <label className="text-xs font-black text-gray-900 uppercase">Color</label>
-                                      <select
-                                        className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium"
-                                        value={selectedColor}
-                                        onChange={(e) => { setSelectedColor(e.target.value); setSize(''); }}
-                                      >
-                                        <option value="" disabled>-- Select Color --</option>
-                                        {visibleColors.map(c => (
-                                          <option key={c} value={c}>{c}</option>
+                                      <label className="text-xs font-black text-gray-900 uppercase tracking-widest mb-2 block">Color</label>
+                                      <div className="flex flex-wrap gap-2">
+                                        {visibleColors.map(col => (
+                                          <button key={col} type="button"
+                                            onClick={() => { setSelectedColor(col); setSize(''); }}
+                                            className={`px-4 py-2 rounded-xl font-bold text-sm border-2 transition-all active:scale-95 ${selectedColor === col ? 'text-white border-transparent shadow-md' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
+                                            style={selectedColor === col ? {backgroundColor: headerColor, borderColor: headerColor} : {}}
+                                          >{col}</button>
                                         ))}
-                                      </select>
+                                      </div>
                                     </div>
                                   )}
 
-                                  {/* SIZE */}
+                                  {/* SIZE — chips */}
                                   {(!hasMultipleColors || selectedColor) && (
                                     <div>
-                                      <label className="text-xs font-black text-gray-900 uppercase">Size</label>
-                                      <select
-                                        className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium"
-                                        value={size}
-                                        onChange={(e) => setSize(e.target.value)}
-                                      >
-                                        <option value="" disabled>-- Select Size --</option>
+                                      <label className="text-xs font-black text-gray-900 uppercase tracking-widest mb-2 block">Size</label>
+                                      <div className="flex flex-wrap gap-2">
                                         {visibleSizes.map(s => (
-  <option key={s.value} value={s.value}>{s.label}</option>
-))}
-                                      </select>
+                                          <button key={s.value} type="button"
+                                            onClick={() => setSize(s.value)}
+                                            className={`px-4 py-2 rounded-xl font-bold text-sm border-2 transition-all active:scale-95 ${size === s.value ? 'text-white border-transparent shadow-md' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
+                                            style={size === s.value ? {backgroundColor: headerColor, borderColor: headerColor} : {}}
+                                          >{s.label}</button>
+                                        ))}
+                                      </div>
                                     </div>
                                   )}
 
@@ -1059,12 +1118,12 @@ if (!ignoreInventory) {
                             )}
                         </section>
                     )}
-                  </>
+                  </div>
               )}
             </div>
             
             {(paymentMode === 'retail' || selectedGuest) && (
-                <div className="text-white px-6 py-4 sticky bottom-0 flex justify-between items-center shadow-[0_-4px_24px_rgba(0,0,0,0.25)]" style={{ backgroundColor: headerColor }}>
+                <div className={`text-white px-6 py-4 sticky bottom-0 flex justify-between items-center shadow-[0_-4px_24px_rgba(0,0,0,0.25)] transition-all ${cartPulse ? 'cart-pulse' : ''}`} style={{ backgroundColor: headerColor }}>
                   <div>
                     <p className="text-white text-opacity-80 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p>
                     <p className="text-2xl font-bold">{showPrice ? `$${calculateItemTotal()}` : 'Free'}</p>
@@ -1083,7 +1142,7 @@ if (!ignoreInventory) {
         
         {(paymentMode === 'retail' || selectedGuest) && (
             <div className="md:col-span-1">
-            <div className="glass-card shadow-2xl rounded-2xl overflow-hidden sticky top-4">
+            <div className="glass-card shadow-2xl rounded-2xl overflow-hidden sticky top-4 slide-in-right">
                 <div className="text-white p-5" style={{ backgroundColor: headerColor }}>
                   <h2 className="font-bold text-lg">Your Cart</h2>
                   <p className="text-white text-opacity-80 text-sm">{cart.length} item{cart.length !== 1 ? 's' : ''}</p>
