@@ -63,6 +63,8 @@ export default function OrderForm() {
   const [selectedGuest, setSelectedGuest] = useState(null); 
   const [guestSearch, setGuestSearch] = useState('');
   const [guestError, setGuestError] = useState(''); 
+  const [openGuestEntry, setOpenGuestEntry] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [products, setProducts] = useState([]); 
   const [inventory, setInventory] = useState({});
   const [activeItems, setActiveItems] = useState({});
@@ -150,6 +152,7 @@ export default function OrderForm() {
         setTaxEnabled(settings.tax_enabled || false);
         setTaxRate(settings.tax_rate || 0);
         setIgnoreInventory(!!settings.ignore_inventory);
+        setOpenGuestEntry(!!settings.open_guest_entry);
       }
 
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
@@ -193,9 +196,39 @@ export default function OrderForm() {
       setShowSetup(false);
   };
 
-  const verifyGuest = () => {
+  const verifyGuest = async () => {
       if (!guestSearch.trim()) return;
       setGuestError('');
+
+      if (openGuestEntry) {
+          // Open-entry mode: no pre-loaded list — check/create via API
+          setGuestLoading(true);
+          try {
+              const res = await fetch('/api/check-or-create-guest', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name: guestSearch.trim(), event_slug: actualEventSlug }),
+              });
+              const data = await res.json();
+              if (data.status === 'already_ordered') {
+                  setGuestError("🎁 Looks like you already got your swag! If you think this is a mistake, see a staff member.");
+                  setSelectedGuest(null);
+              } else if (data.status === 'ready') {
+                  setSelectedGuest({ id: data.guestId, name: data.name, has_ordered: false });
+                  setCustomerName(data.name);
+                  setGuestError('');
+              } else {
+                  setGuestError("Something went wrong. Please try again.");
+              }
+          } catch {
+              setGuestError("Network error. Please try again.");
+          } finally {
+              setGuestLoading(false);
+          }
+          return;
+      }
+
+      // Pre-loaded guest list mode (existing behavior)
       const search = guestSearch.trim().toLowerCase();
       const match = guests.find(g => g.name.toLowerCase() === search);
       if (match) {
@@ -670,12 +703,32 @@ if (!ignoreInventory) {
               {paymentMode === 'hosted' && !selectedGuest && (
                   <div className="text-center py-10">
                       <h2 className="text-2xl font-bold mb-4">Welcome to the Party! 🎉</h2>
-                      <p className="mb-6 text-gray-600">Please verify your name to get started.</p>
+                      <p className="mb-6 text-gray-600">
+                        {openGuestEntry ? "Enter your name to get started." : "Please verify your name to get started."}
+                      </p>
                       <div className="flex gap-2 max-w-md mx-auto">
-                            <input className="flex-1 p-3 border-2 border-gray-400 rounded-lg text-lg text-black" placeholder="Enter full name" value={guestSearch} onChange={(e) => { setGuestSearch(e.target.value); setGuestError(''); }} />
-                            <button onClick={verifyGuest} className="text-white font-bold px-6 rounded-lg shadow hover:opacity-90" style={{ backgroundColor: headerColor }}>Start</button>
+                            <input
+                              className="flex-1 p-3 border-2 border-gray-400 rounded-lg text-lg text-black"
+                              placeholder="Enter full name"
+                              value={guestSearch}
+                              disabled={guestLoading}
+                              onChange={(e) => { setGuestSearch(e.target.value); setGuestError(''); }}
+                              onKeyDown={(e) => e.key === 'Enter' && verifyGuest()}
+                            />
+                            <button
+                              onClick={verifyGuest}
+                              disabled={guestLoading || !guestSearch.trim()}
+                              className="text-white font-bold px-6 rounded-lg shadow hover:opacity-90 disabled:opacity-50"
+                              style={{ backgroundColor: headerColor }}
+                            >
+                              {guestLoading ? "Checking..." : "Start"}
+                            </button>
                       </div>
-                      {guestError && <p className="text-red-600 text-sm font-bold mt-4 bg-red-50 p-2 rounded inline-block">{guestError}</p>}
+                      {guestError && (
+                        <p className={`text-sm font-bold mt-4 p-2 rounded inline-block ${guestError.startsWith('🎁') ? 'text-yellow-800 bg-yellow-50 border border-yellow-300' : 'text-red-600 bg-red-50'}`}>
+                          {guestError}
+                        </p>
+                      )}
                   </div>
               )}
 
