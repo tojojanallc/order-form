@@ -905,10 +905,7 @@ if (!ignoreInventory) {
                                   {(() => {
                                     const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign);
                                     const placement = currentLogoObj?.placement || 'large';
-                                    const garmentType =
-                                      (selectedProduct.type === 'bottom') ? 'bottom' :
-                                      ((selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/)) ? 'bottom' :
-                                      'top';
+                                    const garmentType = isBottomSelected ? 'bottom' : isHoodieSelected ? 'hoodie' : 'top';
                                     return <PlacementVisualizer garmentType={garmentType} logoSize={placement} />;
                                   })()}
                                 </div>
