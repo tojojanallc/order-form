@@ -740,7 +740,7 @@ if (!ignoreInventory) {
                   <h1 className="text-4xl font-black text-white mb-3 tracking-tight">You're all set!</h1>
                   <p className="text-white/60 text-sm uppercase tracking-widest font-semibold mb-4">Order confirmed</p>
                   <p className="text-2xl font-mono text-white font-black mb-2 bg-white/10 py-2 px-4 rounded-xl inline-block">#{lastOrderId || '---'}</p>
-                  <p className="text-white/70 mt-4 mb-8 text-lg">Your custom gear is being prepared. We'll text you when it's ready! 🙌</p>
+                  {paymentMode === 'hosted' ? <p className="text-white/70 mt-4 mb-8 text-lg">Your custom gear is being prepared. See you out there! 🙌</p> : <p className="text-white/70 mt-4 mb-8 text-lg">Your custom gear is being prepared. We'll text you when it's ready! 🙌</p>}
                   <button onClick={resetApp} className="text-gray-900 font-black py-4 px-8 rounded-2xl shadow-xl hover:opacity-90 w-full text-xl tracking-wide bg-white">Next Guest ➡️</button>
               </div>
           </div>
