@@ -108,7 +108,7 @@ export default function OrderForm() {
 
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
-    (selectedProduct.name || '').toLowerCase().match(/jogger|pant|short|sweat/)
+    (selectedProduct.name || '').toLowerCase().match(/jogger|sweatpant|short(?!.*hoodie)|pant(?!.*hoodie)/)
   ) : false;
 
   const isHoodieSelected = selectedProduct ? (
