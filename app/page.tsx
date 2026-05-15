@@ -787,20 +787,44 @@ if (!ignoreInventory) {
                                   {/* PRODUCT */}
                                   <div>
                                     <label className="text-xs font-black text-gray-900 uppercase">Item</label>
-                                    <select
-                                      className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium"
-                                      value={selectedProduct.name}
-                                      onChange={(e) => {
-                                        const found = visibleProducts.find(p => mergedName(p.name) === mergedName(e.target.value));
-                                        setSelectedProduct(found);
-                                        setSelectedColor('');
-                                        setSize('');
-                                      }}
-                                    >
-                                      {visibleProducts.map(p => (
-                                        <option key={p.id} value={p.name}>{mergedName(p.name)}{showPrice ? ` - $${p.base_price}` : ''}</option>
-                                      ))}
-                                    </select>
+                                    {visibleProducts.length === 1 ? (
+                                      // Single product — just show the name, no picker needed
+                                      <p className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium">
+                                        {mergedName(visibleProducts[0].name)}{showPrice ? ` — $${visibleProducts[0].base_price}` : ''}
+                                      </p>
+                                    ) : (
+                                      // Multiple products — show image cards
+                                      <div className="grid grid-cols-2 gap-2 mt-1">
+                                        {visibleProducts.map(p => {
+                                          const isSelected = mergedName(p.name) === mergedName(selectedProduct.name);
+                                          return (
+                                            <button
+                                              key={p.id}
+                                              type="button"
+                                              onClick={() => {
+                                                const found = visibleProducts.find(vp => mergedName(vp.name) === mergedName(p.name));
+                                                setSelectedProduct(found);
+                                                setSelectedColor('');
+                                                setSize('');
+                                              }}
+                                              className={`flex flex-col items-center rounded-xl border-2 p-2 text-center transition-all ${
+                                                isSelected
+                                                  ? 'border-black bg-gray-100 shadow-md'
+                                                  : 'border-gray-200 bg-white hover:border-gray-400'
+                                              }`}
+                                            >
+                                              {p.image_url ? (
+                                                <img src={p.image_url} alt={mergedName(p.name)} className="h-24 w-full object-contain mb-1" />
+                                              ) : (
+                                                <div className="h-24 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400 mb-1 rounded">No Image</div>
+                                              )}
+                                              <span className="text-xs font-semibold leading-tight">{mergedName(p.name)}</span>
+                                              {showPrice && <span className="text-xs text-gray-500">${p.base_price}</span>}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
 
                                   {/* COLOR — only shown when 2+ colors exist */}
