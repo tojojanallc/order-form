@@ -720,7 +720,7 @@ if (!ignoreInventory) {
   const showPrice = paymentMode === 'retail';
 
   return (
-    <div className="min-h-screen bg-slate-900 font-sans text-gray-900">
+    <div className="min-h-screen font-sans text-gray-900" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)` }}>
       <div className="w-[85%] mx-auto py-6 grid md:grid-cols-3 gap-8">
         <div className={`space-y-6 ${(paymentMode === 'retail' || selectedGuest) ? 'md:col-span-2' : 'md:col-span-3'}`}>
           <div className="bg-white shadow-2xl rounded-2xl overflow-hidden">
