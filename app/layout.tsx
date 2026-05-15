@@ -1,13 +1,16 @@
-import './globals.css'; // <--- THIS WAS MISSING. It loads Tailwind/CSS.
+import './globals.css';
 
 export const metadata = {
   title: "Lev Custom Merch Kiosk",
   description: "Self-service kiosk for custom gear",
-  manifest: "/manifest.json", 
+  manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Lev Kiosk",
+  },
+  icons: {
+    apple: "/apple-touch-icon.png",
   },
 };
 
@@ -15,7 +18,7 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  userScalable: false, 
+  userScalable: false,
 };
 
 export default function RootLayout({ children }) {
