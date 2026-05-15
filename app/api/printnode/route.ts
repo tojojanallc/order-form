@@ -6,11 +6,15 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { order, mode, printerId, apiKey } = body;
+    const { order, mode } = body;
 
     if (!order) {
       return NextResponse.json({ error: "Missing order" }, { status: 400 });
     }
+
+    // Credentials come from server env vars — never from the client
+    const apiKey = process.env.PRINTNODE_API_KEY;
+    const printerId = process.env.PRINTNODE_PRINTER_ID;
 
     // ── 1. Build PDF ────────────────────────────────────────────────────────────
     const pdfDoc = await PDFDocument.create();
