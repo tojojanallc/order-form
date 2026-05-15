@@ -28,10 +28,8 @@ const ZONES = {
         { id: 'left_chest', label: 'Left Chest', type: 'logo' },
         { id: 'center_chest', label: 'Center Chest', type: 'logo' },
         { id: 'full_front', label: 'Full Front', type: 'logo' },
-        { id: 'kangaroo_pocket', label: 'Kangaroo Pocket', type: 'both' },
         { id: 'left_sleeve', label: 'Left Sleeve', type: 'both' },
         { id: 'right_sleeve', label: 'Right Sleeve', type: 'both' },
-        { id: 'hood', label: 'Hood', type: 'both' },
         { id: 'back_center', label: 'Back Center', type: 'both' },
         { id: 'back_bottom', label: 'Back Bottom', type: 'name' }
     ],
