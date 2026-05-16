@@ -71,11 +71,19 @@ export default function AdminPage() {
   const [availableEvents, setAvailableEvents] = useState([]);
   const [selectedEventSlug, setSelectedEventSlug] = useState(''); 
 
-  const [autoPrintEnabled, setAutoPrintEnabled] = useState(false);
+  const [autoPrintEnabled, setAutoPrintEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('autoPrintEnabled') === 'true';
+    }
+    return false;
+  });
   const [hideUnpaid, setHideUnpaid] = useState(true); 
   const audioRef = useRef(null);
   const lastOrderCount = useRef(0);
   const processedIds = useRef(new Set());
+  // Refs so auto-print closure always sees latest values without stale state
+  const pnEnabledRef = useRef(false);
+  const pnPrinterIdRef = useRef('');
 
   const [salesLedger, setSalesLedger] = useState([]);
   
@@ -112,6 +120,10 @@ export default function AdminPage() {
   const [checkingPrinter, setCheckingPrinter] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Keep refs in sync so auto-print closure always sees latest PrintNode settings
+  useEffect(() => { pnEnabledRef.current = pnEnabled; }, [pnEnabled]);
+  useEffect(() => { pnPrinterIdRef.current = pnPrinterId; }, [pnPrinterId]);
 
   useEffect(() => {
       const sessionAuth = sessionStorage.getItem('admin_auth');
@@ -558,10 +570,10 @@ setSalesLedger(ledgerData || []);
       if (!order) return;
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
       try { await supabase.from('orders').update({ printed: true }).eq('id', order.id); } catch (e) {}
-      const isCloud = pnEnabled && pnPrinterId; // API key is server-side env var
+      const isCloud = pnEnabledRef.current && pnPrinterIdRef.current; // Use refs to avoid stale closure
       const mode = isCloud ? 'cloud' : 'download';
       try {
-          const res = await fetch('/api/printnode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order, mode, printerId: pnPrinterId }) });
+          const res = await fetch('/api/printnode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order, mode, printerId: pnPrinterIdRef.current }) });
           const result = await res.json();
           if (!result.success) { console.error("Print API Error:", result.error); return; }
           if (!isCloud) {
@@ -876,8 +888,8 @@ setSalesLedger(ledgerData || []);
                 <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Est. Net Profit {showFinancials ? '👁️' : '🔒'}</p>
                 <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}</p>
             </div>
-            <div className="bg-white p-4 rounded shadow border-l-4 border-purple-500 flex flex-col justify-between">
-                <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => setAutoPrintEnabled(e.target.checked)} className="w-4 h-4 accent-blue-900 cursor-pointer" /><label htmlFor="autoPrint" className="text-xs font-black text-gray-800 cursor-pointer uppercase">Auto-Print Paid</label></div>
+            <div className={`bg-white p-4 rounded shadow border-l-4 flex flex-col justify-between ${autoPrintEnabled ? "border-green-500" : "border-purple-500"}`}>
+                <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => { setAutoPrintEnabled(e.target.checked); localStorage.setItem("autoPrintEnabled", e.target.checked ? "true" : "false"); }} className="w-4 h-4 accent-blue-900 cursor-pointer" /><label htmlFor="autoPrint" className="text-xs font-black text-gray-800 cursor-pointer uppercase">Auto-Print Paid</label>{autoPrintEnabled && <span className="ml-auto text-xs font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full">● LIVE</span>}</div>
                 <button onClick={printAllUnprinted} className="text-xs font-black uppercase bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 mb-2 w-full">🖨️ Print All Unprinted</button>
                 <div className="flex items-center gap-2 border-t pt-2"><input type="checkbox" id="hideUnpaid" checked={hideUnpaid} onChange={(e) => setHideUnpaid(e.target.checked)} className="w-4 h-4 accent-red-600 cursor-pointer" /><label htmlFor="hideUnpaid" className="text-xs font-bold text-red-600 cursor-pointer uppercase">Hide Unpaid</label></div>
             </div> 
