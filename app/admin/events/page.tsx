@@ -543,7 +543,7 @@ setSalesLedger(ledgerData || []);
       if (!order) return;
       setOrders(prev => prev.map(o => o.id === order.id ? { ...o, printed: true } : o));
       try { await supabase.from('orders').update({ printed: true }).eq('id', order.id); } catch (e) {}
-      const isCloud = pnEnabled && pnApiKey && pnPrinterId;
+      const isCloud = pnEnabled const isCloud = pnEnabled && pnApiKey && pnPrinterId;const isCloud = pnEnabled && pnApiKey && pnPrinterId; pnPrinterId; // API key is server-side env var
       const mode = isCloud ? 'cloud' : 'download';
       try {
           const res = await fetch('/api/printnode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order, mode, printerId: pnPrinterId }) });
