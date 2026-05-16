@@ -624,7 +624,26 @@ export default function OrderForm() {
             setGuestSearch('');
             setIsSubmitting(false); 
         } catch (err) {
-            alert("Error: " + err.message);
+            // Network error — the order may have still gone through.
+            // Check if the guest is now marked as having ordered.
+            try {
+                const check = await fetch('/api/check-or-create-guest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: selectedGuest.name, event_slug: actualEventSlug }),
+                });
+                const checkData = await check.json();
+                if (checkData.status === 'already_ordered') {
+                    // Order went through despite the network error — show success
+                    setOrderComplete(true);
+                    setCart([]);
+                    setSelectedGuest(null);
+                    setGuestSearch('');
+                    setIsSubmitting(false);
+                    return;
+                }
+            } catch (e2) { /* ignore secondary check failure */ }
+            alert("Something went wrong. Please try again or see a staff member.");
             setIsSubmitting(false); 
         }
         return; 
