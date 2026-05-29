@@ -98,6 +98,11 @@ export default function OrderForm() {
   const [size, setSize] = useState('');
   const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
   const [logos, setLogos] = useState([]); 
+  // Order lookup
+  const [showLookup, setShowLookup] = useState(false);
+  const [lookupQuery, setLookupQuery] = useState('');
+  const [lookupResults, setLookupResults] = useState<any[]>([]);
+  const [lookupLoading, setLookupLoading] = useState(false);
   const [names, setNames] = useState([]);
   const [numbers, setNumbers] = useState([]); 
   const [backNameList, setBackNameList] = useState(false);
@@ -444,6 +449,21 @@ export default function OrderForm() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: phone, message: `Hi ${name}! Thanks for your order from Lev Custom Merch at ${eventName}. We will text you again when it's ready for pickup!` })
       }).catch(err => console.error("SMS Failed:", err));
+  };
+
+
+  const lookupOrders = async () => {
+    if (!lookupQuery.trim() || !supabase) return;
+    setLookupLoading(true);
+    const { data } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("event_slug", actualEventSlug)
+      .ilike("customer_name", `%${lookupQuery.trim()}%`)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    setLookupResults(data || []);
+    setLookupLoading(false);
   };
 
   const sendReceiptEmail = async (orderId, name, email, cartData, totalAmount) => {
@@ -861,6 +881,7 @@ if (!ignoreInventory) {
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-36 mx-auto mb-3" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
               {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">ID: {assignedTerminalId.slice(-4)}</div>}
+              <button onClick={() => { setShowLookup(true); setLookupQuery(''); setLookupResults([]); }} className="absolute bottom-2 right-2 text-[10px] bg-black bg-opacity-20 hover:bg-opacity-40 px-2 py-1 rounded text-white font-bold transition-all">🔍 Lookup</button>
             </div>
             
             <div className="p-6 space-y-8">
@@ -1243,10 +1264,69 @@ if (!ignoreInventory) {
         )}
       </div>
     </div>
+
+    {/* Order Lookup Modal */}
+    {showLookup && (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowLookup(false)}>
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="bg-slate-900 px-6 py-5 flex justify-between items-center">
+            <div>
+              <h2 className="text-white font-black text-xl">🔍 Order Lookup</h2>
+              <p className="text-white/50 text-xs mt-0.5">Search orders for this event</p>
+            </div>
+            <button onClick={() => setShowLookup(false)} className="text-white/60 hover:text-white text-2xl font-black">✕</button>
+          </div>
+          <div className="p-6">
+            <div className="flex gap-2 mb-4">
+              <input
+                autoFocus
+                className="flex-1 border-2 border-gray-200 rounded-xl px-4 py-3 font-bold text-lg focus:outline-none focus:border-blue-400"
+                placeholder="Customer name..."
+                value={lookupQuery}
+                onChange={e => setLookupQuery(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && lookupOrders()}
+              />
+              <button onClick={lookupOrders} disabled={lookupLoading}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-black px-6 rounded-xl disabled:opacity-50 transition-all">
+                {lookupLoading ? '...' : 'Search'}
+              </button>
+            </div>
+
+            {lookupResults.length === 0 && lookupQuery && !lookupLoading && (
+              <p className="text-center text-gray-400 font-bold py-6">No orders found for "{lookupQuery}"</p>
+            )}
+
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {lookupResults.map(order => (
+                <div key={order.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="font-black text-lg">{order.customer_name}</p>
+                      <p className="text-xs text-gray-400 font-mono">#{String(order.id).slice(0, 8)} · {new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    <span className="font-black text-blue-700 text-lg">${Number(order.total_price || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {(order.cart_data || []).map((item: any, i: number) => (
+                      <div key={i} className="text-sm flex justify-between">
+                        <span className="text-gray-700 font-bold">{item.productName} <span className="text-gray-400 font-normal">· {item.size}</span></span>
+                        {item.customizations?.mainDesign && <span className="text-gray-400 text-xs">{item.customizations.mainDesign}</span>}
+                      </div>
+                    ))}
+                  </div>
+                  {order.shipping_address && (
+                    <p className="text-xs text-orange-600 font-bold mt-2">🚚 Ship to: {order.shipping_address}, {order.shipping_city}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }
-
 // ── PlacementVisualizer ──
 const PlacementVisualizer = ({ garmentType, logoSize }) => {
   const isBottom = garmentType === 'bottom';
