@@ -59,6 +59,9 @@ export default function AdminPage() {
   const [inventory, setInventory] = useState([]); 
   const [products, setProducts] = useState([]); 
   const [logos, setLogos] = useState([]);
+  const [logoTemplates, setLogoTemplates] = useState<{sport: string, label: string, image_url: string, category: string, placement: string, sort_order: number}[]>([]);
+  const [selectedSport, setSelectedSport] = useState('');
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
   
   // --- TRUCKING STATE ---
   const [truckTargetEvent, setTruckTargetEvent] = useState(''); 
@@ -409,7 +412,14 @@ setSalesLedger(ledgerData || []);
   const fetchLogos = async () => { 
       if (!supabase || !selectedEventSlug) return; 
       const { data } = await supabase.from('logos').select('*').eq('event_slug', selectedEventSlug).order('sort_order'); 
-      if (data) setLogos(data); 
+      if (data) setLogos(data);
+
+  const fetchLogoTemplates = async () => {
+      if (!supabase) return;
+      const { data } = await supabase.from('logo_templates').select('*').order('sport').order('sort_order');
+      if (data) setLogoTemplates(data);
+  };
+  fetchLogoTemplates();
   };
   
   const fetchGuests = async () => { 
@@ -669,6 +679,33 @@ setSalesLedger(ledgerData || []);
       if (!newLogoName) return; 
       await supabase.from('logos').insert([{ label: newLogoName, image_url: newLogoUrl, category: newLogoCategory, placement: newLogoPlacement, sort_order: logos.length + 1, event_slug: selectedEventSlug }]); 
       setNewLogoName(''); setNewLogoUrl(''); fetchLogos(); 
+  };
+
+  const applyLogoTemplate = async () => {
+      if (!selectedSport || !selectedEventSlug) return;
+      setApplyingTemplate(true);
+      const templateLogos = logoTemplates.filter(t => t.sport === selectedSport);
+      const existingLabels = new Set(logos.map(l => l.label));
+      const toInsert = templateLogos
+          .filter(t => !existingLabels.has(t.label))
+          .map((t, i) => ({
+              label: t.label,
+              image_url: t.image_url,
+              category: t.category,
+              placement: t.placement,
+              sort_order: logos.length + i + 1,
+              event_slug: selectedEventSlug,
+          }));
+      if (toInsert.length === 0) {
+          alert(`All ${selectedSport} logos are already added to this event.`);
+          setApplyingTemplate(false);
+          return;
+      }
+      await supabase.from('logos').insert(toInsert);
+      await fetchLogos();
+      setApplyingTemplate(false);
+      setSelectedSport('');
+      alert(`Added ${toInsert.length} ${selectedSport} logo(s) to the event!`);
   };
   const deleteLogo = async (id) => { if (!confirm("Delete?")) return; await supabase.from('logos').delete().eq('id', id); fetchLogos(); };
   
@@ -1121,7 +1158,7 @@ setSalesLedger(ledgerData || []);
             </div>
         )}        
 
-        {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><div className="col-span-2 flex items-center gap-6 bg-gray-50 p-2 rounded border border-gray-200"><span className="font-bold text-gray-700 text-sm">Type:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'main'} onChange={() => setNewLogoCategory('main')} className="w-4 h-4" /><span className="text-sm">Main Design (Free)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'accent'} onChange={() => setNewLogoCategory('accent')} className="w-4 h-4" /><span className="text-sm">Accent (+$5.00)</span></label></div><div className="col-span-2 flex items-center gap-6 bg-blue-50 p-2 rounded border border-blue-100">
+        {activeTab === 'logos' && (<div className="max-w-4xl mx-auto"><div className="bg-indigo-50 p-6 rounded-lg shadow mb-6 border border-indigo-200"><h2 className="font-bold text-xl mb-1 text-indigo-900">Apply Sport Template</h2><p className="text-sm text-indigo-600 mb-4">Bulk-add standard add-ons for a sport. Won't duplicate logos already on this event.</p><div className="flex gap-3 items-center"><select className="border p-2 rounded flex-1 text-sm font-bold" value={selectedSport} onChange={e => setSelectedSport(e.target.value)}><option value="">— Select a Sport —</option>{[...new Set(logoTemplates.map(t => t.sport))].map(sport => (<option key={sport} value={sport}>{sport}</option>))}</select><button onClick={applyLogoTemplate} disabled={!selectedSport || applyingTemplate} className="bg-indigo-700 text-white font-bold px-6 py-2 rounded hover:bg-indigo-600 disabled:opacity-40">{applyingTemplate ? 'Adding...' : 'Apply Template'}</button></div>{selectedSport && (<div className="mt-3 flex flex-wrap gap-2">{logoTemplates.filter(t => t.sport === selectedSport).map(t => (<div key={t.label} className="flex items-center gap-1 bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-bold text-indigo-800">{t.image_url && <img src={t.image_url} className="w-5 h-5 object-contain" />}{t.label}</div>))}</div>)}</div><div className="bg-white p-6 rounded-lg shadow mb-6 border border-gray-200"><h2 className="font-bold text-xl mb-4">Add New Logo Option</h2><form onSubmit={addLogo} className="grid md:grid-cols-2 gap-4"><input className="border p-2 rounded" placeholder="Name (e.g. State Champs)" value={newLogoName} onChange={e => setNewLogoName(e.target.value)} /><input className="border p-2 rounded" placeholder="Image URL (http://...)" value={newLogoUrl} onChange={e => setNewLogoUrl(e.target.value)} /><div className="col-span-2 flex items-center gap-6 bg-gray-50 p-2 rounded border border-gray-200"><span className="font-bold text-gray-700 text-sm">Type:</span><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'main'} onChange={() => setNewLogoCategory('main')} className="w-4 h-4" /><span className="text-sm">Main Design (Free)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="cat" checked={newLogoCategory === 'accent'} onChange={() => setNewLogoCategory('accent')} className="w-4 h-4" /><span className="text-sm">Accent (+$5.00)</span></label></div><div className="col-span-2 flex items-center gap-6 bg-blue-50 p-2 rounded border border-blue-100">
     <span className="font-bold text-blue-900 text-sm">Visual Size:</span>
     <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="place" checked={newLogoPlacement === 'large'} onChange={() => setNewLogoPlacement('large')} className="w-4 h-4" /><span className="text-sm">Large (Full Front/Center)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="place" checked={newLogoPlacement === 'small'} onChange={() => setNewLogoPlacement('small')} className="w-4 h-4" /><span className="text-sm">Small (Pocket/Chest)</span></label></div><button className="bg-blue-900 text-white font-bold px-6 py-2 rounded hover:bg-blue-800 col-span-2">Add Logo</button></form></div><div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300"><table className="w-full text-left"><thead className="bg-gray-800 text-white"><tr><th className="p-4">Preview</th><th className="p-4">Label</th><th className="p-4">Type</th><th className="p-4 text-center">Visible?</th><th className="p-4 text-right">Action</th></tr></thead><tbody>{logos.map((logo) => (<tr key={logo.id} className="border-b hover:bg-gray-50"><td className="p-4">{logo.image_url ? <img src={logo.image_url} alt={logo.label} className="w-12 h-12 object-contain border rounded bg-gray-50" /> : <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-xs">No Img</div>}</td><td className="p-4 font-bold text-lg">{logo.label}</td><td className="p-4"><span className={`text-xs font-bold px-2 py-1 rounded uppercase ${logo.category === 'main' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>{logo.category || 'accent'}</span></td><td className="p-4 text-center"><input type="checkbox" checked={logo.active} onChange={() => toggleLogo(logo.id, logo.active)} className="w-6 h-6 cursor-pointer" /></td><td className="p-4 text-right"><button onClick={() => deleteLogo(logo.id)} className="text-red-500 hover:text-red-700 font-bold" title="Delete Logo">🗑️</button></td></tr>))}</tbody></table></div></div>)}
 
