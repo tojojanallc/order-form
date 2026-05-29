@@ -9,7 +9,7 @@ const baseUrl = process.env.VERCEL_URL
 export async function POST(req: any) {
   try {
     const body = await req.json();
-    const { email, name, cart, total, orderId, eventName, eventLogo } = body;
+    const { email, name, cart, total, orderId, eventName, eventLogo, shippingInfo } = body;
 
     if (!email) return NextResponse.json({ error: 'No email provided' }, { status: 400 });
 
@@ -35,10 +35,17 @@ export async function POST(req: any) {
 
     const cartRows = cart.map((item: any) => {
         const customizations = [];
-        if(item.customizations?.mainDesign) customizations.push(`Design: ${item.customizations.mainDesign}`);
-        if(item.customizations?.metallic) customizations.push(`Metallic: ${item.customizations.metallicName || 'Yes'}`);
+        if (item.customizations?.mainDesign) customizations.push(`<strong>Design:</strong> ${item.customizations.mainDesign}`);
+        if (item.customizations?.metallic) customizations.push(`<strong>Metallic:</strong> ${item.customizations.metallicName || 'Yes'}`);
+        const accentLogos = item.customizations?.logos || [];
+        if (accentLogos.length > 0) customizations.push(`<strong>Add-Ons:</strong> ${accentLogos.map((l: any) => `${l.type} (${l.position})`).join(', ')}`);
+        const itemNames = item.customizations?.names || [];
+        if (itemNames.length > 0) customizations.push(`<strong>Names:</strong> ${itemNames.map((n: any) => `${n.text} (${n.position})`).join(', ')}`);
+        const itemNumbers = item.customizations?.numbers || [];
+        if (itemNumbers.length > 0) customizations.push(`<strong>Numbers:</strong> ${itemNumbers.map((n: any) => `${n.text} (${n.position})`).join(', ')}`);
+        const shipBadge = item.needsShipping ? `<br/><span style="background:#fff3cd;color:#856404;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:bold;display:inline-block;margin-top:4px;">🚚 Ship to Home</span>` : '';
         return `<tr>
-            <td style="padding: 12px 8px; border-bottom: 1px solid #ddd;"><strong>${item.productName}</strong><br/><span style="font-size: 12px; color: #555;">Size: ${item.size}</span></td>
+            <td style="padding: 12px 8px; border-bottom: 1px solid #ddd;"><strong>${item.productName}</strong><br/><span style="font-size: 12px; color: #555;">Size: ${item.size}</span>${shipBadge}</td>
             <td style="padding: 12px 8px; border-bottom: 1px solid #ddd; font-size: 12px;">${customizations.join('<br/>')}</td>
             <td style="padding: 12px 8px; border-bottom: 1px solid #ddd; text-align: right;">$${Number(item.finalPrice).toFixed(2)}</td>
         </tr>`;
@@ -66,7 +73,8 @@ export async function POST(req: any) {
             <p style="text-align: center; color: #555; margin-top: 0;">Order #${String(orderId).slice(0, 8)}</p>
             
             <p style="margin-top: 30px;">Hi ${name},</p>
-            <p>Thanks for ordering at <strong>${eventName}</strong>. We'll text you when it's ready.</p>
+            <p>Thanks for ordering at <strong>${eventName}</strong>.${shippingInfo ? " We'll ship your item(s) to the address below." : " We'll text you when it's ready."}</p>
+            ${shippingInfo ? `<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:16px;margin:16px 0;"><p style="margin:0 0 4px;font-size:12px;font-weight:bold;color:#0369a1;text-transform:uppercase;letter-spacing:1px;">🚚 Ship To</p><p style="margin:0;font-size:14px;color:#1e293b;">${shippingInfo.address}<br/>${shippingInfo.city}, ${shippingInfo.state} ${shippingInfo.zip}</p></div>` : ''}
             
             <table style="width: 100%; border-collapse: collapse; margin-top: 20px; margin-bottom: 30px;">
                 <thead>

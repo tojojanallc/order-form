@@ -163,6 +163,14 @@ export default function AdminDashboard() {
     </div>
     <div className="h-10 w-10 bg-red-50 rounded-full flex items-center justify-center text-red-500 text-xl">⚠️</div>
 </Link>
+
+<Link href="/admin/shipping" className="bg-white p-6 rounded-[32px] border border-orange-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
+    <div>
+        <p className="text-4xl font-black text-orange-500 group-hover:scale-110 transition-transform">🚚</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Ship to Home</p>
+        <p className="text-xs text-orange-400 font-bold mt-1">Manage Pending Shipments</p>
+    </div>
+</Link>
             <Link href="/admin/inventory/transfer" className="bg-white p-6 rounded-[32px] border border-blue-100 shadow-sm flex items-center justify-between hover:shadow-md transition-all group">
                 <div>
                     <p className="text-4xl font-black text-blue-600 group-hover:scale-110 transition-transform">{stats.activeEvents}</p>

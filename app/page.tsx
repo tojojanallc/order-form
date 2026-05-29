@@ -448,11 +448,12 @@ export default function OrderForm() {
 
   const sendReceiptEmail = async (orderId, name, email, cartData, totalAmount) => {
       if (!email || !email.includes('@')) return;
+      if (paymentMode === 'hosted') return;
       try {
           await fetch('/api/send-receipt', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email, name, cart: cartData, total: totalAmount, orderId, eventName })
+              body: JSON.stringify({ email, name, cart: cartData, total: totalAmount, orderId, eventName, eventLogo, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
           });
       } catch (err) { console.error(`NETWORK ERROR: ${err.message}`); }
   };
