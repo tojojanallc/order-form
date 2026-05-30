@@ -1123,7 +1123,7 @@ if (!ignoreInventory) {
                                   <option value="">Select Position...</option>
                                   {getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
                                 </select>
-                                <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
+                                <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="bg-red-100 hover:bg-red-200 text-red-600 font-black rounded-xl px-4 py-2 text-lg min-w-[48px] transition-all">✕</button>
                             </div>
                             ))}
                             {numbers.map((numItem, index) => (
@@ -1133,7 +1133,7 @@ if (!ignoreInventory) {
                                   <option value="">Select Position...</option>
                                   {getPositionOptions('number').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
                                 </select>
-                                <button onClick={() => setNumbers(numbers.filter((_, i) => i !== index))} className="text-red-600 font-bold px-2">×</button>
+                                <button onClick={() => setNumbers(numbers.filter((_, i) => i !== index))} className="bg-red-100 hover:bg-red-200 text-red-600 font-black rounded-xl px-4 py-2 text-lg min-w-[48px] transition-all">✕</button>
                             </div>
                             ))}
                             <div className="flex gap-2 mt-3">
