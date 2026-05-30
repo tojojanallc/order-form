@@ -48,6 +48,13 @@ const parseProductId = (id) => {
 };
 
 const mergedName = (name) => name.replace(/\s*\b(Youth|Ladies)\b\s*/gi, ' ').trim();
+const displayName = (name, allProducts) => {
+  const merged = mergedName(name);
+  const hasAdult = allProducts.some(p => mergedName(p.name) === merged && !p.name.match(/\b(Youth|Ladies)\b/i));
+  if (!hasAdult && name.match(/\bYouth\b/i)) return merged + ' Youth';
+  if (!hasAdult && name.match(/\bLadies\b/i)) return merged + ' Ladies';
+  return merged;
+};
 
 export default function OrderForm() {
   const params = useParams();
@@ -974,7 +981,7 @@ if (!ignoreInventory) {
                                     {visibleProducts.length === 1 ? (
                                       // Single product — just show the name, no picker needed
                                       <p className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium">
-                                        {mergedName(visibleProducts[0].name)}{showPrice ? ` — $${visibleProducts[0].base_price}` : ''}
+                                        {displayName(visibleProducts[0].name, products)}{showPrice ? ` — $${visibleProducts[0].base_price}` : ''}
                                       </p>
                                     ) : (
                                       // Multiple products — show image cards
@@ -1002,7 +1009,7 @@ if (!ignoreInventory) {
                                               ) : (
                                                 <div className="h-24 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400 mb-1 rounded">No Image</div>
                                               )}
-                                              <span className="text-xs font-semibold leading-tight">{mergedName(p.name)}</span>
+                                              <span className="text-xs font-semibold leading-tight">{displayName(p.name, products)}</span>
                                               {showPrice && <span className="text-xs text-gray-500">${p.base_price}</span>}
                                             </button>
                                           );
