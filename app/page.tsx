@@ -1134,23 +1134,33 @@ if (!ignoreInventory) {
                         <section>
                             <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>4</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Personalization</h2></div>{showPrice && <span className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">+$5 each</span>}</div>
                             {names.map((nameItem, index) => (
-                            <div key={`name-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
-                                <input type="text" maxLength={12} placeholder="NAME" className="border-2 border-gray-200 p-2 rounded-lg flex-1 uppercase text-black font-bold focus:border-blue-400 focus:outline-none" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
-                                <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}>
-                                  <option value="">Select Position...</option>
-                                  {getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
-                                </select>
-                                <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="bg-red-100 hover:bg-red-200 text-red-600 font-black rounded-xl px-4 py-2 text-lg min-w-[48px] transition-all">✕</button>
+                            <div key={`name-${index}`} className="mb-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                <div className="flex gap-2 items-center mb-2">
+                                    <span className="text-xs font-black uppercase text-gray-400 flex-1">Name {names.length > 1 ? index + 1 : ''}</span>
+                                    <button onClick={() => setNames(names.filter((_, i) => i !== index))} className="bg-red-100 hover:bg-red-200 text-red-600 font-black rounded-xl px-4 py-2 text-base transition-all">✕ Remove</button>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <input type="text" maxLength={12} placeholder="NAME" className="border-2 border-gray-200 p-3 rounded-lg w-full uppercase text-black font-bold focus:border-blue-400 focus:outline-none text-lg" value={nameItem.text} onChange={(e) => updateName(index, 'text', e.target.value)} />
+                                    <select className="border-2 border-gray-200 p-3 rounded-lg w-full bg-white text-black font-bold" value={nameItem.position} onChange={(e) => updateName(index, 'position', e.target.value)}>
+                                      <option value="">Select Position...</option>
+                                      {getPositionOptions('name').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
+                                    </select>
+                                </div>
                             </div>
                             ))}
                             {numbers.map((numItem, index) => (
-                            <div key={`num-${index}`} className="flex flex-col md:flex-row gap-2 mb-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
-                                <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border-2 border-gray-200 p-2 rounded-lg flex-1 uppercase text-black font-mono font-bold text-center text-lg tracking-widest focus:border-blue-400 focus:outline-none" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
-                                <select className="border border-gray-400 p-2 rounded md:w-48 bg-white text-black" value={numItem.position} onChange={(e) => updateNumber(index, 'position', e.target.value)}>
-                                  <option value="">Select Position...</option>
-                                  {getPositionOptions('number').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
-                                </select>
-                                <button onClick={() => setNumbers(numbers.filter((_, i) => i !== index))} className="bg-red-100 hover:bg-red-200 text-red-600 font-black rounded-xl px-4 py-2 text-lg min-w-[48px] transition-all">✕</button>
+                            <div key={`num-${index}`} className="mb-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                <div className="flex gap-2 items-center mb-2">
+                                    <span className="text-xs font-black uppercase text-gray-400 flex-1">Number {numbers.length > 1 ? index + 1 : ''}</span>
+                                    <button onClick={() => setNumbers(numbers.filter((_, i) => i !== index))} className="bg-red-100 hover:bg-red-200 text-red-600 font-black rounded-xl px-4 py-2 text-base transition-all">✕ Remove</button>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <input type="text" maxLength={3} placeholder="NO. (e.g. 24)" className="border-2 border-gray-200 p-3 rounded-lg w-full uppercase text-black font-mono font-bold text-center text-lg tracking-widest focus:border-blue-400 focus:outline-none" value={numItem.text} onChange={(e) => updateNumber(index, 'text', e.target.value.replace(/[^0-9]/g, ''))} />
+                                    <select className="border-2 border-gray-200 p-3 rounded-lg w-full bg-white text-black font-bold" value={numItem.position} onChange={(e) => updateNumber(index, 'position', e.target.value)}>
+                                      <option value="">Select Position...</option>
+                                      {getPositionOptions('number').map(pos => <option key={pos.id} value={pos.label}>{pos.label}</option>)}
+                                    </select>
+                                </div>
                             </div>
                             ))}
                             <div className="flex gap-2 mt-3">
