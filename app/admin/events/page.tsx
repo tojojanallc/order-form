@@ -46,6 +46,10 @@ export default function AdminPage() {
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
   const [newItemProductId, setNewItemProductId] = useState('');
   const [newItemSize, setNewItemSize] = useState('');
+  const [priceOverrideUnlocked, setPriceOverrideUnlocked] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState(false);
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
   const [showDailyBreakdown, setShowDailyBreakdown] = useState(false);
@@ -232,6 +236,10 @@ export default function AdminPage() {
                       itemTotal += (item.customizations.numbers?.length || 0) * 5; 
                       if (item.customizations.backList) itemTotal += 5;
                       if (item.customizations.metallic) itemTotal += 5;
+                  }
+                  // Use manual price override if set (price unlock was used)
+                  if (item.finalPrice !== undefined && item.finalPrice !== null && priceOverrideUnlocked) {
+                      itemTotal = item.finalPrice;
                   }
                   total += itemTotal;
               });
@@ -623,7 +631,7 @@ setSalesLedger(ledgerData || []);
       setEditingOrder({ ...order, cart_data: cleanCart }); 
       setOriginalOrderTotal(order.total_price || 0);
   };
-  const closeEditModal = () => { setEditingOrder(null); };
+  const closeEditModal = () => { setEditingOrder(null); setPriceOverrideUnlocked(false); setPinInput(''); setPinError(false); setShowPinModal(false); };
   const handleEditChange = (f, v) => setEditingOrder(p => ({ ...p, [f]: v }));
   const handleEditItem = (index, field, value) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[index] = { ...newCart[index], [field]: value }; return { ...prev, cart_data: newCart }; }); };
   const handleUpdateMainDesign = (index, value) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[index].customizations.mainDesign = value; return { ...prev, cart_data: newCart }; }); };
@@ -647,6 +655,28 @@ setSalesLedger(ledgerData || []);
 
   const handleRemoveItemFromOrder = (idx) => {
       setEditingOrder(prev => ({ ...prev, cart_data: prev.cart_data.filter((_, i) => i !== idx) }));
+  };
+
+  const verifyPricePin = async () => {
+      const res = await fetch('/api/verify-price-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: pinInput }) });
+      const data = await res.json();
+      if (data.success) {
+          setPriceOverrideUnlocked(true);
+          setShowPinModal(false);
+          setPinInput('');
+          setPinError(false);
+      } else {
+          setPinError(true);
+          setPinInput('');
+      }
+  };
+
+  const handleItemPriceOverride = (idx, value) => {
+      setEditingOrder(prev => {
+          const newCart = [...prev.cart_data];
+          newCart[idx] = { ...newCart[idx], finalPrice: value === '' ? 0 : parseFloat(value) };
+          return { ...prev, cart_data: newCart };
+      });
   };
   const handleUpdateAccent = (idx, lIdx, field, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; if(newCart[idx].customizations.logos[lIdx]) newCart[idx].customizations.logos[lIdx][field] = val; return { ...prev, cart_data: newCart }; }); };
   const handleUpdateNamePos = (idx, nIdx, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; if(newCart[idx].customizations.names[nIdx]) newCart[idx].customizations.names[nIdx].position = val; return { ...prev, cart_data: newCart }; }); };
@@ -1240,6 +1270,29 @@ setSalesLedger(ledgerData || []);
 </div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>
         )}
 
+        {showPinModal && (
+            <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]" onClick={() => { setShowPinModal(false); setPinInput(''); setPinError(false); }}>
+                <div className="bg-white rounded-2xl shadow-2xl p-8 w-80 text-center" onClick={e => e.stopPropagation()}>
+                    <div className="text-4xl mb-2">🔒</div>
+                    <h2 className="font-black text-xl mb-1">Manager PIN</h2>
+                    <p className="text-sm text-gray-500 mb-4">Enter PIN to unlock price editing</p>
+                    <input
+                        autoFocus
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={6}
+                        className={`w-full text-center text-2xl font-black border-2 rounded-xl p-3 tracking-widest mb-3 focus:outline-none ${pinError ? 'border-red-400 bg-red-50 text-red-600' : 'border-gray-200 focus:border-blue-400'}`}
+                        placeholder="••••"
+                        value={pinInput}
+                        onChange={e => { setPinInput(e.target.value); setPinError(false); }}
+                        onKeyDown={e => e.key === 'Enter' && verifyPricePin()}
+                    />
+                    {pinError && <p className="text-red-500 text-sm font-bold mb-2">Incorrect PIN</p>}
+                    <button onClick={verifyPricePin} className="w-full bg-slate-900 hover:bg-slate-700 text-white font-black py-3 rounded-xl transition-all">Unlock</button>
+                </div>
+            </div>
+        )}
+
         {editingOrder && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1258,6 +1311,19 @@ setSalesLedger(ledgerData || []);
                                         <select className="border-2 p-1 rounded font-bold bg-gray-50" value={item.size} onChange={(e) => handleEditItem(idx, 'size', e.target.value)}>{SIZE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}</select>
                                         <button onClick={() => handleRemoveItemFromOrder(idx)} className="bg-red-100 hover:bg-red-200 text-red-600 font-black text-xs px-3 py-1 rounded-lg">✕ Remove</button>
                                     </div>
+                                </div>
+                                {/* Price Override */}
+                                <div className="mb-4 flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                    <span className="text-xs font-black uppercase text-yellow-800">Price Override</span>
+                                    {priceOverrideUnlocked ? (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-gray-500 font-bold">$</span>
+                                            <input type="number" min="0" step="0.01" className="border-2 border-yellow-300 rounded-lg px-3 py-1 w-24 font-bold text-center focus:outline-none focus:border-yellow-500" value={item.finalPrice ?? ''} onChange={(e) => handleItemPriceOverride(idx, e.target.value)} />
+                                        </div>
+                                    ) : (
+                                        <button onClick={() => setShowPinModal(true)} className="text-xs bg-yellow-200 hover:bg-yellow-300 text-yellow-900 font-black px-3 py-1 rounded-lg transition-all">🔒 Unlock Price Edit</button>
+                                    )}
+                                    <span className="text-xs text-gray-400 ml-auto">Auto: ${((() => { const pr = products.find(p => p.id === item.productId); const base = pr?.base_price || 0; const extras = ((item.customizations?.logos?.length || 0) + (item.customizations?.names?.length || 0) + (item.customizations?.numbers?.length || 0)) * 5; return base + extras; })()).toFixed(2)}</span>
                                 </div>
                                 <div className="mb-4">
                                     <div className="text-xs font-bold text-gray-500 uppercase mb-1">Main Design</div>
