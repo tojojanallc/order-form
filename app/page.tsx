@@ -138,7 +138,15 @@ export default function OrderForm() {
     else if (availableMainOptions.length === 0) setSelectedMainDesign('');
     else if (selectedMainDesign) {
         const isValid = availableMainOptions.find(o => o.label === selectedMainDesign);
-        if (!isValid) setSelectedMainDesign('');
+        if (!isValid) {
+            // Current selection invalid — default to large placement
+            const largePref = availableMainOptions.find(o => o.placement === 'large');
+            setSelectedMainDesign(largePref ? largePref.label : availableMainOptions[0].label);
+        }
+    } else {
+        // Nothing selected yet — default to large
+        const largePref = availableMainOptions.find(o => o.placement === 'large');
+        if (largePref) setSelectedMainDesign(largePref.label);
     }
   }, [selectedProduct, mainOptions]);
 
