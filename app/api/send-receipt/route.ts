@@ -36,7 +36,7 @@ export async function POST(req: any) {
     const cartRows = cart.map((item: any) => {
         const customizations = [];
         if (item.customizations?.mainDesign) customizations.push(`<strong>Design:</strong> ${item.customizations.mainDesign}`);
-        if (item.customizations?.metallic) customizations.push(`<strong>Metallic:</strong> ${item.customizations.metallicName || 'Yes'}`);
+        if (item.customizations?.metallic) customizations.push(`<strong>Metallic:</strong> ${item.customizations.metallicName || ''}${item.customizations.metallicTeam ? ` — ${item.customizations.metallicTeam}` : ''}`);
         const accentLogos = item.customizations?.logos || [];
         if (accentLogos.length > 0) customizations.push(`<strong>Add-Ons:</strong> ${accentLogos.map((l: any) => `${l.type} (${l.position})`).join(', ')}`);
         const itemNames = item.customizations?.names || [];

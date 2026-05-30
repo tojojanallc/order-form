@@ -116,6 +116,7 @@ export default function OrderForm() {
   const [metallicHighlight, setMetallicHighlight] = useState(false);
   const [backListConfirmed, setBackListConfirmed] = useState(false);
   const [metallicName, setMetallicName] = useState('');
+  const [metallicTeam, setMetallicTeam] = useState('');
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
   const [ignoreInventory, setIgnoreInventory] = useState(false);
@@ -526,7 +527,8 @@ export default function OrderForm() {
       customizations: { 
           mainDesign: selectedMainDesign, logos, names, numbers,
           backList: backNameList, metallic: metallicHighlight,
-          metallicName: metallicHighlight ? metallicName : ''
+          metallicName: metallicHighlight ? metallicName : '',
+          metallicTeam: metallicHighlight ? metallicTeam : ''
       },
       finalPrice: calculateItemTotal() 
     };
@@ -551,7 +553,7 @@ export default function OrderForm() {
     } catch(e) {}
     setLogos([]); setNames([]); setNumbers([]);
     setBackNameList(false); setMetallicHighlight(false);
-    setBackListConfirmed(false); setMetallicName('');
+    setBackListConfirmed(false); setMetallicName(''); setMetallicTeam('');
     if (availableMainOptions.length > 1) setSelectedMainDesign(''); 
   };
 
@@ -570,6 +572,7 @@ export default function OrderForm() {
     setNumbers(item.customizations?.numbers || []);
     setMetallicHighlight(item.customizations?.metallic || false);
     setMetallicName(item.customizations?.metallicName || '');
+    setMetallicTeam(item.customizations?.metallicTeam || '');
     // Scroll to top of form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1185,7 +1188,7 @@ if (!ignoreInventory) {
                     {selectedProduct && showBackNames && (
                         <section className="bg-amber-50 p-5 rounded-2xl border border-amber-200 space-y-3">
                             <label className="flex items-center gap-3 cursor-pointer">
-                                <input type="checkbox" className="w-6 h-6 text-blue-800" checked={backNameList} onChange={(e) => { setBackNameList(e.target.checked); if (!e.target.checked) { setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName(''); } }} />
+                                <input type="checkbox" className="w-6 h-6 text-blue-800" checked={backNameList} onChange={(e) => { setBackNameList(e.target.checked); if (!e.target.checked) { setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName(''); setMetallicTeam(''); setMetallicTeam(''); } }} />
                                 <span className="font-bold text-black text-lg">Team Roster List {showPrice && '(+$5)'}</span>
                             </label>
                             {backNameList && (
@@ -1201,9 +1204,15 @@ if (!ignoreInventory) {
                                               <span className="font-bold text-black">Add Metallic Highlight {showPrice && '(+$5)'}</span>
                                             </label>
                                             {metallicHighlight && (
-                                                <div>
-                                                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Athlete Name to Highlight:</label>
-                                                  <input type="text" className="w-full p-3 border-2 border-blue-400 rounded font-bold uppercase text-black" placeholder="ENTER NAME HERE" value={metallicName} onChange={(e) => setMetallicName(e.target.value)} />
+                                                <div className="space-y-3 mt-2">
+                                                  <div>
+                                                    <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Athlete Name to Highlight:</label>
+                                                    <input type="text" className="w-full p-3 border-2 border-blue-400 rounded-xl font-bold uppercase text-black focus:outline-none" placeholder="ATHLETE NAME" value={metallicName} onChange={(e) => setMetallicName(e.target.value)} />
+                                                  </div>
+                                                  <div>
+                                                    <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Team / Event Name:</label>
+                                                    <input type="text" className="w-full p-3 border-2 border-blue-400 rounded-xl font-bold uppercase text-black focus:outline-none" placeholder="TEAM NAME" value={metallicTeam} onChange={(e) => setMetallicTeam(e.target.value)} />
+                                                  </div>
                                                 </div>
                                             )}
                                         </div>
@@ -1258,7 +1267,7 @@ if (!ignoreInventory) {
                         {item.customizations.names.map((n, i) => <div key={'name'+i}>• "{n.text}" ({n.position})</div>)}
                         {item.customizations.numbers?.map((num, i) => <div key={'num'+i}>• #{num.text} ({num.position})</div>)}
                         {item.customizations.backList && <div>• Back Name List</div>}
-                        {item.customizations.metallic && <div>• Metallic: {item.customizations.metallicName}</div>}
+                        {item.customizations.metallic && <div>• Metallic: {item.customizations.metallicName}{item.customizations.metallicTeam ? ` — ${item.customizations.metallicTeam}` : ''}</div>}
                     </div>
                     {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice.toFixed(2)}</p>}
                     </div>
