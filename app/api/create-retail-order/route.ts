@@ -75,7 +75,16 @@ export async function POST(req: any) {
                 .eq('size', item.size)
                 .single() : { data: null };
 
-            const costBasis = invMasterBySku?.cost_price || invMasterBySlug?.cost_price || 0;
+            // Final fallback: check event inventory table directly
+            const { data: invByEvent } = (!invMasterBySku && !invMasterBySlug) ? await supabase
+                .from('inventory')
+                .select('cost_price')
+                .eq('product_id', item.productId)
+                .eq('size', item.size)
+                .eq('event_slug', currentEvent)
+                .single() : { data: null };
+
+            const costBasis = invMasterBySku?.cost_price || invMasterBySlug?.cost_price || invByEvent?.cost_price || 0;
 
             await supabase.from('sales_ledger').insert({
                 event_slug: currentEvent,

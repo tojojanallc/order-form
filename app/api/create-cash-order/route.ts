@@ -46,7 +46,7 @@ export async function POST(req: any) {
     // 2. LOG TO SALES LEDGER (The P&L Automation)
     // This loops through your cart to capture the profit data per item.
     for (const item of cart) {
-      // Fetch the cost from the master warehouse table
+      // Fetch the cost from the master warehouse table, fall back to event inventory
       const { data: invMaster } = await supabase
         .from('inventory_master')
         .select('cost_per_unit')
@@ -54,7 +54,15 @@ export async function POST(req: any) {
         .eq('size', item.size)
         .single();
 
-      const costBasis = invMaster?.cost_per_unit || 0;
+      const { data: invByEvent } = !invMaster ? await supabase
+        .from('inventory')
+        .select('cost_price')
+        .eq('product_id', item.productId)
+        .eq('size', item.size)
+        .eq('event_slug', currentEvent)
+        .single() : { data: null };
+
+      const costBasis = invMaster?.cost_per_unit || invByEvent?.cost_price || 0;
 
       await supabase.from('sales_ledger').insert({
         event_slug: currentEvent,
