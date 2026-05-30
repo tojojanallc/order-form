@@ -548,6 +548,23 @@ export default function OrderForm() {
   };
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
+
+  const editItem = (item) => {
+    // Remove from cart
+    setCart(cart.filter(c => c.id !== item.id));
+    // Re-populate customization state
+    const prod = products.find(p => p.id === item.productId);
+    if (prod) setSelectedProduct(prod);
+    setSize(item.size);
+    setSelectedMainDesign(item.customizations?.mainDesign || '');
+    setLogos(item.customizations?.logos || []);
+    setNames(item.customizations?.names || []);
+    setNumbers(item.customizations?.numbers || []);
+    setMetallicHighlight(item.customizations?.metallic || false);
+    setMetallicName(item.customizations?.metallicName || '');
+    // Scroll to top of form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
@@ -1209,7 +1226,10 @@ if (!ignoreInventory) {
                 <div className="p-4 space-y-4 max-h-[50vh] overflow-y-auto">
                 {cart.length === 0 ? <p className="text-gray-500 text-center italic py-10">Cart is empty.</p> : cart.map((item) => (
                     <div key={item.id} className="border-b border-gray-200 pb-4 last:border-0 relative">
-                    <button onClick={() => removeItem(item.id)} className="absolute top-0 right-0 text-red-500 hover:text-red-700 font-bold text-xs p-1">REMOVE</button>
+                    <div className="absolute top-0 right-0 flex gap-1">
+                      <button onClick={() => editItem(item)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 font-black text-xs px-3 py-1 rounded-lg transition-all">EDIT</button>
+                      <button onClick={() => removeItem(item.id)} className="bg-red-100 hover:bg-red-200 text-red-600 font-black text-xs px-3 py-1 rounded-lg transition-all">REMOVE</button>
+                    </div>
                     <p className="font-black text-black text-lg pr-16">{item.productName}</p>
                     {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
                     {item.color && <p className="text-sm text-gray-600 font-bold">Color: {item.color}</p>}
