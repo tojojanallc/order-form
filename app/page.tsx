@@ -149,10 +149,18 @@ export default function OrderForm() {
     const urlSlug = slug || '';
     setActualEventSlug(urlSlug); // may be updated below once we resolve the active event
 
-    const savedId = localStorage.getItem('square_terminal_id');
-    if (savedId) setAssignedTerminalId(savedId);
+    // Read terminal ID from URL param first (?terminal=xxx), fall back to localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlTerminalId = urlParams.get('terminal');
+    if (urlTerminalId) {
+        setAssignedTerminalId(urlTerminalId);
+        localStorage.setItem('square_terminal_id', urlTerminalId);
+    } else {
+        const savedId = localStorage.getItem('square_terminal_id');
+        if (savedId) setAssignedTerminalId(savedId);
+    }
 
-    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('setup') === 'true') {
+    if (typeof window !== 'undefined' && urlParams.get('setup') === 'true') {
         setShowSetup(true); 
         fetchTerminals(); 
     }
@@ -229,6 +237,9 @@ export default function OrderForm() {
   const selectTerminal = (id) => {
       localStorage.setItem('square_terminal_id', id);
       setAssignedTerminalId(id);
+      const url = new URL(window.location.href);
+      url.searchParams.set("terminal", id);
+      window.history.replaceState({}, "", url.toString());
       alert("✅ This iPad is now linked to terminal: " + id);
       setShowSetup(false);
   };
