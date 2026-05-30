@@ -44,6 +44,8 @@ export default function AdminPage() {
   const [customerForm, setCustomerForm] = useState({ name: '', phone: '', email: '' });
   const [editingOrder, setEditingOrder] = useState(null);
   const [originalOrderTotal, setOriginalOrderTotal] = useState(0); 
+  const [newItemProductId, setNewItemProductId] = useState('');
+  const [newItemSize, setNewItemSize] = useState('');
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
   const [showDailyBreakdown, setShowDailyBreakdown] = useState(false);
@@ -628,6 +630,24 @@ setSalesLedger(ledgerData || []);
   const handleEditName = (idx, nIdx, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; if(newCart[idx].customizations.names[nIdx]) newCart[idx].customizations.names[nIdx].text = val; return { ...prev, cart_data: newCart }; }); };
   const handleAddAccent = (idx) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.logos.push({ type: logos[0]?.label || 'Logo', position: 'Left Sleeve' }); return { ...prev, cart_data: newCart }; }); };
   const handleAddName = (idx) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; newCart[idx].customizations.names.push({ text: '', position: 'Hood' }); return { ...prev, cart_data: newCart }; }); };
+
+  const handleAddItemToOrder = (productId, size) => {
+      const prod = products.find(p => p.id === productId);
+      if (!prod || !size) return;
+      const newItem = {
+          id: Date.now(),
+          productId: prod.id,
+          productName: prod.name,
+          size,
+          finalPrice: prod.base_price || 0,
+          customizations: { mainDesign: '', logos: [], names: [], numbers: [], metallic: false },
+      };
+      setEditingOrder(prev => ({ ...prev, cart_data: [...prev.cart_data, newItem] }));
+  };
+
+  const handleRemoveItemFromOrder = (idx) => {
+      setEditingOrder(prev => ({ ...prev, cart_data: prev.cart_data.filter((_, i) => i !== idx) }));
+  };
   const handleUpdateAccent = (idx, lIdx, field, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; if(newCart[idx].customizations.logos[lIdx]) newCart[idx].customizations.logos[lIdx][field] = val; return { ...prev, cart_data: newCart }; }); };
   const handleUpdateNamePos = (idx, nIdx, val) => { setEditingOrder(prev => { const newCart = [...prev.cart_data]; if(newCart[idx].customizations.names[nIdx]) newCart[idx].customizations.names[nIdx].position = val; return { ...prev, cart_data: newCart }; }); };
 
@@ -1234,7 +1254,10 @@ setSalesLedger(ledgerData || []);
                             <div key={idx} className="bg-white p-4 border rounded-lg shadow-sm">
                                 <div className="flex justify-between items-center mb-4 pb-2 border-b">
                                     <span className="font-bold text-lg">{item.productName}</span>
-                                    <select className="border-2 p-1 rounded font-bold bg-gray-50" value={item.size} onChange={(e) => handleEditItem(idx, 'size', e.target.value)}>{SIZE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                                    <div className="flex items-center gap-2">
+                                        <select className="border-2 p-1 rounded font-bold bg-gray-50" value={item.size} onChange={(e) => handleEditItem(idx, 'size', e.target.value)}>{SIZE_ORDER.map(s => <option key={s} value={s}>{s}</option>)}</select>
+                                        <button onClick={() => handleRemoveItemFromOrder(idx)} className="bg-red-100 hover:bg-red-200 text-red-600 font-black text-xs px-3 py-1 rounded-lg">✕ Remove</button>
+                                    </div>
                                 </div>
                                 <div className="mb-4">
                                     <div className="text-xs font-bold text-gray-500 uppercase mb-1">Main Design</div>
@@ -1306,7 +1329,26 @@ setSalesLedger(ledgerData || []);
                             </div>
                         )})}
                     </div>
-                    <div className="p-6 border-t flex justify-end gap-3 bg-gray-50 rounded-b-xl"><button onClick={closeEditModal} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-200 rounded">Cancel</button><button onClick={saveOrderEdits} className={`px-6 py-2 text-white font-bold rounded shadow transition-colors ${newOrderTotal > originalOrderTotal ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`} >{loading ? "Saving..." : (newOrderTotal > originalOrderTotal ? `Save & Pay Difference ($${(newOrderTotal - originalOrderTotal).toFixed(2)})` : "Save Changes")}</button></div>
+                    <div className="p-6 border-t bg-green-50">
+                        <p className="text-xs font-black uppercase tracking-wider text-green-800 mb-3">+ Add Item to Order</p>
+                        <div className="flex gap-2 flex-wrap">
+                            <select className="border-2 border-green-200 p-2 rounded-lg font-bold bg-white flex-1 text-sm" value={newItemProductId} onChange={e => { setNewItemProductId(e.target.value); setNewItemSize(''); }}>
+                                <option value="">Select Product...</option>
+                                {[...new Set(inventory.filter(i => i.active && i.count > 0).map(i => i.product_id))].map(pid => {
+                                    const prod = products.find(p => p.id === pid);
+                                    return prod ? <option key={pid} value={pid}>{prod.name} — {pid.split('|')[1]?.trim()}</option> : null;
+                                })}
+                            </select>
+                            <select className="border-2 border-green-200 p-2 rounded-lg font-bold bg-white w-24 text-sm" value={newItemSize} onChange={e => setNewItemSize(e.target.value)}>
+                                <option value="">Size...</option>
+                                {newItemProductId && inventory.filter(i => i.product_id === newItemProductId && i.active && i.count > 0).map(i => (
+                                    <option key={i.size} value={i.size}>{i.size}</option>
+                                ))}
+                            </select>
+                            <button onClick={() => { handleAddItemToOrder(newItemProductId, newItemSize); setNewItemProductId(''); setNewItemSize(''); }} disabled={!newItemProductId || !newItemSize} className="bg-green-600 hover:bg-green-700 text-white font-black px-4 py-2 rounded-lg text-sm disabled:opacity-40 transition-all">Add</button>
+                        </div>
+                    </div>
+                    <div className="p-6 border-t flex justify-end gap-3 bg-gray-50 rounded-b-xl"><button onClick={closeEditModal} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-200 rounded">Cancel</button><button onClick={saveOrderEdits} className={`px-6 py-2 text-white font-bold rounded shadow transition-colors ${newOrderTotal > originalOrderTotal ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`} >{loading ? "Saving..." : (newOrderTotal > originalOrderTotal ? `Save & Charge Difference ($${(newOrderTotal - originalOrderTotal).toFixed(2)})` : "Save Changes")}</button></div>
                 </div>
             </div>
         )}
