@@ -106,7 +106,8 @@ export async function POST(req: Request) {
           moveDown(11);
         }
         if (c.metallic) {
-          page.drawText(`• Metallic Upgrade`, { x: margin + 8, y: cursorY, size: 10, font });
+          const metallicLine = `• Metallic: ${c.metallicName || ''}${c.metallicTeam ? ` — ${c.metallicTeam}` : ''}`.trim();
+          page.drawText(metallicLine, { x: margin + 8, y: cursorY, size: 10, font });
           moveDown(11);
         }
       }
