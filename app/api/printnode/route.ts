@@ -54,10 +54,8 @@ export async function POST(req: Request) {
     moveDown(18);
 
     // ── SPECIAL ORDER / SHIP TO HOME BANNER ─────────────────────────────────────
-    const hasShipping = order.shipping_address && order.shipping_address.trim();
-    const cartItems = Array.isArray(order.cart_data) ? order.cart_data : [];
-    const hasShippingItem = cartItems.some((i: any) => i?.needsShipping);
-    if (hasShipping || hasShippingItem) {
+    const hasShipping = order.status === 'pending_shipping' && order.shipping_address && order.shipping_address.trim();
+    if (hasShipping) {
       // Bold banner box
       page.drawRectangle({ x: margin - 2, y: cursorY - 2, width: 288 - margin * 2 + 4, height: 14, color: rgb(0, 0, 0) });
       page.drawText('** SPECIAL ORDER - SHIP TO HOME **', {
@@ -91,7 +89,7 @@ export async function POST(req: Request) {
       moveDown(13);
 
       // Ship tag for individual item if mixed order
-      if (item.needsShipping && !hasShipping) {
+      if (item.needsShipping && order.status === 'pending_shipping') {
         page.drawText(`  ** SHIP THIS ITEM **`, { x: margin, y: cursorY, size: 10, font: fontBold });
         moveDown(12);
       }
