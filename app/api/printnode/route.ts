@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     moveDown(18);
 
     // ── SPECIAL ORDER / SHIP TO HOME BANNER ─────────────────────────────────────
-    const hasShipping = order.status === 'pending_shipping' && order.shipping_address && order.shipping_address.trim();
+    const hasShipping = order.status === 'pending_shipping';
     if (hasShipping) {
       // Bold banner box
       page.drawRectangle({ x: margin - 2, y: cursorY - 2, width: 288 - margin * 2 + 4, height: 14, color: rgb(0, 0, 0) });

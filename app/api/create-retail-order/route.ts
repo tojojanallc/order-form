@@ -19,7 +19,8 @@ export async function POST(req: any) {
       taxCollected, 
       total, 
       eventSlug, 
-      eventName 
+      eventName,
+      shippingInfo
     } = body; 
 
     const currentEvent = eventSlug || 'default';
@@ -47,7 +48,11 @@ export async function POST(req: any) {
           payment_method: 'terminal',
           event_slug: currentEvent,      
           event_name: currentEventName,  
-          created_at: new Date().toISOString() 
+          created_at: new Date().toISOString(),
+          shipping_address: shippingInfo?.address || null,
+          shipping_city: shippingInfo?.city || null,
+          shipping_state: shippingInfo?.state || null,
+          shipping_zip: shippingInfo?.zip || null,
         },
       ])
       .select()
