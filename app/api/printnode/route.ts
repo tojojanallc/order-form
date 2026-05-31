@@ -53,6 +53,31 @@ export async function POST(req: Request) {
     });
     moveDown(18);
 
+    // ── SPECIAL ORDER / SHIP TO HOME BANNER ─────────────────────────────────────
+    const hasShipping = order.shipping_address && order.shipping_address.trim();
+    const cartItems = Array.isArray(order.cart_data) ? order.cart_data : [];
+    const hasShippingItem = cartItems.some((i: any) => i?.needsShipping);
+    if (hasShipping || hasShippingItem) {
+      // Bold banner box
+      page.drawRectangle({ x: margin - 2, y: cursorY - 2, width: pageWidth - margin * 2 + 4, height: 14, color: rgb(0, 0, 0) });
+      page.drawText('★ SPECIAL ORDER — SHIP TO HOME ★', {
+        x: margin + 2, y: cursorY, size: 10, font: fontBold, color: rgb(1, 1, 1),
+      });
+      moveDown(18);
+      // Address lines
+      if (order.shipping_address) {
+        page.drawText(`${order.shipping_address}`, { x: margin, y: cursorY, size: 11, font: fontBold });
+        moveDown(13);
+      }
+      if (order.shipping_city || order.shipping_state || order.shipping_zip) {
+        const cityLine = [order.shipping_city, order.shipping_state, order.shipping_zip].filter(Boolean).join(', ');
+        page.drawText(cityLine, { x: margin, y: cursorY, size: 11, font: fontBold });
+        moveDown(16);
+      }
+      page.drawText('- - - - - - - - - - - - - - -', { x: margin, y: cursorY, size: 8, font });
+      moveDown(14);
+    }
+
     // ── 2. Items ────────────────────────────────────────────────────────────────
     const items = Array.isArray(order.cart_data) ? order.cart_data : [];
 
@@ -64,6 +89,12 @@ export async function POST(req: Request) {
       if (pName.length > 28) pName = pName.substring(0, 26) + '…';
       page.drawText(pName, { x: margin, y: cursorY, size: 12, font: fontBold });
       moveDown(13);
+
+      // Ship tag for individual item if mixed order
+      if (item.needsShipping && !hasShipping) {
+        page.drawText(`  ★ SHIP THIS ITEM`, { x: margin, y: cursorY, size: 10, font: fontBold });
+        moveDown(12);
+      }
 
       // Size + color
       const sizeColor = [item.size, item.color].filter(Boolean).join(' / ');
