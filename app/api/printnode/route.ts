@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     if (hasShipping || hasShippingItem) {
       // Bold banner box
       page.drawRectangle({ x: margin - 2, y: cursorY - 2, width: 288 - margin * 2 + 4, height: 14, color: rgb(0, 0, 0) });
-      page.drawText('★ SPECIAL ORDER — SHIP TO HOME ★', {
+      page.drawText('** SPECIAL ORDER - SHIP TO HOME **', {
         x: margin + 2, y: cursorY, size: 10, font: fontBold, color: rgb(1, 1, 1),
       });
       moveDown(18);
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
 
       // Ship tag for individual item if mixed order
       if (item.needsShipping && !hasShipping) {
-        page.drawText(`  ★ SHIP THIS ITEM`, { x: margin, y: cursorY, size: 10, font: fontBold });
+        page.drawText(`  ** SHIP THIS ITEM **`, { x: margin, y: cursorY, size: 10, font: fontBold });
         moveDown(12);
       }
 
@@ -108,36 +108,36 @@ export async function POST(req: Request) {
         const c = item.customizations;
 
         if (c.mainDesign) {
-          page.drawText(`• Design: ${c.mainDesign}`, { x: margin + 8, y: cursorY, size: 10, font });
+          page.drawText(`* Design: ${c.mainDesign}`, { x: margin + 8, y: cursorY, size: 10, font });
           moveDown(11);
         }
         (c.names || []).forEach((n: any) => {
           if (n.text) {
             const loc = n.position ? ` [${n.position}]` : '';
-            page.drawText(`• Name: "${n.text}"${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
+            page.drawText(`* Name: "${n.text}"${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
             moveDown(11);
           }
         });
         (c.numbers || []).forEach((n: any) => {
           if (n.text) {
             const loc = n.position ? ` [${n.position}]` : '';
-            page.drawText(`• #${n.text}${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
+            page.drawText(`* #${n.text}${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
             moveDown(11);
           }
         });
         (c.logos || []).forEach((l: any) => {
           if (l.type) {
             const loc = l.position ? ` [${l.position}]` : '';
-            page.drawText(`• Logo: ${l.type}${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
+            page.drawText(`* Logo: ${l.type}${loc}`, { x: margin + 8, y: cursorY, size: 10, font });
             moveDown(11);
           }
         });
         if (c.backList) {
-          page.drawText(`• Back Name List`, { x: margin + 8, y: cursorY, size: 10, font });
+          page.drawText(`* Back Name List`, { x: margin + 8, y: cursorY, size: 10, font });
           moveDown(11);
         }
         if (c.metallic) {
-          const metallicLine = `• Metallic: ${c.metallicName || ''}${c.metallicTeam ? ` — ${c.metallicTeam}` : ''}`.trim();
+          const metallicLine = `* Metallic: ${c.metallicName || ''}${c.metallicTeam ? ` / ${c.metallicTeam}` : ''}`.trim();
           page.drawText(metallicLine, { x: margin + 8, y: cursorY, size: 10, font });
           moveDown(11);
         }
