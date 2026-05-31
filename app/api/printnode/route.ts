@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     const hasShippingItem = cartItems.some((i: any) => i?.needsShipping);
     if (hasShipping || hasShippingItem) {
       // Bold banner box
-      page.drawRectangle({ x: margin - 2, y: cursorY - 2, width: pageWidth - margin * 2 + 4, height: 14, color: rgb(0, 0, 0) });
+      page.drawRectangle({ x: margin - 2, y: cursorY - 2, width: 288 - margin * 2 + 4, height: 14, color: rgb(0, 0, 0) });
       page.drawText('★ SPECIAL ORDER — SHIP TO HOME ★', {
         x: margin + 2, y: cursorY, size: 10, font: fontBold, color: rgb(1, 1, 1),
       });
