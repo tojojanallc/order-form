@@ -120,6 +120,7 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
   const [ignoreInventory, setIgnoreInventory] = useState(false);
+  const [manualShipOverride, setManualShipOverride] = useState(false);
 
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
@@ -416,7 +417,7 @@ export default function OrderForm() {
     ).length;
     return totalBaseStock - qtyInCart;
   })();
-  const isOutOfStock = ignoreInventory ? false : currentStock <= 0;
+  const isOutOfStock = manualShipOverride ? true : (ignoreInventory ? false : currentStock <= 0);
 
   // The color-specific product record (has the correct image_url for the selected color)
   const selectedProductRecord = (() => {
@@ -554,6 +555,7 @@ export default function OrderForm() {
     setLogos([]); setNames([]); setNumbers([]);
     setBackNameList(false); setMetallicHighlight(false);
     setBackListConfirmed(false); setMetallicName(''); setMetallicTeam('');
+    setManualShipOverride(false);
     if (availableMainOptions.length > 1) setSelectedMainDesign(''); 
   };
 
@@ -752,8 +754,8 @@ export default function OrderForm() {
       setOrderComplete(false); 
       setLogos([]); setNames([]); setNumbers([]); 
       setSelectedProduct(null); setSize(''); setSelectedColor('');
-      setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId(''); 
-      
+      setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId('');
+      setManualShipOverride(false);
       // inventory / stock maps
 if (!ignoreInventory) {
   const { data: invData } = await supabase
@@ -1000,6 +1002,22 @@ if (!ignoreInventory) {
       ✓ In Stock ({currentStock} available)
     </div>
   )
+)}
+
+{ignoreInventory && size && (
+  <div className={`mb-4 rounded-xl border-2 p-3 flex items-center justify-between transition-all ${manualShipOverride ? 'bg-orange-50 border-orange-400' : 'bg-gray-50 border-gray-200'}`}>
+    <div>
+      <p className={`font-black text-sm ${manualShipOverride ? 'text-orange-700' : 'text-gray-600'}`}>
+        {manualShipOverride ? '⚠️ No Stock — Ship to Home' : 'In Stock'}
+      </p>
+      <p className="text-xs text-gray-400 mt-0.5">Toggle if this size is not available at the event</p>
+    </div>
+    <button
+      onClick={() => setManualShipOverride(!manualShipOverride)}
+      className={`font-black text-xs px-4 py-2 rounded-lg transition-all ${manualShipOverride ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}>
+      {manualShipOverride ? 'SHIP TO HOME' : 'Mark No Stock'}
+    </button>
+  </div>
 )}
                                 <div className="space-y-3">
 
