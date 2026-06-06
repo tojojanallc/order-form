@@ -669,7 +669,7 @@ export default function OrderForm() {
       const posData = {
         amount_money: { amount: String(amountCents), currency_code: 'USD' },
         callback_url: callbackUrl,
-        client_id: 'sq0idp-scUIT7LGS8Sk4sEBJy8EIQ',
+        client_id: 'sq0idp-scUIT7LGS8Sk4sEBJy8ElQ',
         version: '1.3',
         notes: `Order #${orderData.orderId} - ${eventName}`,
         options: { supported_tender_types: ['CREDIT_CARD', 'CASH', 'OTHER', 'SQUARE_GIFT_CARD'] },
