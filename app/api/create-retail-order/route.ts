@@ -20,7 +20,8 @@ export async function POST(req: any) {
       total, 
       eventSlug, 
       eventName,
-      shippingInfo
+      shippingInfo,
+      site,
     } = body; 
 
     const currentEvent = eventSlug || 'default';
@@ -53,6 +54,7 @@ export async function POST(req: any) {
           shipping_city: shippingInfo?.city || null,
           shipping_state: shippingInfo?.state || null,
           shipping_zip: shippingInfo?.zip || null,
+          site: site || null,
         },
       ])
       .select()

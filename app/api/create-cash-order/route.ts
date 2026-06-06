@@ -9,7 +9,7 @@ const supabase = createClient(
 export async function POST(req: any) {
   try {
     const body = await req.json();
-    const { cart, customerName, customerPhone, customerEmail, total, taxCollected, eventName, eventSlug, shippingInfo } = body;
+    const { cart, customerName, customerPhone, customerEmail, total, taxCollected, eventName, eventSlug, shippingInfo, site } = body;
 
     const currentEvent = eventSlug || 'default';
     const hasBackorder = cart.some((item: any) => item.needsShipping);
@@ -35,6 +35,7 @@ export async function POST(req: any) {
           shipping_city: shippingInfo?.city || null,
           shipping_state: shippingInfo?.state || null,
           shipping_zip: shippingInfo?.zip || null,
+          site: site || null,
           created_at: new Date()
         },
       ])

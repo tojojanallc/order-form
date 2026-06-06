@@ -76,6 +76,8 @@ export default function OrderForm() {
   const [isTerminalProcessing, setIsTerminalProcessing] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState('');
   const [assignedTerminalId, setAssignedTerminalId] = useState('');
+  const [assignedSiteName, setAssignedSiteName] = useState('');
+  const [assignedPrinterId, setAssignedPrinterId] = useState('');
   const [guests, setGuests] = useState([]);
   const [selectedGuest, setSelectedGuest] = useState(null); 
   const [guestSearch, setGuestSearch] = useState('');
@@ -169,12 +171,28 @@ export default function OrderForm() {
     // Read terminal ID from URL param first (?terminal=xxx), fall back to localStorage
     const urlParams = new URLSearchParams(window.location.search);
     const urlTerminalId = urlParams.get('terminal');
+    const urlSiteName = urlParams.get('site');
+    const urlPrinterId = urlParams.get('printer');
     if (urlTerminalId) {
         setAssignedTerminalId(urlTerminalId);
         localStorage.setItem('square_terminal_id', urlTerminalId);
     } else {
         const savedId = localStorage.getItem('square_terminal_id');
         if (savedId) setAssignedTerminalId(savedId);
+    }
+    if (urlSiteName) {
+        setAssignedSiteName(urlSiteName);
+        localStorage.setItem('site_name', urlSiteName);
+    } else {
+        const savedSite = localStorage.getItem('site_name');
+        if (savedSite) setAssignedSiteName(savedSite);
+    }
+    if (urlPrinterId) {
+        setAssignedPrinterId(urlPrinterId);
+        localStorage.setItem('printer_id', urlPrinterId);
+    } else {
+        const savedPrinter = localStorage.getItem('printer_id');
+        if (savedPrinter) setAssignedPrinterId(savedPrinter);
     }
 
     if (typeof window !== 'undefined' && urlParams.get('setup') === 'true') {
@@ -251,13 +269,19 @@ export default function OrderForm() {
       if (data) setAvailableTerminals(data);
   };
 
-  const selectTerminal = (id) => {
+  const selectTerminal = (id, siteName, printerId) => {
       localStorage.setItem('square_terminal_id', id);
+      localStorage.setItem('site_name', siteName || '');
+      localStorage.setItem('printer_id', printerId || '');
       setAssignedTerminalId(id);
+      setAssignedSiteName(siteName || '');
+      setAssignedPrinterId(printerId || '');
       const url = new URL(window.location.href);
-      url.searchParams.set("terminal", id);
-      window.history.replaceState({}, "", url.toString());
-      alert("✅ This iPad is now linked to terminal: " + id);
+      url.searchParams.set('terminal', id);
+      if (siteName) url.searchParams.set('site', siteName);
+      if (printerId) url.searchParams.set('printer', printerId);
+      window.history.replaceState({}, '', url.toString());
+      alert(`✅ iPad configured!\nSite: ${siteName || 'Default'}\nTerminal: ${id}\nPrinter: ${printerId || 'Default'}`);
       setShowSetup(false);
   };
 
@@ -596,7 +620,7 @@ export default function OrderForm() {
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: actualEventSlug, eventName })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: actualEventSlug, eventName, site: assignedSiteName })
         });
         if (!createRes.ok) throw new Error("Order creation failed");
         const orderData = await createRes.json();
@@ -653,6 +677,7 @@ export default function OrderForm() {
           shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null,
           paymentMethod: 'bluetooth_reader',
           status: 'pending_bluetooth',
+          site: assignedSiteName,
         }),
       });
       const orderData = await res.json();
@@ -693,7 +718,7 @@ export default function OrderForm() {
         const res = await fetch('/api/create-cash-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: actualEventSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: actualEventSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null, site: assignedSiteName })
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
@@ -833,20 +858,52 @@ if (!ignoreInventory) {
   };
 
   if (showSetup) {
+      const [setupSiteName, setSetupSiteName] = (window as any)._setupState || [assignedSiteName, (v) => { (window as any)._setupState = [v, (window as any)._setupState?.[1]]; }];
+
       return (
           <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
-              <h1 className="text-3xl font-bold mb-8">🛠️ Kiosk Setup Mode</h1>
+              <h1 className="text-3xl font-bold mb-2">🛠️ Kiosk Setup</h1>
+              <p className="text-gray-400 text-center mb-6 text-sm">Configure this iPad's site, printer, and payment device</p>
               <div className="space-y-4 w-full max-w-md">
-                  <p className="text-gray-400 text-center mb-4">Select which payment device this iPad uses:</p>
+
+                  {/* Site Name */}
+                  <div className="bg-gray-800 rounded-xl p-4 border border-gray-600">
+                      <label className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2 block">Site Name</label>
+                      <input
+                          className="w-full bg-gray-700 border border-gray-500 rounded-lg px-4 py-3 text-white font-bold text-lg focus:outline-none focus:border-blue-400"
+                          placeholder="e.g. Site A, North Entrance, Main Table"
+                          defaultValue={assignedSiteName}
+                          id="setup-site-name"
+                      />
+                  </div>
+
+                  {/* Printer ID */}
+                  <div className="bg-gray-800 rounded-xl p-4 border border-gray-600">
+                      <label className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2 block">PrintNode Printer ID</label>
+                      <input
+                          className="w-full bg-gray-700 border border-gray-500 rounded-lg px-4 py-3 text-white font-mono font-bold focus:outline-none focus:border-blue-400"
+                          placeholder="e.g. 12345678"
+                          defaultValue={assignedPrinterId}
+                          id="setup-printer-id"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Find in Admin → Settings → Cloud Printing</p>
+                  </div>
+
+                  <div className="border-t border-gray-700 pt-4">
+                      <p className="text-xs font-black uppercase tracking-wider text-gray-400 mb-3">Payment Device</p>
+                  </div>
 
                   {/* Bluetooth Reader option */}
-                  <button onClick={() => selectTerminal('BLUETOOTH_READER')}
-                    className={`w-full bg-gray-800 border p-4 rounded-lg text-lg font-bold hover:bg-blue-600 hover:border-blue-400 transition-colors ${assignedTerminalId === 'BLUETOOTH_READER' ? 'border-blue-400 bg-blue-700' : 'border-gray-600'}`}>
+                  <button onClick={() => {
+                      const site = (document.getElementById('setup-site-name') as HTMLInputElement)?.value || '';
+                      const printer = (document.getElementById('setup-printer-id') as HTMLInputElement)?.value || '';
+                      selectTerminal('BLUETOOTH_READER', site, printer);
+                  }} className={`w-full bg-gray-800 border p-4 rounded-lg text-lg font-bold hover:bg-blue-600 hover:border-blue-400 transition-colors ${assignedTerminalId === 'BLUETOOTH_READER' ? 'border-blue-400 bg-blue-700' : 'border-gray-600'}`}>
                     📱 Bluetooth Reader
                     <span className="block text-xs font-normal text-gray-400 mt-1">Square POS app + contactless reader</span>
                   </button>
 
-                  <div className="flex items-center gap-3 my-2">
+                  <div className="flex items-center gap-3">
                     <div className="flex-1 border-t border-gray-700" />
                     <span className="text-xs text-gray-500 uppercase tracking-widest">or Square Terminal</span>
                     <div className="flex-1 border-t border-gray-700" />
@@ -856,13 +913,16 @@ if (!ignoreInventory) {
                       <div className="text-center text-red-400">No Terminals Found. Add them in Admin Dashboard first.</div>
                   ) : (
                       availableTerminals.map(t => (
-                          <button key={t.id} onClick={() => selectTerminal(t.device_id)}
-                            className={`w-full bg-gray-800 border p-4 rounded-lg text-lg font-bold hover:bg-blue-600 hover:border-blue-400 transition-colors ${assignedTerminalId === t.device_id ? 'border-blue-400 bg-blue-700' : 'border-gray-600'}`}>
+                          <button key={t.id} onClick={() => {
+                              const site = (document.getElementById('setup-site-name') as HTMLInputElement)?.value || '';
+                              const printer = (document.getElementById('setup-printer-id') as HTMLInputElement)?.value || '';
+                              selectTerminal(t.device_id, site, printer);
+                          }} className={`w-full bg-gray-800 border p-4 rounded-lg text-lg font-bold hover:bg-blue-600 hover:border-blue-400 transition-colors ${assignedTerminalId === t.device_id ? 'border-blue-400 bg-blue-700' : 'border-gray-600'}`}>
                               {t.label} <span className="block text-xs font-mono text-gray-500 mt-1">{t.device_id}</span>
                           </button>
                       ))
                   )}
-                  <button onClick={() => setShowSetup(false)} className="w-full mt-8 text-gray-500 hover:text-white">Cancel</button>
+                  <button onClick={() => setShowSetup(false)} className="w-full mt-4 text-gray-500 hover:text-white text-sm">Cancel</button>
               </div>
           </div>
       );
@@ -990,7 +1050,7 @@ if (!ignoreInventory) {
             <div className="text-white py-9 px-6 text-center relative" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-36 mx-auto mb-3" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
-              {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">{assignedTerminalId === 'BLUETOOTH_READER' ? '📱 BT' : `ID: ${assignedTerminalId.slice(-4)}`}</div>}
+              {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">{assignedSiteName ? `📍 ${assignedSiteName}` : assignedTerminalId === 'BLUETOOTH_READER' ? '📱 BT' : `ID: ${assignedTerminalId.slice(-4)}`}</div>}
               <button onClick={() => { setShowLookup(true); setLookupQuery(''); setLookupResults([]); }} className="absolute bottom-2 right-2 text-[10px] bg-black bg-opacity-20 hover:bg-opacity-40 px-2 py-1 rounded text-white font-bold transition-all">🔍 Lookup</button>
             </div>
             

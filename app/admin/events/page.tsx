@@ -377,6 +377,27 @@ salesLedger.forEach(row => {
     .map(([day, data]) => ({ day, ...data, profit: data.revenue - data.cogs }));
 }, [orders, paymentMode, products, salesLedger]);
 
+  const siteStats = useMemo(() => {
+    const map = new Map<string, { revenue: number; orders: number; items: number }>();
+    const cogsByOrder = {};
+    salesLedger.forEach(row => { cogsByOrder[row.order_id] = (cogsByOrder[row.order_id] || 0) + (Number(row.cost_basis) * Number(row.qty || 1)); });
+    orders.forEach(o => {
+      const pStatus = (o.payment_status || '').toLowerCase();
+      const isHosted = paymentMode === 'hosted';
+      const isPaid = isHosted ? (o.status !== 'incomplete' && o.status !== 'awaiting_payment') : (pStatus === 'paid' || pStatus === 'succeeded' || Number(o.total_price) === 0);
+      if (!isPaid || o.status === 'refunded') return;
+      const site = o.site || 'Unknown Site';
+      let rev = 0;
+      const cart = Array.isArray(o.cart_data) ? o.cart_data : [];
+      if (isHosted || Number(o.total_price || 0) === 0) {
+        cart.forEach(item => { const prod = products.find(p => p.id === item.productId); let ip = Number(prod?.base_price ?? 30); if (ip > 500) ip = ip / 100; if (item.customizations) { ip += (item.customizations.logos?.length || 0) * 5; ip += (item.customizations.names?.length || 0) * 5; ip += (item.customizations.numbers?.length || 0) * 5; if (item.customizations.metallic) ip += 5; } rev += ip; });
+      } else { let r = Number(o.total_price || 0); if (r > 5000) r = r / 100; rev = r; }
+      const existing = map.get(site) || { revenue: 0, orders: 0, items: 0 };
+      map.set(site, { revenue: existing.revenue + rev, orders: existing.orders + 1, items: existing.items + cart.length });
+    });
+    return Array.from(map.entries()).map(([site, data]) => ({ site, ...data })).sort((a, b) => b.revenue - a.revenue);
+  }, [orders, paymentMode, products, salesLedger]);
+
   
   const handleLogin = async (e) => { 
       e.preventDefault(); 
@@ -956,6 +977,48 @@ setSalesLedger(ledgerData || []);
         </div>
     )}
 </div>
+
+{/* Site Breakdown */}
+{siteStats.length > 1 && activeTab === 'orders' && (
+<div className="mt-6 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="px-6 py-4 bg-gray-50 border-b flex items-center justify-between">
+        <span className="font-black text-lg">📍 Revenue by Site</span>
+    </div>
+    <table className="w-full text-left text-sm">
+        <thead className="text-[10px] uppercase tracking-widest text-gray-400 border-b">
+            <tr>
+                <th className="p-3">Site</th>
+                <th className="p-3 text-center">Orders</th>
+                <th className="p-3 text-center">Items</th>
+                <th className="p-3 text-right">Revenue</th>
+                <th className="p-3 text-right">% of Total</th>
+            </tr>
+        </thead>
+        <tbody className="divide-y">
+            {siteStats.map(({ site, revenue, orders: cnt, items }) => {
+                const totalRev = siteStats.reduce((s, r) => s + r.revenue, 0);
+                const pct = totalRev > 0 ? Math.round((revenue / totalRev) * 100) : 0;
+                return (
+                    <tr key={site} className="hover:bg-gray-50">
+                        <td className="p-3 font-black">{site}</td>
+                        <td className="p-3 text-center font-bold">{cnt}</td>
+                        <td className="p-3 text-center text-gray-500">{items}</td>
+                        <td className="p-3 text-right font-black text-green-700">{showFinancials ? `$${revenue.toFixed(2)}` : '$888.88'}</td>
+                        <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                                <div className="w-16 bg-gray-100 rounded-full h-2 overflow-hidden">
+                                    <div className="h-2 bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className="text-xs font-bold text-gray-500 w-8">{pct}%</span>
+                            </div>
+                        </td>
+                    </tr>
+                );
+            })}
+        </tbody>
+    </table>
+</div>
+)}
 
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
             {['orders', 'global catalog', 'event stock', 'guests', 'logos', 'terminals', 'settings'].map(tab => (
