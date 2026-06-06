@@ -160,8 +160,12 @@ export default function OrderForm() {
         const searchParams = new URLSearchParams(window.location.search);
         slug = searchParams.get('event');
         if (!slug) {
+            const reserved = ['setup', 'admin', 'pos-callback', 'success', 'board'];
             const pathParts = window.location.pathname.split('/').filter(Boolean);
-            slug = pathParts[pathParts.length - 1];
+            const lastPart = pathParts[pathParts.length - 1];
+            if (lastPart && !reserved.includes(lastPart)) {
+                slug = lastPart;
+            }
         }
     }
     // If no slug was found in the URL, leave it blank — fetchData will find the active event
