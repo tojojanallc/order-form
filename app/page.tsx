@@ -216,6 +216,7 @@ export default function OrderForm() {
         finalSlug = activeEvent?.slug || 'default';
       }
       setActualEventSlug(finalSlug);
+      localStorage.setItem('event_slug', finalSlug);
 
       const { data: settings } = await supabase.from('event_settings').select('*').eq('slug', finalSlug).single();
       if (settings) {
