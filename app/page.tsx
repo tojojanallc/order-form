@@ -637,8 +637,55 @@ export default function OrderForm() {
     }
   };
 
+  const handleBluetoothCheckout = async () => {
+    if (cart.length === 0) return alert('Cart is empty');
+    if (!customerName) return alert('Please enter customer name');
+    setIsSubmitting(true);
+    try {
+      // 1. Create order in Supabase first (pending)
+      const res = await fetch('/api/create-retail-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cart, customerName, customerPhone, customerEmail,
+          total: calculateGrandTotal(), taxCollected: calculateTax(),
+          eventName, eventSlug: actualEventSlug,
+          shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null,
+          paymentMethod: 'bluetooth_reader',
+          status: 'pending_bluetooth',
+        }),
+      });
+      const orderData = await res.json();
+      if (!orderData.orderId) throw new Error('Failed to create order');
+
+      // 2. Stash order info for callback page
+      localStorage.setItem('pos_pending_order_id', String(orderData.orderId));
+      localStorage.setItem('pos_pending_order_total', String(calculateGrandTotal()));
+      localStorage.setItem('pos_kiosk_url', window.location.href);
+
+      // 3. Build Square POS deep link (iOS)
+      const amountCents = Math.round(calculateGrandTotal() * 100);
+      const callbackUrl = `${window.location.origin}/pos-callback`;
+      const posData = {
+        amount_money: { amount: String(amountCents), currency_code: 'USD' },
+        callback_url: callbackUrl,
+        client_id: 'sq0idp-scUIT7LGS8Sk4sEBJy8EIQ',
+        version: '1.3',
+        notes: `Order #${orderData.orderId} - ${eventName}`,
+        options: { supported_tender_types: ['CREDIT_CARD', 'CASH', 'OTHER', 'SQUARE_GIFT_CARD'] },
+      };
+
+      // 4. Launch Square POS app
+      window.location.href = `square-commerce-v1://payment/create?data=${encodeURIComponent(JSON.stringify(posData))}`;
+
+    } catch (err: any) {
+      alert(`Error: ${err.message}`);
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCashCheckout = async () => {
-    if (cart.length === 0) return alert("Cart is empty");
+    if (cart.length === 0) return alert('Cart is empty');
     if (!customerName) return alert("Please enter Name");
     if (!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
@@ -790,12 +837,27 @@ if (!ignoreInventory) {
           <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
               <h1 className="text-3xl font-bold mb-8">🛠️ Kiosk Setup Mode</h1>
               <div className="space-y-4 w-full max-w-md">
-                  <p className="text-gray-400 text-center mb-4">Select which Terminal this iPad should trigger:</p>
+                  <p className="text-gray-400 text-center mb-4">Select which payment device this iPad uses:</p>
+
+                  {/* Bluetooth Reader option */}
+                  <button onClick={() => selectTerminal('BLUETOOTH_READER')}
+                    className={`w-full bg-gray-800 border p-4 rounded-lg text-lg font-bold hover:bg-blue-600 hover:border-blue-400 transition-colors ${assignedTerminalId === 'BLUETOOTH_READER' ? 'border-blue-400 bg-blue-700' : 'border-gray-600'}`}>
+                    📱 Bluetooth Reader
+                    <span className="block text-xs font-normal text-gray-400 mt-1">Square POS app + contactless reader</span>
+                  </button>
+
+                  <div className="flex items-center gap-3 my-2">
+                    <div className="flex-1 border-t border-gray-700" />
+                    <span className="text-xs text-gray-500 uppercase tracking-widest">or Square Terminal</span>
+                    <div className="flex-1 border-t border-gray-700" />
+                  </div>
+
                   {availableTerminals.length === 0 ? (
                       <div className="text-center text-red-400">No Terminals Found. Add them in Admin Dashboard first.</div>
                   ) : (
                       availableTerminals.map(t => (
-                          <button key={t.id} onClick={() => selectTerminal(t.device_id)} className="w-full bg-gray-800 border border-gray-600 p-4 rounded-lg text-lg font-bold hover:bg-blue-600 hover:border-blue-400 transition-colors">
+                          <button key={t.id} onClick={() => selectTerminal(t.device_id)}
+                            className={`w-full bg-gray-800 border p-4 rounded-lg text-lg font-bold hover:bg-blue-600 hover:border-blue-400 transition-colors ${assignedTerminalId === t.device_id ? 'border-blue-400 bg-blue-700' : 'border-gray-600'}`}>
                               {t.label} <span className="block text-xs font-mono text-gray-500 mt-1">{t.device_id}</span>
                           </button>
                       ))
@@ -928,7 +990,7 @@ if (!ignoreInventory) {
             <div className="text-white py-9 px-6 text-center relative" style={{ backgroundColor: headerColor }}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-36 mx-auto mb-3" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
-              {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">ID: {assignedTerminalId.slice(-4)}</div>}
+              {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">{assignedTerminalId === 'BLUETOOTH_READER' ? '📱 BT' : `ID: ${assignedTerminalId.slice(-4)}`}</div>}
               <button onClick={() => { setShowLookup(true); setLookupQuery(''); setLookupResults([]); }} className="absolute bottom-2 right-2 text-[10px] bg-black bg-opacity-20 hover:bg-opacity-40 px-2 py-1 rounded text-white font-bold transition-all">🔍 Lookup</button>
             </div>
             
@@ -1326,7 +1388,12 @@ if (!ignoreInventory) {
                         </div>
                     )}
                     <div className="space-y-3">
-                        {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && (
+                        {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && assignedTerminalId === 'BLUETOOTH_READER' && (
+                            <button onClick={handleBluetoothCheckout} disabled={isSubmitting} className={`w-full py-4 text-xl font-black rounded-xl shadow-lg transition-all text-white flex items-center justify-center gap-2 ${isSubmitting ? 'bg-blue-400 animate-pulse cursor-wait' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                {isSubmitting ? <span>⏳ Opening Square POS...</span> : <span>📱 Pay with Bluetooth Reader</span>}
+                            </button>
+                        )}
+                        {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && assignedTerminalId !== 'BLUETOOTH_READER' && (
                             <button onClick={handleTerminalCheckout} disabled={isSubmitting || isTerminalProcessing} className={`w-full py-4 text-xl font-black rounded-xl shadow-lg transition-all text-white flex items-center justify-center gap-2 ${isTerminalProcessing ? 'bg-purple-600 animate-pulse cursor-wait' : 'bg-purple-700 hover:bg-purple-800'}`}>
                                 {isTerminalProcessing ? <span>📟 {terminalStatus}</span> : <span>📟 Pay with Card (Terminal)</span>}
                             </button>
