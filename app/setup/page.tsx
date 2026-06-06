@@ -3,21 +3,17 @@ import { useEffect } from 'react';
 
 export default function SetupRedirect() {
   useEffect(() => {
-    // Get current terminal/site/printer params if already set
     const terminal = localStorage.getItem('square_terminal_id') || '';
     const site = localStorage.getItem('site_name') || '';
     const printer = localStorage.getItem('printer_id') || '';
-    const slug = localStorage.getItem('event_slug') || '';
 
-    // Build URL back to kiosk with setup=true
     const params = new URLSearchParams();
     params.set('setup', 'true');
     if (terminal) params.set('terminal', terminal);
     if (site) params.set('site', site);
     if (printer) params.set('printer', printer);
 
-    const path = slug ? `/${slug}` : '/';
-    window.location.href = `${path}?${params.toString()}`;
+    window.location.replace(`/?${params.toString()}`);
   }, []);
 
   return (
