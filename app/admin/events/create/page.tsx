@@ -2,181 +2,121 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { supabase } from '@/supabase';
 
 export default function CreateEventPage() {
-  const [form, setForm] = useState({ name: '', slug: '', mode: 'retail' as 'retail' | 'hosted', openGuestEntry: false });
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [mode, setMode] = useState<'retail' | 'hosted'>('retail');
+  const [openGuestEntry, setOpenGuestEntry] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
 
-  const buildSafeSlug = (value: string) =>
-    value
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '');
+  const buildSafeSlug = (v: string) => v.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-  const handleCreate = async () => {
-    if (!form.name) return alert('Event name is required.');
-
-    setLoading(true);
-
-    const safeSlug = buildSafeSlug(form.slug || form.name);
-
-    const res = await fetch('/api/create-event', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event_name: form.name,
-        slug: safeSlug,
-        payment_mode: form.mode,
-        header_color: '#1e3a8a',
-        open_guest_entry: form.mode === 'hosted' ? form.openGuestEntry : false,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok || data.error) {
-      alert(`Error: ${data.error}`);
-      setLoading(false);
-      return;
-    }
-
-    alert(`🎉 Event "${form.name}" created successfully!`);
-    window.location.href = '/admin';
+  const handleNameChange = (v: string) => {
+    setName(v);
+    setSlug(buildSafeSlug(v));
   };
 
+  const createEvent = async () => {
+    if (!name.trim()) { alert('Event name is required.'); return; }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/create-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_name: name.trim(),
+          slug: buildSafeSlug(slug || name),
+          payment_mode: mode,
+          header_color: '#1e3a8a',
+          open_guest_entry: mode === 'hosted' ? openGuestEntry : false,
+        }),
+      });
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      setDone(true);
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+      setLoading(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center font-sans">
+        <div className="text-center">
+          <div className="text-6xl mb-4">🎉</div>
+          <h1 className="text-3xl font-black mb-4">"{name}" Created!</h1>
+          <Link href="/admin/events" className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-sm uppercase">
+            Go to Event Admin →
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
-      <div className="max-w-5xl mx-auto">
-        {/* HEADER */}
-        <div className="flex justify-between items-end mb-10">
+    <div className="min-h-screen bg-gray-50 p-8 font-sans">
+      <div className="max-w-lg mx-auto">
+        <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Command Center</Link>
+        <h1 className="text-4xl font-black mt-2 mb-8">Create Event</h1>
+
+        <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-8 space-y-6">
+
           <div>
-            <Link
-              href="/admin"
-              className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline"
-            >
-              ← Command Center
-            </Link>
-            <h1 className="text-4xl font-black tracking-tight text-slate-900">Create Event</h1>
-            <p className="text-gray-500 font-medium">Launch a new kiosk / event.</p>
+            <label className="block text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Event Name</label>
+            <input
+              className="w-full bg-gray-50 border border-gray-200 p-4 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. Spring Tournament"
+              value={name}
+              onChange={e => handleNameChange(e.target.value)}
+            />
           </div>
 
-          <div className="bg-white px-6 py-4 rounded-3xl shadow-sm border border-gray-100 text-right">
-            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Status</p>
-            <p className="text-2xl font-black text-green-600">Active</p>
+          <div>
+            <label className="block text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Slug</label>
+            <input
+              className="w-full bg-gray-50 border border-gray-200 p-4 rounded-2xl text-sm font-mono font-black outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="spring-tournament"
+              value={slug}
+              onChange={e => setSlug(buildSafeSlug(e.target.value))}
+            />
+            <p className="text-xs text-gray-400 mt-1">URL: /{slug || 'your-slug'}</p>
           </div>
-        </div>
 
-        {/* MAIN CARD */}
-        <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden">
-          <div className="p-8 space-y-8">
-            {/* EVENT DETAILS */}
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4">Event Details</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Event Name</label>
-                  <input
-                    required
-                    className="mt-2 w-full bg-gray-50 border border-gray-200 p-4 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. Spring Tournament"
-                    value={form.name}
-                    onChange={(e) => {
-                      const name = e.target.value;
-                      setForm((f) => ({ ...f, name, slug: buildSafeSlug(name) }));
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Slug</label>
-                  <input
-                    required
-                    className="mt-2 w-full bg-gray-50 border border-gray-200 p-4 rounded-2xl text-sm font-mono font-black outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="spring-tournament"
-                    value={form.slug}
-                    onChange={(e) => setForm((f) => ({ ...f, slug: buildSafeSlug(e.target.value) }))}
-                  />
-                  <p className="text-[10px] text-gray-400 font-bold mt-2">
-                    URL will be: <span className="font-mono">/{form.slug || 'your-slug'}</span>
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* PAYMENT MODE */}
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4">Payment Mode</h2>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, mode: 'retail' }))}
-                  className={`p-4 rounded-2xl border font-black text-xs uppercase tracking-widest transition-colors ${
-                    form.mode === 'retail'
-                      ? 'bg-slate-900 text-white border-slate-900'
-                      : 'bg-white text-slate-700 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  Retail (Collect Payment)
+          <div>
+            <label className="block text-xs font-black uppercase tracking-widest text-gray-400 mb-2">Payment Mode</label>
+            <div className="grid grid-cols-2 gap-3">
+              {(['retail', 'hosted'] as const).map(m => (
+                <button key={m} type="button" onClick={() => setMode(m)}
+                  className={`p-4 rounded-2xl border font-black text-xs uppercase tracking-widest transition-colors ${mode === m ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-gray-200'}`}>
+                  {m === 'retail' ? 'Retail (Collect Payment)' : 'Hosted (No Checkout)'}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, mode: 'hosted' }))}
-                  className={`p-4 rounded-2xl border font-black text-xs uppercase tracking-widest transition-colors ${
-                    form.mode === 'hosted'
-                      ? 'bg-slate-900 text-white border-slate-900'
-                      : 'bg-white text-slate-700 border-gray-200 hover:bg-gray-50'
-                  }`}
-                >
-                  Hosted (No Checkout)
-                </button>
-              </div>
-
-              {form.mode === 'hosted' && (
-                <div className="mt-4 bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-black text-slate-800">Open Guest Entry</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Guests type their own name — no pre-loaded list needed.</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={form.openGuestEntry}
-                    onChange={(e) => setForm((f) => ({ ...f, openGuestEntry: e.target.checked }))}
-                    className="w-5 h-5 cursor-pointer accent-indigo-600"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* ACTIONS */}
-            <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
-              <Link
-                href="/admin"
-                className="px-8 py-4 rounded-2xl border border-gray-200 text-slate-700 font-black text-xs uppercase tracking-widest hover:bg-gray-50 text-center"
-              >
-                Cancel
-              </Link>
-
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={loading}
-                className="px-8 py-4 rounded-2xl bg-blue-600 text-white font-black text-xs uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40"
-              >
-                {loading ? 'Creating...' : 'Create Event'}
-              </button>
+              ))}
             </div>
           </div>
-        </div>
 
-        {/* FOOTER NOTE */}
-        <p className="text-[10px] text-gray-400 font-bold mt-6">
-          Creating an event inserts a row into <span className="font-mono">event_settings</span>.
-        </p>
+          {mode === 'hosted' && (
+            <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-black text-slate-800">Open Guest Entry</p>
+                <p className="text-xs text-gray-500 mt-0.5">Guests type their own name</p>
+              </div>
+              <input type="checkbox" checked={openGuestEntry} onChange={e => setOpenGuestEntry(e.target.checked)} className="w-5 h-5 cursor-pointer accent-indigo-600" />
+            </div>
+          )}
+
+          <button
+            type="button"
+            disabled={loading || !name.trim()}
+            onClick={createEvent}
+            className="w-full px-8 py-4 rounded-2xl bg-blue-600 text-white font-black text-sm uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40 transition-colors"
+          >
+            {loading ? 'Creating...' : 'Create Event'}
+          </button>
+
+        </div>
       </div>
     </div>
   );
