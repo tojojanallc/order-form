@@ -50,6 +50,9 @@ export default function AdminPage() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
+  const [eventSites, setEventSites] = useState<any[]>([]);
+  const [newSiteName, setNewSiteName] = useState('');
+  const [newSitePrinter, setNewSitePrinter] = useState('');
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
   const [showDailyBreakdown, setShowDailyBreakdown] = useState(false);
@@ -445,6 +448,13 @@ setSalesLedger(ledgerData || []);
       const { data } = await supabase.from('logos').select('*').eq('event_slug', selectedEventSlug).order('sort_order'); 
       if (data) setLogos(data);
 
+  const fetchSites = async () => {
+      if (!supabase || !selectedEventSlug) return;
+      const { data } = await supabase.from('event_sites').select('*').eq('event_slug', selectedEventSlug).order('id');
+      if (data) setEventSites(data);
+  };
+  fetchSites();
+
   const fetchLogoTemplates = async () => {
       if (!supabase) return;
       const { data } = await supabase.from('logo_templates').select('*').order('sport').order('sort_order');
@@ -745,6 +755,22 @@ setSalesLedger(ledgerData || []);
       setNewProdId(''); setNewProdName(''); fetchInventory(); 
   };
   
+
+  const addSite = async () => {
+    if (!newSiteName.trim() || !selectedEventSlug) return;
+    await supabase.from("event_sites").insert({ event_slug: selectedEventSlug, name: newSiteName.trim(), printer_id: newSitePrinter.trim() || null });
+    setNewSiteName(""); setNewSitePrinter("");
+    const { data } = await supabase.from("event_sites").select("*").eq("event_slug", selectedEventSlug).order("id");
+    if (data) setEventSites(data);
+  };
+
+  const deleteSite = async (id) => {
+    if (!confirm("Remove this site?")) return;
+    await supabase.from("event_sites").delete().eq("id", id);
+    const { data } = await supabase.from("event_sites").select("*").eq("event_slug", selectedEventSlug).order("id");
+    if (data) setEventSites(data);
+  };
+
   const addLogo = async (e) => { 
       e.preventDefault(); 
       if (!newLogoName) return; 
@@ -1021,11 +1047,93 @@ setSalesLedger(ledgerData || []);
 )}
 
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
-            {['orders', 'global catalog', 'event stock', 'guests', 'logos', 'terminals', 'settings'].map(tab => (
+            {['orders', 'sites', 'global catalog', 'event stock', 'guests', 'logos', 'terminals', 'settings'].map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded font-bold uppercase text-xs ${activeTab === tab ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>{tab}</button>
             ))}
           </div>
         </div>
+
+        {activeTab === 'sites' && (
+          <div className="max-w-3xl mx-auto space-y-6">
+
+            {/* Add new site */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <h2 className="font-black text-xl mb-4">Add Site</h2>
+              <div className="grid md:grid-cols-3 gap-3">
+                <input className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400" placeholder="Site name (e.g. Site A)" value={newSiteName} onChange={e => setNewSiteName(e.target.value)} />
+                <input className="border-2 border-gray-200 rounded-xl px-4 py-2 font-mono focus:outline-none focus:border-blue-400" placeholder="PrintNode Printer ID" value={newSitePrinter} onChange={e => setNewSitePrinter(e.target.value)} />
+                <button onClick={addSite} disabled={!newSiteName.trim()} className="bg-blue-700 hover:bg-blue-600 text-white font-black rounded-xl px-6 py-2 disabled:opacity-40 transition-all">+ Add Site</button>
+              </div>
+            </div>
+
+            {/* Site list with per-site stats */}
+            {eventSites.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center text-gray-400 font-bold">No sites added yet. Add your first site above.</div>
+            ) : (
+              <div className="space-y-4">
+                {eventSites.map(site => {
+                  const siteStat = siteStats.find(s => s.site === site.name);
+                  const siteOrders = orders.filter(o => o.site === site.name);
+                  const recentOrders = siteOrders.slice(0, 5);
+                  return (
+                    <div key={site.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                      {/* Site header */}
+                      <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+                        <div>
+                          <h3 className="font-black text-xl">📍 {site.name}</h3>
+                          {site.printer_id && <p className="text-xs text-slate-400 mt-0.5">🖨️ Printer: {site.printer_id}</p>}
+                        </div>
+                        <button onClick={() => deleteSite(site.id)} className="text-slate-500 hover:text-red-400 text-xl transition-all">🗑️</button>
+                      </div>
+
+                      {/* Stats row */}
+                      <div className="grid grid-cols-3 divide-x border-b">
+                        {[
+                          { label: 'Orders', value: siteStat?.orders || 0 },
+                          { label: 'Items', value: siteStat?.items || 0 },
+                          { label: 'Revenue', value: siteStat ? `$${siteStat.revenue.toFixed(2)}` : '$0.00' },
+                        ].map(s => (
+                          <div key={s.label} className="px-6 py-4 text-center">
+                            <p className="text-2xl font-black text-slate-900">{showFinancials ? s.value : s.label === 'Revenue' ? '$888.88' : s.value}</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">{s.label}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Recent orders */}
+                      {recentOrders.length > 0 ? (
+                        <div className="divide-y">
+                          <div className="px-6 py-2 bg-gray-50 flex justify-between">
+                            <p className="text-xs font-black uppercase tracking-wider text-gray-400">Recent Orders</p>
+                            {siteOrders.length > 5 && <p className="text-xs text-gray-400">{siteOrders.length} total</p>}
+                          </div>
+                          {recentOrders.map(o => (
+                            <div key={o.id} className="px-6 py-3 flex justify-between items-center text-sm">
+                              <div>
+                                <p className="font-bold">{o.customer_name}</p>
+                                <p className="text-xs text-gray-400">{new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                              </div>
+                              <span className="font-black text-green-700">{showFinancials ? `$${Number(o.total_price || 0).toFixed(2)}` : '$88.88'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="px-6 py-4 text-center text-gray-400 text-sm font-bold">No orders yet from this site.</div>
+                      )}
+
+                      {/* Setup URL */}
+                      <div className="px-6 py-3 bg-blue-50 border-t">
+                        <p className="text-xs font-black uppercase tracking-widest text-blue-600 mb-1">Setup URL for this site's iPad</p>
+                        <p className="text-xs font-mono text-blue-800 break-all">app.levcustom.com/setup#{site.name}</p>
+                        <p className="text-xs text-blue-400 mt-1">Staff opens this URL → Setup page auto-fills the site name</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {activeTab === 'orders' && ( <div className="space-y-6"> 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 

@@ -9,22 +9,46 @@ const supabase = createClient(
 
 export default function SetupPage() {
   const [terminals, setTerminals] = useState<any[]>([]);
+  const [eventSites, setEventSites] = useState<any[]>([]);
   const [siteName, setSiteName] = useState('');
   const [printerId, setPrinterId] = useState('');
   const [currentTerminal, setCurrentTerminal] = useState('');
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load existing config from localStorage
+    // Load existing config
     setSiteName(localStorage.getItem('site_name') || '');
     setPrinterId(localStorage.getItem('printer_id') || '');
     setCurrentTerminal(localStorage.getItem('square_terminal_id') || '');
 
-    // Fetch terminals from Supabase
-    supabase.from('terminals').select('*').then(({ data }) => {
-      if (data) setTerminals(data);
-    });
+    // Check URL hash for pre-filled site name (from admin setup URL)
+    const hash = window.location.hash.slice(1);
+    if (hash) setSiteName(decodeURIComponent(hash));
+
+    // Fetch terminals and event sites
+    const load = async () => {
+      const eventSlug = localStorage.getItem('event_slug') || '';
+
+      const [{ data: terms }, { data: sites }] = await Promise.all([
+        supabase.from('terminals').select('*').order('id'),
+        eventSlug
+          ? supabase.from('event_sites').select('*').eq('event_slug', eventSlug).order('id')
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      if (terms) setTerminals(terms);
+      if (sites) setEventSites(sites);
+      setLoading(false);
+    };
+    load();
   }, []);
+
+  // When site is selected from dropdown, also set printer ID
+  const handleSiteSelect = (site: any) => {
+    setSiteName(site.name);
+    if (site.printer_id) setPrinterId(site.printer_id);
+  };
 
   const select = (terminalId: string) => {
     localStorage.setItem('square_terminal_id', terminalId);
@@ -33,13 +57,11 @@ export default function SetupPage() {
     setCurrentTerminal(terminalId);
     setSaved(true);
 
-    // Update URL params on kiosk so they survive navigation
     setTimeout(() => {
       const params = new URLSearchParams();
       params.set('terminal', terminalId);
       if (siteName) params.set('site', siteName);
       if (printerId) params.set('printer', printerId);
-      // Launch kiosk in same window
       window.location.href = `/?${params.toString()}`;
     }, 1200);
   };
@@ -63,28 +85,41 @@ export default function SetupPage() {
 
       <div className="space-y-4 w-full max-w-md">
 
-        {/* Site Name */}
+        {/* Site picker — from event admin if available, else manual */}
         <div className="bg-gray-800 rounded-xl p-4 border border-gray-600">
-          <label className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2 block">Site Name</label>
-          <input
-            className="w-full bg-gray-700 border border-gray-500 rounded-lg px-4 py-3 text-white font-bold text-lg focus:outline-none focus:border-blue-400"
-            placeholder="e.g. Site A, North Entrance"
-            value={siteName}
-            onChange={e => setSiteName(e.target.value)}
-          />
+          <label className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2 block">Site</label>
+          {!loading && eventSites.length > 0 ? (
+            <div className="space-y-2">
+              {eventSites.map(site => (
+                <button key={site.id} onClick={() => handleSiteSelect(site)}
+                  className={`w-full text-left p-3 rounded-lg border font-bold transition-all ${siteName === site.name ? 'bg-blue-700 border-blue-400 text-white' : 'bg-gray-700 border-gray-500 text-white hover:border-blue-400'}`}>
+                  📍 {site.name}
+                  {site.printer_id && <span className="block text-xs font-mono text-gray-400 mt-0.5">🖨️ {site.printer_id}</span>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <input
+              className="w-full bg-gray-700 border border-gray-500 rounded-lg px-4 py-3 text-white font-bold text-lg focus:outline-none focus:border-blue-400"
+              placeholder="e.g. Site A, North Entrance"
+              value={siteName}
+              onChange={e => setSiteName(e.target.value)}
+            />
+          )}
         </div>
 
-        {/* Printer ID */}
-        <div className="bg-gray-800 rounded-xl p-4 border border-gray-600">
-          <label className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2 block">PrintNode Printer ID</label>
-          <input
-            className="w-full bg-gray-700 border border-gray-500 rounded-lg px-4 py-3 text-white font-mono font-bold focus:outline-none focus:border-blue-400"
-            placeholder="e.g. 12345678"
-            value={printerId}
-            onChange={e => setPrinterId(e.target.value)}
-          />
-          <p className="text-xs text-gray-500 mt-1">Find in Admin → Settings → Cloud Printing</p>
-        </div>
+        {/* Printer ID — only show manually if not set by site */}
+        {(!eventSites.length || !eventSites.find(s => s.name === siteName)?.printer_id) && (
+          <div className="bg-gray-800 rounded-xl p-4 border border-gray-600">
+            <label className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2 block">PrintNode Printer ID</label>
+            <input
+              className="w-full bg-gray-700 border border-gray-500 rounded-lg px-4 py-3 text-white font-mono font-bold focus:outline-none focus:border-blue-400"
+              placeholder="e.g. 12345678"
+              value={printerId}
+              onChange={e => setPrinterId(e.target.value)}
+            />
+          </div>
+        )}
 
         <div className="border-t border-gray-700 pt-4">
           <p className="text-xs font-black uppercase tracking-wider text-gray-400 mb-3">Payment Device</p>
@@ -103,7 +138,9 @@ export default function SetupPage() {
           <div className="flex-1 border-t border-gray-700" />
         </div>
 
-        {terminals.length === 0 ? (
+        {loading ? (
+          <p className="text-center text-gray-500 animate-pulse">Loading terminals...</p>
+        ) : terminals.length === 0 ? (
           <p className="text-center text-red-400 text-sm">No terminals found. Add them in Admin first.</p>
         ) : (
           terminals.map(t => (
