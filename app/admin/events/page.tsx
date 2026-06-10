@@ -167,6 +167,7 @@ export default function AdminPage() {
     fetchLogos();
     fetchGuests();
     fetchTerminals();
+    fetchSites();
 
     const channel = supabase.channel('global_updates')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
@@ -447,13 +448,13 @@ setSalesLedger(ledgerData || []);
       if (!supabase || !selectedEventSlug) return; 
       const { data } = await supabase.from('logos').select('*').eq('event_slug', selectedEventSlug).order('sort_order'); 
       if (data) setLogos(data);
+  };
 
   const fetchSites = async () => {
       if (!supabase || !selectedEventSlug) return;
       const { data } = await supabase.from('event_sites').select('*').eq('event_slug', selectedEventSlug).order('id');
       if (data) setEventSites(data);
   };
-  fetchSites();
 
   const fetchLogoTemplates = async () => {
       if (!supabase) return;
