@@ -462,8 +462,7 @@ setSalesLedger(ledgerData || []);
       if (data) setLogoTemplates(data);
   };
   fetchLogoTemplates();
-  };
-  
+
   const fetchGuests = async () => { 
       if (!supabase || !selectedEventSlug) return; 
       const { data } = await supabase.from('guests').select('*').eq('event_slug', selectedEventSlug).order('name'); 
