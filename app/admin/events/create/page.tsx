@@ -23,24 +23,27 @@ export default function CreateEventPage() {
 
     const safeSlug = buildSafeSlug(form.slug || form.name);
 
-    const { error } = await supabase.from('event_settings').insert([
-      {
+    const res = await fetch('/api/create-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         event_name: form.name,
         slug: safeSlug,
-        status: 'active',
         payment_mode: form.mode,
         header_color: '#1e3a8a',
         open_guest_entry: form.mode === 'hosted' ? form.openGuestEntry : false,
-      },
-    ]);
+      }),
+    });
 
-    if (error) {
-      alert(`DB ERROR: ${error.message}`);
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      alert(`Error: ${data.error}`);
       setLoading(false);
       return;
     }
 
-    alert('🎉 SUCCESS! Event Created.');
+    alert(`🎉 SUCCESS! Event "${form.name}" created.`);
     window.location.href = '/admin';
   };
 
