@@ -168,6 +168,7 @@ export default function AdminPage() {
     fetchGuests();
     fetchTerminals();
     fetchSites();
+    fetchLogoTemplates();
 
     const channel = supabase.channel('global_updates')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
@@ -461,7 +462,6 @@ setSalesLedger(ledgerData || []);
       const { data } = await supabase.from('logo_templates').select('*').order('sport').order('sort_order');
       if (data) setLogoTemplates(data);
   };
-  fetchLogoTemplates();
 
   const fetchGuests = async () => { 
       if (!supabase || !selectedEventSlug) return; 
