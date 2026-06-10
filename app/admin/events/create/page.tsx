@@ -15,8 +15,7 @@ export default function CreateEventPage() {
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9-]/g, '');
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreate = async () => {
     if (!form.name) return alert('Event name is required.');
 
     setLoading(true);
@@ -71,7 +70,7 @@ export default function CreateEventPage() {
 
         {/* MAIN CARD */}
         <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden">
-          <form onSubmit={handleCreate} className="p-8 space-y-8">
+          <div className="p-8 space-y-8">
             {/* EVENT DETAILS */}
             <div>
               <h2 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-4">Event Details</h2>
@@ -163,13 +162,15 @@ export default function CreateEventPage() {
               </Link>
 
               <button
+                type="button"
+                onClick={handleCreate}
                 disabled={loading}
                 className="px-8 py-4 rounded-2xl bg-blue-600 text-white font-black text-xs uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40"
               >
                 {loading ? 'Creating...' : 'Create Event'}
               </button>
             </div>
-          </form>
+          </div>
         </div>
 
         {/* FOOTER NOTE */}
