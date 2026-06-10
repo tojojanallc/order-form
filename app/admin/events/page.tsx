@@ -53,6 +53,7 @@ export default function AdminPage() {
   const [eventSites, setEventSites] = useState<any[]>([]);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSitePrinter, setNewSitePrinter] = useState('');
+  const [siteFilter, setSiteFilter] = useState('all');
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
   const [showDailyBreakdown, setShowDailyBreakdown] = useState(false);
@@ -896,6 +897,7 @@ setSalesLedger(ledgerData || []);
 
   const visibleOrders = orders.filter(o => {
       if (o.status === 'refunded') return false;
+      if (siteFilter !== 'all' && o.site !== siteFilter) return false;
       if (!hideUnpaid) return true; 
       const pStatus = (o.payment_status || '').toLowerCase();
       const isHostedEvent = paymentMode === 'hosted';
@@ -915,7 +917,7 @@ setSalesLedger(ledgerData || []);
                     <span className="text-xs font-bold text-gray-500 uppercase">Viewing Event:</span>
                     <select 
                         value={selectedEventSlug} 
-                        onChange={(e) => setSelectedEventSlug(e.target.value)} 
+                        onChange={(e) => { setSelectedEventSlug(e.target.value); setSiteFilter('all'); }} 
                         className="bg-white border border-gray-300 text-sm font-bold rounded py-1 px-2 cursor-pointer shadow-sm hover:border-blue-500"
                     >
                         {availableEvents.map(evt => (
@@ -1150,6 +1152,15 @@ setSalesLedger(ledgerData || []);
                 <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="autoPrint" checked={autoPrintEnabled} onChange={(e) => { setAutoPrintEnabled(e.target.checked); localStorage.setItem("autoPrintEnabled", e.target.checked ? "true" : "false"); }} className="w-4 h-4 accent-blue-900 cursor-pointer" /><label htmlFor="autoPrint" className="text-xs font-black text-gray-800 cursor-pointer uppercase">Auto-Print Paid</label>{autoPrintEnabled && <span className="ml-auto text-xs font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full">● LIVE</span>}</div>
                 <button onClick={printAllUnprinted} className="text-xs font-black uppercase bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700 mb-2 w-full">🖨️ Print All Unprinted</button>
                 <div className="flex items-center gap-2 border-t pt-2"><input type="checkbox" id="hideUnpaid" checked={hideUnpaid} onChange={(e) => setHideUnpaid(e.target.checked)} className="w-4 h-4 accent-red-600 cursor-pointer" /><label htmlFor="hideUnpaid" className="text-xs font-bold text-red-600 cursor-pointer uppercase">Hide Unpaid</label></div>
+                {eventSites.length > 0 && (
+                  <div className="flex items-center gap-2 border-t pt-2">
+                    <span className="text-xs font-bold text-gray-500 uppercase">Site:</span>
+                    <select className="border border-gray-200 rounded-lg px-3 py-1 text-xs font-bold bg-white focus:outline-none focus:border-blue-400" value={siteFilter} onChange={e => setSiteFilter(e.target.value)}>
+                      <option value="all">All Sites</option>
+                      {eventSites.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
             </div> 
           </div> 
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
