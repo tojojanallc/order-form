@@ -43,7 +43,7 @@ export default function CreateEventPage() {
       return;
     }
 
-    alert(`🎉 SUCCESS! Event "${form.name}" created.`);
+    alert(`🎉 Event "${form.name}" created successfully!`);
     window.location.href = '/admin';
   };
 
