@@ -1352,7 +1352,7 @@ if (!ignoreInventory) {
                                 <div className="ml-8 space-y-3 border-l-4 border-yellow-300 pl-4">
                                     <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded border border-yellow-200 shadow-sm">
                                       <input type="checkbox" className="w-6 h-6 text-green-600" checked={backListConfirmed} onChange={(e) => setBackListConfirmed(e.target.checked)} />
-                                      <span className="text-sm font-bold text-red-600">I have checked the list at the table and found my athlete.</span>
+                                      <span className="text-sm font-bold text-red-600">I have checked the list at the table and found my team.</span>
                                     </label>
                                     {showMetallic && (
                                         <div className="pt-2">
