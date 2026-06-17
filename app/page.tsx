@@ -1175,6 +1175,31 @@ if (!ignoreInventory) {
                                       <div className="grid grid-cols-2 gap-2 mt-1">
                                         {visibleProducts.map(p => {
                                           const isSelected = mergedName(p.name) === mergedName(selectedProduct.name);
+                                          // Get all active colors for this product
+                                          const productColors = products.filter(pp =>
+                                            mergedName(pp.name) === mergedName(p.name)
+                                          ).map(pp => parseProductId(pp.id).color).filter(Boolean);
+                                          const uniqueColors = [...new Set(productColors)];
+                                          const colorHex = (c: string) => {
+                                            const map: Record<string, string> = {
+                                              'black': '#111', 'white': '#fff', 'navy': '#1a2a5e', 'red': '#c0392b',
+                                              'royal': '#2851a3', 'royal blue': '#2851a3', 'carolina blue': '#56a0d3',
+                                              'light blue': '#87ceeb', 'baby blue': '#89cff0', 'sky blue': '#87ceeb',
+                                              'gold': '#f4c430', 'yellow': '#f9e24b', 'orange': '#e67e22',
+                                              'purple': '#6c3483', 'maroon': '#6d0026', 'brown': '#795548',
+                                              'green': '#2e7d32', 'forest green': '#2e7d32', 'kelly green': '#4caf50',
+                                              'pink': '#e91e8c', 'hot pink': '#ff69b4', 'light pink': '#ffb6c1',
+                                              'grey': '#9e9e9e', 'gray': '#9e9e9e', 'charcoal': '#4a4a4a',
+                                              'heather grey': '#b0b0b0', 'heather gray': '#b0b0b0',
+                                              'heather charcoal': '#555', 'heather navy': '#2c3e6b',
+                                              'heather blue': '#5b8db8', 'heather cassis': '#7b4b6a',
+                                              'heather purist blue': '#6a9cc4', 'natural': '#f5f0e8',
+                                              'sand': '#c2b280', 'tan': '#d2b48c', 'cream': '#fffdd0',
+                                              'cantaloupe': '#ff8c5a', 'lagoon': '#00b4cc',
+                                              'spider black': '#1a1a1a', 'tie dye': '#a259c4',
+                                            };
+                                            return map[c.toLowerCase()] || '#ccc';
+                                          };
                                           return (
                                             <button
                                               key={p.id}
@@ -1198,6 +1223,16 @@ if (!ignoreInventory) {
                                               )}
                                               <span className="text-xs font-semibold leading-tight">{displayName(p.name, products)}</span>
                                               {showPrice && <span className="text-xs text-gray-500">${p.base_price}</span>}
+                                              {uniqueColors.length > 1 && (
+                                                <div className="flex flex-wrap justify-center gap-1 mt-1.5">
+                                                  {uniqueColors.slice(0, 8).map(c => (
+                                                    <div key={c} title={c}
+                                                      style={{ backgroundColor: colorHex(c), width: 12, height: 12, borderRadius: '50%', border: '1px solid rgba(0,0,0,0.2)', flexShrink: 0 }}
+                                                    />
+                                                  ))}
+                                                  {uniqueColors.length > 8 && <span className="text-[9px] text-gray-400">+{uniqueColors.length - 8}</span>}
+                                                </div>
+                                              )}
                                             </button>
                                           );
                                         })}
