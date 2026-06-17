@@ -499,12 +499,13 @@ export default function OrderForm() {
   };
   const calculateGrandTotal = () => calculateSubtotal() + calculateTax();
 
-  const sendConfirmationSMS = async (name, phone) => {
+  const sendConfirmationSMS = async (name, phone, orderId = '') => {
       if (!phone || phone.length < 10) return;
+      const orderRef = orderId ? ` Your order number is #${orderId}.` : '';
       fetch('/api/send-sms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: phone, message: `Hi ${name}! Thanks for your order from Lev Custom Merch at ${eventName}. We will text you again when it's ready for pickup!` })
+          body: JSON.stringify({ phone: phone, message: `Hi ${name}! Thanks for your order from Lev Custom Merch at ${eventName}.${orderRef} We will text you again when it's ready for pickup!` })
       }).catch(err => console.error("SMS Failed:", err));
   };
 
@@ -651,7 +652,7 @@ export default function OrderForm() {
         const handleSuccess = () => {
             if (window.pollingRef) clearInterval(window.pollingRef);
             decrementInventory(cart);
-            sendConfirmationSMS(customerName, customerPhone);
+            sendConfirmationSMS(customerName, customerPhone, orderId);
             sendReceiptEmail(orderId, customerName, customerEmail, cart, calculateGrandTotal());
             setLastOrderId(orderId);
             setOrderComplete(true);
@@ -743,7 +744,7 @@ export default function OrderForm() {
   await decrementInventory(cart);
 }
         setLastOrderId(data.orderId); 
-        if (customerPhone) sendConfirmationSMS(customerName, customerPhone);
+        if (customerPhone) sendConfirmationSMS(customerName, customerPhone, data.orderId);
         if (customerEmail) sendReceiptEmail(data.orderId, customerName, customerEmail, cart, calculateGrandTotal());
         setOrderComplete(true);
         setIsSubmitting(false); 
@@ -767,7 +768,7 @@ export default function OrderForm() {
             if (!data.success) throw new Error(data.error);
             setLastOrderId(data.orderId); 
             if (customerEmail) sendReceiptEmail(data.orderId, selectedGuest.name, customerEmail, cart, 0);
-            sendConfirmationSMS(selectedGuest.name, customerPhone || 'N/A');
+            sendConfirmationSMS(selectedGuest.name, customerPhone || "N/A", data.orderId);
             setOrderComplete(true);
             setCart([]);
             setSelectedGuest(null);
