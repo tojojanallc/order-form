@@ -636,7 +636,10 @@ export default function OrderForm() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orderId: orderId, amount: calculateGrandTotal(), taxCollected: calculateTax(), deviceId: assignedTerminalId })
         });
-        if (!payRes.ok) throw new Error("Terminal connection failed");
+        if (!payRes.ok) {
+            const errData = await payRes.json();
+            throw new Error(errData.details || errData.error || 'Terminal connection failed');
+        }
         const decrementInventory = async (cartItems) => {
             for (const item of cartItems) {
                 const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
