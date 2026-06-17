@@ -16,7 +16,7 @@ export async function POST(req: Request) {
         device_code: {
           name: name || 'New Terminal',
           product_type: 'TERMINAL_API',
-          ...(location_id ? { location_id } : {}),
+          location_id: location_id || 'LZXRJ5FXAXGXE',
         },
       }),
     });

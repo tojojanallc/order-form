@@ -50,6 +50,7 @@ export async function POST(request) {
           },
           reference_id: String(orderId),
           note: `Order #${orderId}`,
+          location_id: 'LZXRJ5FXAXGXE',
         },
       }),
     });
