@@ -1415,7 +1415,20 @@ if (!ignoreInventory) {
                       <button onClick={() => removeItem(item.id)} className="bg-red-100 hover:bg-red-200 text-red-600 font-black text-xs px-3 py-1 rounded-lg transition-all">REMOVE</button>
                     </div>
                     <p className="font-black text-black text-lg pr-16">{item.productName}</p>
-                    {item.needsShipping && <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>}
+                    {item.needsShipping && (
+                      <div className="mt-1 mb-2">
+                        <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>
+                        <label className="flex items-center gap-2 mt-2 cursor-pointer w-fit">
+                          <input type="checkbox" className="w-4 h-4 accent-green-600"
+                            checked={!item.needsShipping || item.staffStockOverride}
+                            onChange={e => {
+                              setCart(cart.map(c => c.id === item.id ? { ...c, staffStockOverride: e.target.checked, needsShipping: !e.target.checked } : c));
+                            }}
+                          />
+                          <span className="text-xs font-black text-green-700">Staff: We have this in stock</span>
+                        </label>
+                      </div>
+                    )}
                     {item.color && <p className="text-sm text-gray-600 font-bold">Color: {item.color}</p>}
                     <p className="text-sm text-gray-800 font-medium">Size: {item.size}</p>
                     <div className="text-xs text-blue-900 font-bold mt-1">Design: {item.customizations.mainDesign || 'None'}</div>
