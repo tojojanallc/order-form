@@ -1225,7 +1225,7 @@ if (!ignoreInventory) {
                                               )}
                                               <span className="text-xs font-semibold leading-tight">{displayName(p.name, products)}</span>
                                               {showPrice && <span className="text-xs text-gray-500">${p.base_price}</span>}
-                                              {uniqueColors.length > 1 && (
+                                              {uniqueColors.length > 0 && (
                                                 <div className="flex flex-wrap justify-center gap-1 mt-1.5">
                                                   {uniqueColors.slice(0, 8).map(c => (
                                                     <div key={c} title={c}
