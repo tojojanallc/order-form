@@ -48,6 +48,27 @@ const parseProductId = (id) => {
 };
 
 const mergedName = (name) => name.replace(/\s*\b(Youth|Ladies)\b\s*/gi, ' ').trim();
+const colorHex = (c: string): string => {
+  const map: Record<string, string> = {
+    "black": "#111", "white": "#fff", "navy": "#1a2a5e", "red": "#c0392b",
+    "royal": "#2851a3", "royal blue": "#2851a3", "carolina blue": "#56a0d3",
+    "light blue": "#87ceeb", "baby blue": "#89cff0", "sky blue": "#87ceeb",
+    "gold": "#f4c430", "yellow": "#f9e24b", "orange": "#e67e22",
+    "purple": "#6c3483", "maroon": "#6d0026", "brown": "#795548",
+    "green": "#2e7d32", "forest green": "#2e7d32", "kelly green": "#4caf50",
+    "pink": "#e91e8c", "hot pink": "#ff69b4", "light pink": "#ffb6c1",
+    "grey": "#9e9e9e", "gray": "#9e9e9e", "charcoal": "#4a4a4a",
+    "heather grey": "#b0b0b0", "heather gray": "#b0b0b0",
+    "heather charcoal": "#555", "heather navy": "#2c3e6b",
+    "heather blue": "#5b8db8", "heather cassis": "#7b4b6a",
+    "heather purist blue": "#6a9cc4", "natural": "#f5f0e8",
+    "sand": "#c2b280", "tan": "#d2b48c", "cream": "#fffdd0",
+    "cantaloupe": "#ff8c5a", "lagoon": "#00b4cc",
+    "spider black": "#1a1a1a", "heather charcoal": "#555",
+  };
+  return map[c.toLowerCase()] || "#ccc";
+};
+
 const displayName = (name, allProducts) => {
   const merged = mergedName(name);
   const hasAdult = allProducts.some(p => mergedName(p.name) === merged && !p.name.match(/\b(Youth|Ladies)\b/i));
@@ -1181,26 +1202,6 @@ if (!ignoreInventory) {
                                             (() => { const { size: s } = parseProductId(pp.id); return s && activeItems[`${pp.id}_${s}`] === true; })()
                                           ).map(pp => parseProductId(pp.id).color).filter(Boolean);
                                           const uniqueColors = [...new Set(productColors)];
-                                          const colorHex = (c: string) => {
-                                            const map: Record<string, string> = {
-                                              'black': '#111', 'white': '#fff', 'navy': '#1a2a5e', 'red': '#c0392b',
-                                              'royal': '#2851a3', 'royal blue': '#2851a3', 'carolina blue': '#56a0d3',
-                                              'light blue': '#87ceeb', 'baby blue': '#89cff0', 'sky blue': '#87ceeb',
-                                              'gold': '#f4c430', 'yellow': '#f9e24b', 'orange': '#e67e22',
-                                              'purple': '#6c3483', 'maroon': '#6d0026', 'brown': '#795548',
-                                              'green': '#2e7d32', 'forest green': '#2e7d32', 'kelly green': '#4caf50',
-                                              'pink': '#e91e8c', 'hot pink': '#ff69b4', 'light pink': '#ffb6c1',
-                                              'grey': '#9e9e9e', 'gray': '#9e9e9e', 'charcoal': '#4a4a4a',
-                                              'heather grey': '#b0b0b0', 'heather gray': '#b0b0b0',
-                                              'heather charcoal': '#555', 'heather navy': '#2c3e6b',
-                                              'heather blue': '#5b8db8', 'heather cassis': '#7b4b6a',
-                                              'heather purist blue': '#6a9cc4', 'natural': '#f5f0e8',
-                                              'sand': '#c2b280', 'tan': '#d2b48c', 'cream': '#fffdd0',
-                                              'cantaloupe': '#ff8c5a', 'lagoon': '#00b4cc',
-                                              'spider black': '#1a1a1a', 'tie dye': '#a259c4',
-                                            };
-                                            return map[c.toLowerCase()] || '#ccc';
-                                          };
                                           return (
                                             <button
                                               key={p.id}
@@ -1249,9 +1250,12 @@ if (!ignoreInventory) {
                                         {visibleColors.map(col => (
                                           <button key={col} type="button"
                                             onClick={() => { setSelectedColor(col); setSize(''); }}
-                                            className={`px-4 py-2 rounded-xl font-bold text-sm border-2 transition-all active:scale-95 ${selectedColor === col ? 'text-white border-transparent shadow-md' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
+                                            className={`px-4 py-2 rounded-xl font-bold text-sm border-2 transition-all active:scale-95 flex items-center gap-2 ${selectedColor === col ? 'text-white border-transparent shadow-md' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
                                             style={selectedColor === col ? {backgroundColor: headerColor, borderColor: headerColor} : {}}
-                                          >{col}</button>
+                                          >
+                                            <span style={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: colorHex(col), border: '1.5px solid rgba(0,0,0,0.15)', flexShrink: 0, display: 'inline-block' }} />
+                                            {col}
+                                          </button>
                                         ))}
                                       </div>
                                     </div>
