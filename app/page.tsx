@@ -653,6 +653,7 @@ export default function OrderForm() {
             decrementInventory(cart);
             sendConfirmationSMS(customerName, customerPhone);
             sendReceiptEmail(orderId, customerName, customerEmail, cart, calculateGrandTotal());
+            setLastOrderId(orderId);
             setOrderComplete(true);
             setIsTerminalProcessing(false);
         };
