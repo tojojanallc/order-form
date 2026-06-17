@@ -1039,7 +1039,7 @@ if (!ignoreInventory) {
   }
 
   const showPrice = paymentMode === 'retail';
-  const step1Done = !!(size && selectedProduct && (!hasMultipleColors || selectedColor));
+  const step1Done = !!(size && selectedProduct && (visibleColors.length === 0 || selectedColor));
   const step2Done = !!(selectedMainDesign);
   const step3Done = true; // optional
   const step4Done = true; // optional
@@ -1248,7 +1248,7 @@ if (!ignoreInventory) {
                                   </div>
 
                                   {/* COLOR — chips */}
-                                  {hasMultipleColors && (
+                                  {visibleColors.length > 0 && (
                                     <div>
                                       <label className="text-xs font-black text-gray-900 uppercase tracking-widest mb-2 block">Color</label>
                                       <div className="flex flex-wrap gap-2">
