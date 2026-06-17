@@ -26,7 +26,10 @@ export async function POST(request) {
         return NextResponse.json({ error: "Invalid Data" }, { status: 400 });
     }
 
-    console.log(`🚀 Sending ${finalAmount} cents to Terminal ${targetDevice}...`);
+    // Square requires device IDs prefixed with "device:"
+    const squareDeviceId = targetDevice.startsWith('device:') ? targetDevice : `device:${targetDevice}`;
+
+    console.log(`🚀 Sending ${finalAmount} cents to Terminal ${squareDeviceId}...`);
 
     // 4. RAW FETCH REQUEST
     const response = await fetch('https://connect.squareup.com/v2/terminals/checkouts', {
@@ -39,11 +42,11 @@ export async function POST(request) {
         idempotency_key: crypto.randomUUID(),
         checkout: {
           amount_money: {
-            amount: finalAmount, // Raw number is fine here
+            amount: finalAmount,
             currency: currency,
           },
           device_options: {
-            device_id: targetDevice, // <--- USES THE DYNAMIC ID
+            device_id: squareDeviceId,
           },
           reference_id: String(orderId),
           note: `Order #${orderId}`,
