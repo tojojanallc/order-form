@@ -1127,7 +1127,7 @@ if (!ignoreInventory) {
                                     <img src={selectedProductRecord.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
                                   </div>
                                 )}
-{!ignoreInventory && (!hasMultipleColors || selectedColor) && (
+{!ignoreInventory && size && (!hasMultipleColors || selectedColor) && (
   isOutOfStock ? (
     <div
       className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4"
