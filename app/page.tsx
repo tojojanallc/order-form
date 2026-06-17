@@ -1487,7 +1487,7 @@ if (!ignoreInventory) {
                         {item.customizations.logos.map((l, i) => <div key={'logo'+i}>• {l.type} ({l.position})</div>)}
                         {item.customizations.names.map((n, i) => <div key={'name'+i}>• "{n.text}" ({n.position})</div>)}
                         {item.customizations.numbers?.map((num, i) => <div key={'num'+i}>• #{num.text} ({num.position})</div>)}
-                        {item.customizations.backList && <div>• Back Name List</div>}
+                        {item.customizations.backList && <div>• Team Roster</div>}
                         {item.customizations.metallic && <div>• Metallic: {item.customizations.metallicName}{item.customizations.metallicTeam ? ` — ${item.customizations.metallicTeam}` : ''}</div>}
                     </div>
                     {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice.toFixed(2)}</p>}

@@ -183,7 +183,7 @@ export default function EventReportPage({ params }: { params: { slug: string } }
                                                     ))}
                                                     {item.customizations?.backList && (
                                                         <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[9px] font-black uppercase border border-orange-200">
-                                                            + Back Name List
+                                                            + Team Roster
                                                         </span>
                                                     )}
                                                 </div>

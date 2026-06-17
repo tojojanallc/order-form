@@ -141,7 +141,7 @@ export async function POST(req: Request) {
           }
         });
         if (c.backList) {
-          page.drawText(`* Back Name List`, { x: margin + 8, y: cursorY, size: 10, font });
+          page.drawText(`* Team Roster`, { x: margin + 8, y: cursorY, size: 10, font });
           moveDown(11);
         }
         if (c.metallic) {

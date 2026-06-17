@@ -161,7 +161,7 @@ export default function ProductionScreen() {
                         )}
                         {item.customizations?.backList && (
                           <div className="flex items-center gap-2 text-orange-300 font-bold">
-                            <span className="text-slate-500">▶</span> Back Name List
+                            <span className="text-slate-500">▶</span> Team Roster
                           </div>
                         )}
                       </div>
