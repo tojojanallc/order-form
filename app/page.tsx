@@ -413,9 +413,14 @@ export default function OrderForm() {
   // Reset color & size when product name changes
   useEffect(() => {
     if (!selectedProduct) return;
-        const ids = products.filter(p => mergedName(p.name) === mergedName(selectedProduct.name));
-    const colors = [...new Set(ids.map(p => parseProductId(p.id).color).filter(Boolean))];
-    setSelectedColor(colors.length > 0 ? colors[0] : '');
+    const activeColors = [...new Set(
+      products.filter(p =>
+        mergedName(p.name) === mergedName(selectedProduct.name) &&
+        (() => { const { size: s } = parseProductId(p.id); return s && activeItems[`${p.id}_${s}`] === true; })()
+      ).map(p => parseProductId(p.id).color).filter(Boolean)
+    )];
+    // Auto-select if only one color, otherwise clear
+    setSelectedColor(activeColors.length === 1 ? activeColors[0] : '');
     setSize('');
   }, [selectedProduct?.name]);
 
