@@ -1127,7 +1127,7 @@ if (!ignoreInventory) {
                                     <img src={selectedProductRecord.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
                                   </div>
                                 )}
-{!ignoreInventory && (
+{!ignoreInventory && (!hasMultipleColors || selectedColor) && (
   isOutOfStock ? (
     <div
       className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4"
@@ -1143,7 +1143,7 @@ if (!ignoreInventory) {
   )
 )}
 
-{ignoreInventory && size && (
+{ignoreInventory && size && (!hasMultipleColors || selectedColor) && (
   <div className={`mb-4 rounded-xl border-2 p-3 flex items-center justify-between transition-all ${manualShipOverride ? 'bg-orange-50 border-orange-400' : 'bg-gray-50 border-gray-200'}`}>
     <div>
       <p className={`font-black text-sm ${manualShipOverride ? 'text-orange-700' : 'text-gray-600'}`}>
