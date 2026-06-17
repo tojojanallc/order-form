@@ -58,9 +58,9 @@ export async function POST(request) {
     const data = await response.json();
 
     if (!response.ok) {
-        console.error("❌ Square API Error:", data);
+        console.error("❌ Square API Error:", JSON.stringify(data), "Device:", squareDeviceId, "Amount:", finalAmount);
         const errorMsg = data.errors ? data.errors[0].detail : "Unknown Error";
-        return NextResponse.json({ error: "Square Failed", details: errorMsg }, { status: 500 });
+        return NextResponse.json({ error: "Square Failed", details: errorMsg, raw: data }, { status: 500 });
     }
 
     const checkout = data.checkout;
