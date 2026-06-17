@@ -1493,6 +1493,29 @@ if (!ignoreInventory) {
                     </div>
                 ))}
                 </div>
+                {cart.length > 0 && (() => {
+                  const hasPersonalization = cart.some(i => (i.customizations?.names?.length > 0) || (i.customizations?.numbers?.length > 0) || i.customizations?.backList);
+                  return cart.length === 1 && !hasPersonalization && showPersonalization ? (
+                    <div className="mx-4 mt-3 mb-1 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-2xl p-4">
+                      <p className="font-black text-amber-800 text-sm mb-1">✨ Make it personal!</p>
+                      <p className="text-xs text-amber-700 mb-3">Add a name or number to your item for just <strong>$5 more</strong>.</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          const item = cart[0];
+                          const prod = products.find(p => p.id === item.productId);
+                          if (prod) { setSelectedProduct(prod); setSize(item.size); setSelectedColor(item.customizations?.color || ''); setLogos(item.customizations?.logos || []); setNames([{ text: '', position: '' }]); setCart(cart.filter(c => c.id !== item.id)); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+                        }} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Add Name</button>
+                        <button onClick={() => {
+                          const item = cart[0];
+                          const prod = products.find(p => p.id === item.productId);
+                          if (prod) { setSelectedProduct(prod); setSize(item.size); setSelectedColor(item.customizations?.color || ''); setLogos(item.customizations?.logos || []); setNumbers([{ text: '', position: '' }]); setCart(cart.filter(c => c.id !== item.id)); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+                        }} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Add Number</button>
+                        <button onClick={() => {}} className="text-xs text-amber-600 font-bold px-2">No thanks</button>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
                 {cart.length > 0 && (
                 <div className="p-5 bg-slate-50 border-t border-gray-100 rounded-b-2xl">
                     <h3 className="font-bold text-black mb-2">Checkout Details</h3>

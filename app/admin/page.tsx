@@ -322,6 +322,12 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-400 font-medium mt-1">What sells, sizes, margins.</p>
             </Link>
 
+            <Link href="/admin/event-report" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-green-300 transition-all group">
+                <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center mb-4 text-xl">📋</div>
+                <h4 className="font-black text-slate-900">Event Report</h4>
+                <p className="text-xs text-gray-400 font-medium mt-1">End of event summary & stats.</p>
+            </Link>
+
             <Link href="/admin/events/history" className="bg-white p-6 rounded-[32px] border border-gray-200 hover:border-cyan-300 transition-all group">
                 <div className="w-10 h-10 bg-cyan-50 rounded-full flex items-center justify-center mb-4 text-xl">📁</div>
                 <h4 className="font-black text-slate-900">Event History</h4>
