@@ -160,6 +160,9 @@ export async function POST(req: Request) {
     page.drawText('Lev Custom Merch', {
       x: margin, y: 12, size: 8, font, color: rgb(0.5, 0.5, 0.5),
     });
+    page.drawText('(414) 882-4465', {
+      x: margin, y: 4, size: 8, font, color: rgb(0.5, 0.5, 0.5),
+    });
 
     const pdfBase64 = await pdfDoc.saveAsBase64();
 
