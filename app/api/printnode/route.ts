@@ -171,6 +171,12 @@ export async function POST(req: Request) {
           contentType: 'pdf_base64',
           content: pdfBase64,
           source: 'Lev Custom Admin',
+          options: {
+            fit_to_page: false,
+            rotate: 0,
+            paper: '4x6',
+            media_type: 'Label',
+          },
         }),
       });
 
