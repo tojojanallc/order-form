@@ -365,7 +365,14 @@ export default function OrderForm() {
 
   // All product rows sharing the selected product's display name (one row per size+color variant)
     const matchingProducts = selectedProduct
-    ? products.filter(p => mergedName(p.name) === mergedName(selectedProduct.name))
+    ? products.filter(p => {
+        if (mergedName(p.name) !== mergedName(selectedProduct.name)) return false;
+        // Only include if there's an active inventory entry for this event
+        const { size: sizeInId } = parseProductId(p.id);
+        if (!sizeInId) return false;
+        const key = `${p.id}_${sizeInId}`;
+        return activeItems[key] === true;
+      })
     : [];
 
   // Colors parsed from product id: "Name | Size | Color" → "Color"
