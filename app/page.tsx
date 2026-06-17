@@ -1527,7 +1527,7 @@ if (!ignoreInventory) {
                         </>
                       ) : (() => {
                         let upsellText = '';
-                        let upsellPosition = 'Back';
+                        let upsellPosition = getPositionOptions(upsellMode)[0]?.label || 'Back Center';
                         return (
                           <>
                             <p className="font-black text-amber-800 text-sm mb-3">{upsellMode === 'name' ? 'Add a Name (+$5)' : 'Add a Number (+$5)'}</p>
@@ -1541,10 +1541,10 @@ if (!ignoreInventory) {
                             />
                             <select className="w-full border-2 border-amber-200 rounded-xl p-3 font-bold bg-white mb-3 focus:outline-none"
                               onChange={e => { upsellPosition = e.target.value; }}
-                              defaultValue="Back">
-                              <option>Back</option>
-                              <option>Front</option>
-                              <option>Sleeve</option>
+                              defaultValue={getPositionOptions(upsellMode)[0]?.label || 'Back Center'}>
+                              {getPositionOptions(upsellMode).map(pos => (
+                                <option key={pos.id} value={pos.label}>{pos.label}</option>
+                              ))}
                             </select>
                             <div className="flex gap-2">
                               <button onClick={() => addToCartItem(upsellMode, upsellText, upsellPosition)}
