@@ -769,7 +769,7 @@ export default function OrderForm() {
             const res = await fetch('/api/create-hosted-order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: actualEventSlug, customerPhone, customerEmail }) 
+                body: JSON.stringify({ cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: actualEventSlug, customerPhone, customerEmail, site: assignedSiteName, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null }) 
             });
             const data = await res.json();
             if (!data.success) throw new Error(data.error);

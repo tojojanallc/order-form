@@ -10,9 +10,10 @@ const supabase = createClient(
 export async function POST(req: any) {
   try {
     const body = await req.json();
-    const { cart, guestName, guestId: incomingGuestId, eventName, eventSlug, customerPhone } = body;
+    const { cart, guestName, guestId: incomingGuestId, eventName, eventSlug, customerPhone, shippingInfo, site } = body;
 
     const currentEvent = (eventSlug && eventSlug !== '') ? eventSlug : 'default';
+    const hasShipping = cart.some((i: any) => i.needsShipping);
 
     // Resolve guest ID — create the guest now if they were new (no ID yet)
     let resolvedGuestId = incomingGuestId;
@@ -54,12 +55,17 @@ export async function POST(req: any) {
           customer_name: guestName,
           phone: customerPhone || 'N/A',
           total_price: 0, 
-          status: 'pending',
+          status: hasShipping ? 'pending_shipping' : 'pending',
           cart_data: cart,
           payment_status: 'paid',
           payment_method: 'hosted',
           event_name: eventName,
           event_slug: currentEvent,
+          site: site || null,
+          shipping_address: shippingInfo?.address || null,
+          shipping_city: shippingInfo?.city || null,
+          shipping_state: shippingInfo?.state || null,
+          shipping_zip: shippingInfo?.zip || null,
           created_at: new Date()
         },
       ])
