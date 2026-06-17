@@ -26,8 +26,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "Invalid Data" }, { status: 400 });
     }
 
-    // Square requires device IDs prefixed with "device:"
-    const squareDeviceId = targetDevice.startsWith('device:') ? targetDevice : `device:${targetDevice}`;
+    const squareDeviceId = targetDevice;
 
     console.log(`🚀 Sending ${finalAmount} cents to Terminal ${squareDeviceId}...`);
 
@@ -50,7 +49,6 @@ export async function POST(request) {
           },
           reference_id: String(orderId),
           note: `Order #${orderId}`,
-          location_id: 'LZXRJ5FXAXGXE',
         },
       }),
     });
