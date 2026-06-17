@@ -1175,9 +1175,10 @@ if (!ignoreInventory) {
                                       <div className="grid grid-cols-2 gap-2 mt-1">
                                         {visibleProducts.map(p => {
                                           const isSelected = mergedName(p.name) === mergedName(selectedProduct.name);
-                                          // Get all active colors for this product
+                                          // Get only active colors for this product in this event
                                           const productColors = products.filter(pp =>
-                                            mergedName(pp.name) === mergedName(p.name)
+                                            mergedName(pp.name) === mergedName(p.name) &&
+                                            (() => { const { size: s } = parseProductId(pp.id); return s && activeItems[`${pp.id}_${s}`] === true; })()
                                           ).map(pp => parseProductId(pp.id).color).filter(Boolean);
                                           const uniqueColors = [...new Set(productColors)];
                                           const colorHex = (c: string) => {
