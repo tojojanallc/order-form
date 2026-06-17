@@ -145,7 +145,7 @@ export default function OrderForm() {
   const [availableTerminals, setAvailableTerminals] = useState([]);
   const [ignoreInventory, setIgnoreInventory] = useState(false);
   const [manualShipOverride, setManualShipOverride] = useState(false);
-  const [upsellMode, setUpsellMode] = useState<null|"name"|"number">(null);
+  const [upsellMode, setUpsellMode] = useState<null|"name"|"number"|"roster">(null);
 
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
@@ -1518,10 +1518,17 @@ if (!ignoreInventory) {
                       {!upsellMode ? (
                         <>
                           <p className="font-black text-amber-800 text-sm mb-1">✨ Make it personal!</p>
-                          <p className="text-xs text-amber-700 mb-3">Add a name or number to your item for just <strong>$5 more</strong>.</p>
-                          <div className="flex gap-2">
+                          <p className="text-xs text-amber-700 mb-3">Add a name, number, or team roster for just <strong>$5 more</strong>.</p>
+                          <div className="flex flex-wrap gap-2">
                             <button onClick={() => setUpsellMode('name')} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Add Name</button>
                             <button onClick={() => setUpsellMode('number')} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Add Number</button>
+                            {showBackNames && <button onClick={() => {
+                              setCart(cart.map((item, i) => i === 0 ? {
+                                ...item,
+                                finalPrice: item.finalPrice + 5,
+                                customizations: { ...item.customizations, backList: true }
+                              } : item));
+                            }} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Team Roster</button>}
                             <button onClick={() => setUpsellMode(null)} className="text-xs text-amber-600 font-bold px-2">No thanks</button>
                           </div>
                         </>
