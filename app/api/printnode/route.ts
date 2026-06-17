@@ -28,6 +28,16 @@ export async function POST(req: Request) {
     const margin = 15;
     const moveDown = (amount: number) => { cursorY -= amount; };
 
+    // Site banner — large bar at very top if site is set
+    if (order.site) {
+      page.drawRectangle({ x: 0, y: cursorY - 4, width: 288, height: 26, color: rgb(0, 0, 0) });
+      const siteText = order.site.toUpperCase();
+      const siteFontSize = siteText.length > 12 ? 13 : 16;
+      const siteX = Math.max(margin, (288 - (siteText.length * siteFontSize * 0.55)) / 2);
+      page.drawText(siteText, { x: siteX, y: cursorY + 4, size: siteFontSize, font: fontBold, color: rgb(1, 1, 1) });
+      moveDown(30);
+    }
+
     // Header line
     page.drawLine({
       start: { x: margin, y: cursorY },
