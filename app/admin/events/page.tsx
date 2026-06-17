@@ -116,6 +116,7 @@ export default function AdminPage() {
   const [eventName, setEventName] = useState('');
   const [welcomeMessage, setWelcomeMessage] = useState('');
   const [eventLogo, setEventLogo] = useState('');
+  const [rosterImageUrl, setRosterImageUrl] = useState("");
   const [headerColor, setHeaderColor] = useState('#1e3a8a'); 
   const [paymentMode, setPaymentMode] = useState('retail');
   const [retailPaymentMethod, setRetailPaymentMethod] = useState('stripe'); 
@@ -483,6 +484,7 @@ setSalesLedger(ledgerData || []);
           setEventName(data.event_name);
           setWelcomeMessage(data.welcome_message || ''); 
           setEventLogo(data.event_logo_url || ''); 
+          setRosterImageUrl(data.roster_image_url || '');
           setHeaderColor(data.header_color || '#1e3a8a'); 
           setPaymentMode(data.payment_mode || 'retail'); 
           setRetailPaymentMethod(data.retail_payment_method || 'stripe'); 
@@ -516,7 +518,8 @@ setSalesLedger(ledgerData || []);
       const { error } = await supabase.from('event_settings').update({ 
           event_name: eventName,
           welcome_message: welcomeMessage, 
-          event_logo_url: eventLogo, 
+          event_logo_url: eventLogo,
+          roster_image_url: rosterImageUrl,
           header_color: headerColor, 
           payment_mode: paymentMode, 
           retail_payment_method: retailPaymentMethod, 
@@ -1399,7 +1402,7 @@ setSalesLedger(ledgerData || []);
         )}
 
         {activeTab === 'settings' && (
-            <div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Welcome Message</label><textarea className="w-full border p-3 rounded text-sm" rows={3} placeholder="e.g. The Brin family welcomes you and invites you to get swagged up!" value={welcomeMessage} onChange={e => setWelcomeMessage(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Header Color</label><div className="flex gap-4 items-center"><input type="color" className="w-16 h-10 cursor-pointer border rounded" value={headerColor} onChange={e => setHeaderColor(e.target.value)} /><span className="text-sm text-gray-500">{headerColor}</span></div></div>
+            <div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-4"><label className="block text-gray-700 font-bold mb-2">Event Name</label><input className="w-full border p-3 rounded text-lg" placeholder="e.g. 2026 Winter Regionals" value={eventName} onChange={e => setEventName(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Welcome Message</label><textarea className="w-full border p-3 rounded text-sm" rows={3} placeholder="e.g. The Brin family welcomes you and invites you to get swagged up!" value={welcomeMessage} onChange={e => setWelcomeMessage(e.target.value)} /></div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Event Logo URL</label><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={eventLogo} onChange={e => setEventLogo(e.target.value)} />{eventLogo && <img src={eventLogo} className="mt-4 h-24 mx-auto border rounded p-2" />}</div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Team Roster List Image URL</label><p className="text-xs text-gray-400 mb-2">Shows on kiosk when customer checks "Team Roster List"</p><input className="w-full border p-3 rounded text-lg" placeholder="https://..." value={rosterImageUrl} onChange={e => setRosterImageUrl(e.target.value)} />{rosterImageUrl && <img src={rosterImageUrl} className="mt-4 w-full max-h-48 object-contain border rounded p-2" />}</div><div className="mb-6"><label className="block text-gray-700 font-bold mb-2">Header Color</label><div className="flex gap-4 items-center"><input type="color" className="w-16 h-10 cursor-pointer border rounded" value={headerColor} onChange={e => setHeaderColor(e.target.value)} /><span className="text-sm text-gray-500">{headerColor}</span></div></div>
 
 <div className="mb-6 bg-yellow-50 p-4 rounded border border-yellow-200 text-slate-900">
     <label className="block text-yellow-900 font-bold mb-3 border-b border-yellow-200 pb-2 uppercase text-xs tracking-widest">Tax Configuration</label>

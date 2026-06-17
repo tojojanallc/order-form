@@ -92,6 +92,7 @@ export default function OrderForm() {
   const [accentOptions, setAccentOptions] = useState([]); 
   const [eventName, setEventName] = useState('Lev Custom Merch');
   const [eventLogo, setEventLogo] = useState('');
+  const [rosterImageUrl, setRosterImageUrl] = useState("");
   const [headerColor, setHeaderColor] = useState('#1e3a8a');
   const [welcomeMessage, setWelcomeMessage] = useState(''); 
   const [paymentMode, setPaymentMode] = useState('retail'); 
@@ -238,6 +239,7 @@ export default function OrderForm() {
         setIgnoreInventory(!!settings.ignore_inventory);
         setOpenGuestEntry(!!settings.open_guest_entry);
         setWelcomeMessage(settings.welcome_message || '');
+        setRosterImageUrl(settings.roster_image_url || '');
       }
 
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
@@ -1350,6 +1352,9 @@ if (!ignoreInventory) {
                             </label>
                             {backNameList && (
                                 <div className="ml-8 space-y-3 border-l-4 border-yellow-300 pl-4">
+                                    {rosterImageUrl && (
+                                        <img src={rosterImageUrl} alt="Team Roster" className="w-full rounded-xl border border-yellow-200 shadow-sm" />
+                                    )}
                                     <label className="flex items-center gap-2 cursor-pointer bg-white p-3 rounded border border-yellow-200 shadow-sm">
                                       <input type="checkbox" className="w-6 h-6 text-green-600" checked={backListConfirmed} onChange={(e) => setBackListConfirmed(e.target.checked)} />
                                       <span className="text-sm font-bold text-red-600">I have checked the list at the table and found my team.</span>
