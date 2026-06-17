@@ -145,6 +145,7 @@ export default function OrderForm() {
   const [availableTerminals, setAvailableTerminals] = useState([]);
   const [ignoreInventory, setIgnoreInventory] = useState(false);
   const [manualShipOverride, setManualShipOverride] = useState(false);
+  const [upsellMode, setUpsellMode] = useState<null|"name"|"number">(null);
 
   const isBottomSelected = selectedProduct ? (
     selectedProduct.type === 'bottom' || 
@@ -1495,25 +1496,66 @@ if (!ignoreInventory) {
                 </div>
                 {cart.length > 0 && (() => {
                   const hasPersonalization = cart.some(i => (i.customizations?.names?.length > 0) || (i.customizations?.numbers?.length > 0) || i.customizations?.backList);
-                  return cart.length === 1 && !hasPersonalization && showPersonalization ? (
-                    <div className="mx-4 mt-3 mb-1 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-2xl p-4">
-                      <p className="font-black text-amber-800 text-sm mb-1">✨ Make it personal!</p>
-                      <p className="text-xs text-amber-700 mb-3">Add a name or number to your item for just <strong>$5 more</strong>.</p>
-                      <div className="flex gap-2">
-                        <button onClick={() => {
-                          const item = cart[0];
-                          const prod = products.find(p => p.id === item.productId);
-                          if (prod) { setSelectedProduct(prod); setSize(item.size); setSelectedColor(item.customizations?.color || ''); setLogos(item.customizations?.logos || []); setNames([{ text: '', position: '' }]); setCart(cart.filter(c => c.id !== item.id)); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-                        }} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Add Name</button>
-                        <button onClick={() => {
-                          const item = cart[0];
-                          const prod = products.find(p => p.id === item.productId);
-                          if (prod) { setSelectedProduct(prod); setSize(item.size); setSelectedColor(item.customizations?.color || ''); setLogos(item.customizations?.logos || []); setNumbers([{ text: '', position: '' }]); setCart(cart.filter(c => c.id !== item.id)); window.scrollTo({ top: 0, behavior: 'smooth' }); }
-                        }} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Add Number</button>
-                        <button onClick={() => {}} className="text-xs text-amber-600 font-bold px-2">No thanks</button>
-                      </div>
+                  if (!(cart.length === 1 && !hasPersonalization && showPersonalization)) return null;
+
+                  const addToCartItem = (type: 'name' | 'number', text: string, position: string) => {
+                    if (!text.trim()) return;
+                    const price = 5;
+                    setCart(cart.map((item, i) => i === 0 ? {
+                      ...item,
+                      finalPrice: item.finalPrice + price,
+                      customizations: {
+                        ...item.customizations,
+                        names: type === 'name' ? [...(item.customizations?.names || []), { text: text.trim(), position }] : (item.customizations?.names || []),
+                        numbers: type === 'number' ? [...(item.customizations?.numbers || []), { text: text.trim(), position }] : (item.customizations?.numbers || []),
+                      }
+                    } : item));
+                    setUpsellMode(null);
+                  };
+
+                  return (
+                    <div className="mx-4 mt-3 mb-1 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                      {!upsellMode ? (
+                        <>
+                          <p className="font-black text-amber-800 text-sm mb-1">✨ Make it personal!</p>
+                          <p className="text-xs text-amber-700 mb-3">Add a name or number to your item for just <strong>$5 more</strong>.</p>
+                          <div className="flex gap-2">
+                            <button onClick={() => setUpsellMode('name')} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Add Name</button>
+                            <button onClick={() => setUpsellMode('number')} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs py-2 rounded-xl transition-all">+ Add Number</button>
+                            <button onClick={() => setUpsellMode(null)} className="text-xs text-amber-600 font-bold px-2">No thanks</button>
+                          </div>
+                        </>
+                      ) : (() => {
+                        let upsellText = '';
+                        let upsellPosition = 'Back';
+                        return (
+                          <>
+                            <p className="font-black text-amber-800 text-sm mb-3">{upsellMode === 'name' ? 'Add a Name (+$5)' : 'Add a Number (+$5)'}</p>
+                            <input
+                              autoFocus
+                              type="text"
+                              maxLength={upsellMode === 'name' ? 12 : 3}
+                              placeholder={upsellMode === 'name' ? 'ENTER NAME' : 'e.g. 24'}
+                              className="w-full border-2 border-amber-300 rounded-xl p-3 font-bold uppercase text-black text-lg focus:outline-none focus:border-amber-500 mb-2"
+                              onChange={e => { upsellText = e.target.value; }}
+                            />
+                            <select className="w-full border-2 border-amber-200 rounded-xl p-3 font-bold bg-white mb-3 focus:outline-none"
+                              onChange={e => { upsellPosition = e.target.value; }}
+                              defaultValue="Back">
+                              <option>Back</option>
+                              <option>Front</option>
+                              <option>Sleeve</option>
+                            </select>
+                            <div className="flex gap-2">
+                              <button onClick={() => addToCartItem(upsellMode, upsellText, upsellPosition)}
+                                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black text-sm py-2 rounded-xl transition-all">Add +$5</button>
+                              <button onClick={() => setUpsellMode(null)} className="text-xs text-amber-600 font-bold px-3">Cancel</button>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
-                  ) : null;
+                  );
                 })()}
 
                 {cart.length > 0 && (
