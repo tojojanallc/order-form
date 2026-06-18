@@ -37,6 +37,7 @@ export default function AdminPage() {
   const [mounted, setMounted] = useState(false);
   const [passcode, setPasscode] = useState('');
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState('orders');
    
   const [showFinancials, setShowFinancials] = useState(false);
@@ -143,6 +144,9 @@ export default function AdminPage() {
       const sessionAuth = sessionStorage.getItem('admin_auth');
       if (sessionAuth === 'true') {
           setIsAuthorized(true);
+          const role = sessionStorage.getItem('admin_role') || 'staff';
+          setIsAdmin(role === 'admin');
+          setShowFinancials(role === 'admin');
       }
   }, []);
 
@@ -417,8 +421,11 @@ salesLedger.forEach(row => {
           }); 
           const data = await res.json(); 
           if (data.success) { 
-              setIsAuthorized(true); 
-              sessionStorage.setItem('admin_auth', 'true'); 
+              setIsAuthorized(true);
+              setIsAdmin(data.role === 'admin');
+              setShowFinancials(data.role === 'admin');
+              sessionStorage.setItem('admin_auth', 'true');
+              sessionStorage.setItem('admin_role', data.role || 'staff');
           } else { 
               alert("Wrong password"); 
           } 
@@ -1142,13 +1149,13 @@ setSalesLedger(ledgerData || []);
 
         {activeTab === 'orders' && ( <div className="space-y-6"> 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4"> 
-            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-green-500 cursor-pointer hover:bg-gray-50 transition-colors">
-                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Gross Revenue {showFinancials ? '👁️' : '🔒'}</p>
+            <div onClick={() => isAdmin && setShowFinancials(!showFinancials)} className={`bg-white p-4 rounded shadow border-l-4 border-green-500 ${isAdmin ? 'cursor-pointer hover:bg-gray-50' : 'cursor-default'} transition-colors`}>
+                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Gross Revenue {isAdmin ? (showFinancials ? '👁️' : '🔒') : '🔒'}</p>
                 <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}</p>
             </div>
             <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
-            <div onClick={() => setShowFinancials(!showFinancials)} className="bg-white p-4 rounded shadow border-l-4 border-pink-500 cursor-pointer hover:bg-gray-50 transition-colors">
-                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Est. Net Profit {showFinancials ? '👁️' : '🔒'}</p>
+            <div onClick={() => isAdmin && setShowFinancials(!showFinancials)} className={`bg-white p-4 rounded shadow border-l-4 border-pink-500 ${isAdmin ? 'cursor-pointer hover:bg-gray-50' : 'cursor-default'} transition-colors`}>
+                <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Est. Net Profit {isAdmin ? (showFinancials ? '👁️' : '🔒') : '🔒'}</p>
                 <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}</p>
             </div>
             <div className={`bg-white p-4 rounded shadow border-l-4 flex flex-col justify-between ${autoPrintEnabled ? "border-green-500" : "border-purple-500"}`}>
