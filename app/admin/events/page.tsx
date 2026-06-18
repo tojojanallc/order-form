@@ -1041,7 +1041,7 @@ setSalesLedger(ledgerData || []);
                         <td className="p-3 font-black">{site}</td>
                         <td className="p-3 text-center font-bold">{cnt}</td>
                         <td className="p-3 text-center text-gray-500">{items}</td>
-                        <td className="p-3 text-right font-black text-green-700">{showFinancials ? `$${revenue.toFixed(2)}` : '$888.88'}</td>
+                        <td className="p-3 text-right font-black text-green-700">{isAdmin ? (showFinancials ? `$${revenue.toFixed(2)}` : '$888.88') : '—'}</td>
                         <td className="p-3 text-right">
                             <div className="flex items-center justify-end gap-2">
                                 <div className="w-16 bg-gray-100 rounded-full h-2 overflow-hidden">
@@ -1106,7 +1106,7 @@ setSalesLedger(ledgerData || []);
                           { label: 'Revenue', value: siteStat ? `$${siteStat.revenue.toFixed(2)}` : '$0.00' },
                         ].map(s => (
                           <div key={s.label} className="px-6 py-4 text-center">
-                            <p className="text-2xl font-black text-slate-900">{showFinancials ? s.value : s.label === 'Revenue' ? '$888.88' : s.value}</p>
+                            <p className="text-2xl font-black text-slate-900">{s.label === 'Revenue' ? (isAdmin ? (showFinancials ? s.value : '$888.88') : '—') : s.value}</p>
                             <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">{s.label}</p>
                           </div>
                         ))}
