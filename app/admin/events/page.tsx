@@ -28,6 +28,7 @@ const STATUSES = {
   in_progress: { label: 'In Progress', color: 'bg-blue-100 text-blue-800 border-blue-300' },
   partially_fulfilled: { label: 'Partially Fulfilled', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
   ready: { label: 'Ready for Pickup', color: 'bg-green-100 text-green-800 border-green-300' },
+  ready_to_deliver: { label: 'Ready to Deliver', color: 'bg-orange-100 text-orange-800 border-orange-300' },
   shipped: { label: 'Shipped', color: 'bg-green-200 text-green-900 border-green-400' },
   completed: { label: 'Completed', color: 'bg-gray-200 text-gray-600 border-gray-400' },
   refunded: { label: 'Refunded', color: 'bg-red-100 text-red-800 border-red-300' },
