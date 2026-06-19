@@ -1153,7 +1153,8 @@ setSalesLedger(ledgerData || []);
                 <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Gross Revenue {isAdmin ? (showFinancials ? '👁️' : '🔒') : '🔒'}</p>
                 <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-green-700' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.revenue.toFixed(2)}` : '$8,888.88'}</p>
             </div>
-            <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div> 
+            <div className="bg-white p-4 rounded shadow border-l-4 border-blue-500"><p className="text-xs text-gray-500 font-bold uppercase">Paid Orders</p><p className="text-3xl font-black text-blue-900">{stats.count}</p></div>
+            <div className="bg-white p-4 rounded shadow border-l-4 border-indigo-500"><p className="text-xs text-gray-500 font-bold uppercase">Pieces Sold</p><p className="text-3xl font-black text-indigo-900">{orders.filter(o => { const p = (o.payment_status||'').toLowerCase(); return p === 'paid' || p === 'succeeded' || Number(o.total_price) === 0; }).reduce((s, o) => s + (Array.isArray(o.cart_data) ? o.cart_data.length : 0), 0)}</p></div>
             <div onClick={() => isAdmin && setShowFinancials(!showFinancials)} className={`bg-white p-4 rounded shadow border-l-4 border-pink-500 ${isAdmin ? 'cursor-pointer hover:bg-gray-50' : 'cursor-default'} transition-colors`}>
                 <p className="text-xs text-gray-500 font-bold uppercase flex items-center gap-2">Est. Net Profit {isAdmin ? (showFinancials ? '👁️' : '🔒') : '🔒'}</p>
                 <p className={`text-3xl font-black transition-all ${showFinancials ? 'text-pink-600' : 'text-gray-300 blur-sm select-none'}`}>{showFinancials ? `$${stats.net.toFixed(2)}` : '$8,888.88'}</p>
