@@ -1175,7 +1175,7 @@ setSalesLedger(ledgerData || []);
             </div> 
           </div> 
           <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 overflow-x-auto"> 
-            <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
+            <table className="w-full text-left min-w-[800px]"><thead className="bg-gray-200"><tr><th className="p-4 w-40">Status</th><th className="p-4">Date</th><th className="p-4">Customer</th><th className="p-4">Site</th><th className="p-4">Items</th><th className="p-4 text-right">Actions</th></tr></thead><tbody>{visibleOrders.map((order) => {
                 const safeItems = Array.isArray(order.cart_data) ? order.cart_data : [];
                 const pStatus = (order.payment_status || '').toLowerCase();
                 const isHostedEvent = paymentMode === 'hosted';
@@ -1187,6 +1187,7 @@ setSalesLedger(ledgerData || []);
                     <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select><div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div></td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                     <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div><div className="text-xs text-gray-400">{order.email}</div><button onClick={() => { setEditingCustomer(order); setCustomerForm({ name: order.customer_name || '', phone: order.phone || '', email: order.email || '' }); }} className="text-blue-600 hover:text-blue-800 text-xs font-bold underline mt-1">✏️ Edit Info</button></td>
+                    <td className="p-4 align-top">{order.site ? <span className="text-xs font-black bg-slate-100 text-slate-700 px-2 py-1 rounded-full">📍 {order.site}</span> : <span className="text-xs text-gray-300">—</span>}</td>
                     <td className="p-4 align-top text-sm">{safeItems.map((item, i) => { const customs = item?.customizations || {}; return ( <div key={i} className="mb-2 border-b border-gray-100 pb-1 last:border-0"><span className="font-bold">{item?.productName}</span> ({item?.size})<div className="text-xs text-gray-500 mt-1">{customs.logos?.map(l => l.type).join(', ')} {customs.names?.map(n => n.text).join(', ')} {customs.numbers?.map(n => n.text).join(', ')}</div></div> ); })}<div className="mt-2 text-right font-black text-green-800">${Number(order.total_price).toFixed(2)}</div></td>
                     <td className="p-4 align-top text-right">
                         {!isPaid && (
