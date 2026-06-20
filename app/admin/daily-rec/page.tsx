@@ -243,7 +243,11 @@ export default function DailyRecPage() {
                   { label: 'Orders', value: rec.orders },
                   { label: 'Pieces', value: rec.pieces },
                   { label: 'Revenue', value: $(rec.revenue) },
+                  { label: 'Staff Cost', value: $(rec.staffCost) },
+                  { label: 'COGS', value: $(rec.cogs) },
+                  { label: 'Gross Profit', value: $(rec.grossProfit) },
                   { label: 'Net Profit', value: $(rec.netProfit) },
+                  { label: 'Margin', value: `${rec.margin.toFixed(1)}%` },
                 ].map(s => (
                   <div key={s.label} className="bg-white/10 rounded-2xl p-4 text-center">
                     <p className="text-2xl font-black">{s.value}</p>
