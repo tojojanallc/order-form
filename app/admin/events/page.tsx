@@ -57,7 +57,7 @@ export default function AdminPage() {
   const [newSitePrinter, setNewSitePrinter] = useState('');
   const [siteFilter, setSiteFilter] = useState('all');
   const [staffHours, setStaffHours] = useState<any[]>([]);
-  const [newStaff, setNewStaff] = useState({ name: '', date: new Date().toISOString().split('T')[0], hours: '', rate: '', notes: '' });
+  const [newStaff, setNewStaff] = useState({ name: '', date: new Date().toISOString().split('T')[0], hours: '', rate: '', notes: '', start_time: '', end_time: '' });
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
   const [showDailyBreakdown, setShowDailyBreakdown] = useState(false);
@@ -800,8 +800,10 @@ setSalesLedger(ledgerData || []);
       hours: parseFloat(newStaff.hours),
       rate: parseFloat(newStaff.rate) || 0,
       notes: newStaff.notes.trim() || null,
+      start_time: newStaff.start_time || null,
+      end_time: newStaff.end_time || null,
     });
-    setNewStaff({ name: '', date: new Date().toISOString().split('T')[0], hours: '', rate: '', notes: '' });
+    setNewStaff({ name: '', date: new Date().toISOString().split('T')[0], hours: '', rate: '', notes: '', start_time: '', end_time: '' });
     fetchStaffHours();
   };
 
@@ -1103,10 +1105,51 @@ setSalesLedger(ledgerData || []);
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
                 <input className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400 col-span-2 md:col-span-1" placeholder="Staff name" value={newStaff.name} onChange={e => setNewStaff({...newStaff, name: e.target.value})} />
                 <input type="date" className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400" value={newStaff.date} onChange={e => setNewStaff({...newStaff, date: e.target.value})} />
-                <input type="number" step="0.5" className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400" placeholder="Hours" value={newStaff.hours} onChange={e => setNewStaff({...newStaff, hours: e.target.value})} />
                 <input type="number" className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400" placeholder="$/hr (optional)" value={newStaff.rate} onChange={e => setNewStaff({...newStaff, rate: e.target.value})} />
+                <div className="flex items-center gap-2 col-span-2 md:col-span-1">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">Start</label>
+                    <input type="time" className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-blue-400"
+                      value={newStaff.start_time || ''}
+                      onChange={e => {
+                        const start = e.target.value;
+                        const end = newStaff.end_time || '';
+                        let hours = newStaff.hours;
+                        if (start && end) {
+                          const [sh, sm] = start.split(':').map(Number);
+                          const [eh, em] = end.split(':').map(Number);
+                          const diff = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+                          if (diff > 0) hours = diff.toFixed(2);
+                        }
+                        setNewStaff({...newStaff, start_time: start, hours});
+                      }} />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">End</label>
+                    <input type="time" className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-blue-400"
+                      value={newStaff.end_time || ''}
+                      onChange={e => {
+                        const end = e.target.value;
+                        const start = newStaff.start_time || '';
+                        let hours = newStaff.hours;
+                        if (start && end) {
+                          const [sh, sm] = start.split(':').map(Number);
+                          const [eh, em] = end.split(':').map(Number);
+                          const diff = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
+                          if (diff > 0) hours = diff.toFixed(2);
+                        }
+                        setNewStaff({...newStaff, end_time: end, hours});
+                      }} />
+                  </div>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block mb-1">Hours</label>
+                    <input type="number" step="0.25" className="w-full border-2 border-blue-200 rounded-xl px-3 py-2 font-black text-blue-700 focus:outline-none focus:border-blue-400 bg-blue-50" placeholder="Auto" value={newStaff.hours} onChange={e => setNewStaff({...newStaff, hours: e.target.value})} />
+                  </div>
+                </div>
                 <input className="border-2 border-gray-200 rounded-xl px-4 py-2 focus:outline-none focus:border-blue-400" placeholder="Notes (optional)" value={newStaff.notes} onChange={e => setNewStaff({...newStaff, notes: e.target.value})} />
-                <button onClick={addStaffHours} disabled={!newStaff.name.trim() || !newStaff.hours} className="bg-blue-700 hover:bg-blue-600 text-white font-black rounded-xl px-6 py-2 disabled:opacity-40 transition-all col-span-2 md:col-span-1">+ Add</button>
+                <button onClick={addStaffHours} disabled={!newStaff.name.trim() || !newStaff.hours} className="bg-blue-700 hover:bg-blue-600 text-white font-black rounded-xl px-6 py-2 disabled:opacity-40 transition-all">+ Add</button>
               </div>
             </div>
 
@@ -1152,13 +1195,14 @@ setSalesLedger(ledgerData || []);
                 <div className="px-6 py-4 bg-gray-50 border-b"><span className="font-black text-lg">📋 All Entries</span></div>
                 <table className="w-full text-sm">
                   <thead className="text-[10px] uppercase tracking-widest text-gray-400 border-b bg-gray-50">
-                    <tr><th className="p-3 text-left">Staff</th><th className="p-3 text-left">Date</th><th className="p-3 text-center">Hours</th><th className="p-3 text-right">Rate</th><th className="p-3 text-right">Cost</th><th className="p-3 text-left">Notes</th><th className="p-3"></th></tr>
+                    <tr><th className="p-3 text-left">Staff</th><th className="p-3 text-left">Date</th><th className="p-3 text-left">Time</th><th className="p-3 text-center">Hours</th><th className="p-3 text-right">Rate</th><th className="p-3 text-right">Cost</th><th className="p-3 text-left">Notes</th><th className="p-3"></th></tr>
                   </thead>
                   <tbody className="divide-y">
                     {staffHours.map(r => (
                       <tr key={r.id} className="hover:bg-gray-50">
                         <td className="p-3 font-black">{r.staff_name}</td>
                         <td className="p-3 text-gray-500">{new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                        <td className="p-3 text-gray-500 text-xs">{r.start_time && r.end_time ? `${r.start_time.slice(0,5)} – ${r.end_time.slice(0,5)}` : '—'}</td>
                         <td className="p-3 text-center font-bold">{r.hours}</td>
                         <td className="p-3 text-right text-gray-500">{r.rate > 0 ? `$${Number(r.rate).toFixed(2)}/hr` : '—'}</td>
                         <td className="p-3 text-right font-bold text-red-600">{r.rate > 0 ? `$${(Number(r.hours) * Number(r.rate)).toFixed(2)}` : '—'}</td>
