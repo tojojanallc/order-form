@@ -207,7 +207,7 @@ export default function DailyRecPage() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={generate} disabled={!selectedSlug || loading}
+              <button onClick={() => generate()} disabled={!selectedSlug || loading}
                 className="flex-1 bg-slate-900 hover:bg-slate-700 text-white font-black py-3 rounded-xl disabled:opacity-40 transition-all">
                 {loading ? 'Loading...' : 'Generate Rec'}
               </button>
