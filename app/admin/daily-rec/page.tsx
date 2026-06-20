@@ -19,6 +19,8 @@ export default function DailyRecPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [newExpense, setNewExpense] = useState({ category: 'Truck Rental', description: '', amount: '', date: new Date().toISOString().split('T')[0] });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [passcode, setPasscode] = useState('');
+  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
     supabase.from('event_settings').select('slug, event_name').order('id', { ascending: false })
