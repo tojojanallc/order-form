@@ -46,7 +46,7 @@ export default function DailyRecPage() {
     const fromStr = `${dateFrom}T00:00:00.000Z`;
     const toStr = `${dateTo}T23:59:59.999Z`;
 
-    const [{ data: orders }, { data: ledger }, { data: staffHrs }, { data: expData }] = await Promise.all([
+    const [{ data: orders }, { data: ledger }, { data: staffHrs }, { data: expData }, { data: allExpData }] = await Promise.all([
       supabase.from('orders').select('*').eq('event_slug', selectedSlug)
         .gte('created_at', fromStr).lte('created_at', toStr).neq('status', 'refunded'),
       supabase.from('sales_ledger').select('*').eq('event_slug', selectedSlug)
@@ -55,6 +55,8 @@ export default function DailyRecPage() {
         .gte('date', dateFrom).lte('date', dateTo),
       supabase.from('event_expenses').select('*').eq('event_slug', selectedSlug)
         .gte('date', dateFrom).lte('date', dateTo).order('date').order('category'),
+      supabase.from('event_expenses').select('*').eq('event_slug', selectedSlug)
+        .order('date').order('category'),
     ]);
 
     const paidOrders = (orders || []).filter(o => {
@@ -73,11 +75,18 @@ export default function DailyRecPage() {
     const staffCost = (staffHrs || []).reduce((s, r) => s + (Number(r.hours) * Number(r.rate || 0)), 0);
     const staffHoursTotal = (staffHrs || []).reduce((s, r) => s + Number(r.hours), 0);
 
-    // Other expenses
+    // Other expenses (date-filtered)
     const otherExpenses = (expData || []).reduce((s, r) => s + Number(r.amount), 0);
     const expensesByCategory: Record<string, number> = {};
     (expData || []).forEach(r => {
       expensesByCategory[r.category] = (expensesByCategory[r.category] || 0) + Number(r.amount);
+    });
+
+    // All event expenses (regardless of date)
+    const allExpensesTotal = (allExpData || []).reduce((s, r) => s + Number(r.amount), 0);
+    const allExpensesByCategory: Record<string, number> = {};
+    (allExpData || []).forEach(r => {
+      allExpensesByCategory[r.category] = (allExpensesByCategory[r.category] || 0) + Number(r.amount);
     });
 
     // Gross profit
@@ -140,7 +149,10 @@ export default function DailyRecPage() {
       staffMap: Object.entries(staffMap).sort((a, b) => b[1].hours - a[1].hours),
       topProducts: Object.entries(productMap).sort((a, b) => b[1] - a[1]).slice(0, 10),
       otherExpenses, expensesByCategory,
+      allExpensesTotal, allExpensesByCategory,
+      netProfitWithAllExpenses: revenue - cogs - staffCost - allExpensesTotal,
       expenses: expData || [],
+      allExpenses: allExpData || [],
       dateFrom, dateTo,
       eventName: events.find(e => e.slug === selectedSlug)?.event_name || selectedSlug,
     });
@@ -197,7 +209,17 @@ export default function DailyRecPage() {
                 className="flex-1 bg-slate-900 hover:bg-slate-700 text-white font-black py-3 rounded-xl disabled:opacity-40 transition-all">
                 {loading ? 'Loading...' : 'Generate Rec'}
               </button>
-              {rec && <button onClick={() => window.print()} className="bg-gray-100 hover:bg-gray-200 text-slate-700 font-black px-6 rounded-xl transition-all">🖨️ Print</button>}
+              <button onClick={async () => {
+                if (!selectedSlug) return;
+                const { data } = await supabase.from('orders').select('created_at').eq('event_slug', selectedSlug).order('created_at').limit(1);
+                const { data: last } = await supabase.from('orders').select('created_at').eq('event_slug', selectedSlug).order('created_at', { ascending: false }).limit(1);
+                if (data?.[0]) setDateFrom(data[0].created_at.split('T')[0]);
+                if (last?.[0]) setDateTo(last[0].created_at.split('T')[0]);
+                setTimeout(generate, 100);
+              }} disabled={!selectedSlug} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black px-5 rounded-xl disabled:opacity-40 transition-all text-sm">
+                Full Event
+              </button>
+              {rec && <button onClick={() => window.print()} className="bg-gray-100 hover:bg-gray-200 text-slate-700 font-black px-5 rounded-xl transition-all">🖨️</button>}
             </div>
           </div>
         </div>
@@ -330,7 +352,7 @@ export default function DailyRecPage() {
               {/* Other Expenses */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-black text-lg">🧾 Other Expenses</h3>
+                  <h3 className="font-black text-lg">🧾 Event Expenses</h3>
                   <button onClick={() => setShowExpenseForm(!showExpenseForm)}
                     className="text-xs font-black bg-blue-700 text-white px-3 py-1.5 rounded-xl hover:bg-blue-600 transition-all no-print">
                     {showExpenseForm ? 'Cancel' : '+ Add'}
@@ -376,31 +398,50 @@ export default function DailyRecPage() {
                   </div>
                 )}
 
-                {rec.expenses.length === 0 ? (
-                  <p className="text-gray-400 text-sm text-center py-4">No expenses logged for this period.</p>
+                {rec.allExpenses.length === 0 ? (
+                  <p className="text-gray-400 text-sm text-center py-4">No expenses logged yet.</p>
                 ) : (
-                  <div className="space-y-1">
-                    {rec.expenses.map((exp: any) => (
-                      <div key={exp.id} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
-                        <div>
-                          <span className="text-sm font-bold text-gray-700">{exp.category}</span>
-                          {exp.description && <span className="text-xs text-gray-400 ml-2">{exp.description}</span>}
-                          <span className="text-xs text-gray-300 ml-2">{new Date(exp.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  <>
+                    <div className="space-y-1 mb-4">
+                      {rec.allExpenses.map((exp: any) => (
+                        <div key={exp.id} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
+                          <div>
+                            <span className="text-sm font-bold text-gray-700">{exp.category}</span>
+                            {exp.description && <span className="text-xs text-gray-400 ml-2">{exp.description}</span>}
+                            <span className="text-xs text-gray-300 ml-2">{new Date(exp.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-black text-sm text-red-600">({$(Number(exp.amount))})</span>
+                            <button onClick={async () => {
+                              await supabase.from('event_expenses').delete().eq('id', exp.id);
+                              generate();
+                            }} className="text-gray-300 hover:text-red-500 transition-all no-print text-xs">🗑️</button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-black text-sm text-red-600">({$(Number(exp.amount))})</span>
-                          <button onClick={async () => {
-                            await supabase.from('event_expenses').delete().eq('id', exp.id);
-                            generate();
-                          }} className="text-gray-300 hover:text-red-500 transition-all no-print text-xs">🗑️</button>
-                        </div>
+                      ))}
+                      <div className="flex justify-between pt-2 border-t-2 border-gray-200 mt-2">
+                        <span className="font-black text-sm">Total Event Expenses</span>
+                        <span className="font-black text-sm text-red-600">({$(rec.allExpensesTotal)})</span>
                       </div>
-                    ))}
-                    <div className="flex justify-between pt-2 border-t-2 border-gray-200 mt-2">
-                      <span className="font-black text-sm">Total Other Expenses</span>
-                      <span className="font-black text-sm text-red-600">({$(rec.otherExpenses)})</span>
                     </div>
-                  </div>
+
+                    {/* Full picture */}
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">Full Picture (This Period + All Expenses)</p>
+                      {[
+                        { label: 'Period Revenue', value: $(rec.revenue), color: 'text-green-700' },
+                        { label: 'Period COGS', value: `(${$(rec.cogs)})`, color: 'text-red-500' },
+                        { label: 'Staff Labor', value: `(${$(rec.staffCost)})`, color: 'text-red-500' },
+                        { label: 'All Event Expenses', value: `(${$(rec.allExpensesTotal)})`, color: 'text-red-500' },
+                        { label: 'Net Profit', value: $(rec.netProfitWithAllExpenses), color: rec.netProfitWithAllExpenses >= 0 ? 'text-green-700' : 'text-red-600' },
+                      ].map(row => (
+                        <div key={row.label} className="flex justify-between py-1.5 border-b border-slate-100 last:border-0 last:font-black last:pt-2 last:border-t last:border-slate-200">
+                          <span className="text-xs text-slate-500">{row.label}</span>
+                          <span className={`text-xs font-black ${row.color}`}>{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
 
