@@ -16,8 +16,9 @@ export default function DailyRecPage() {
   const [rec, setRec] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [showFinancials, setShowFinancials] = useState(false);
-  const [passcode, setPasscode] = useState('');
-  const [authed, setAuthed] = useState(false);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [newExpense, setNewExpense] = useState({ category: 'Truck Rental', description: '', amount: '', date: new Date().toISOString().split('T')[0] });
+  const [showExpenseForm, setShowExpenseForm] = useState(false);
 
   useEffect(() => {
     supabase.from('event_settings').select('slug, event_name').order('id', { ascending: false })
@@ -43,13 +44,15 @@ export default function DailyRecPage() {
     const fromStr = `${dateFrom}T00:00:00.000Z`;
     const toStr = `${dateTo}T23:59:59.999Z`;
 
-    const [{ data: orders }, { data: ledger }, { data: staffHrs }] = await Promise.all([
+    const [{ data: orders }, { data: ledger }, { data: staffHrs }, { data: expData }] = await Promise.all([
       supabase.from('orders').select('*').eq('event_slug', selectedSlug)
         .gte('created_at', fromStr).lte('created_at', toStr).neq('status', 'refunded'),
       supabase.from('sales_ledger').select('*').eq('event_slug', selectedSlug)
         .gte('created_at', fromStr).lte('created_at', toStr),
       supabase.from('staff_hours').select('*').eq('event_slug', selectedSlug)
         .gte('date', dateFrom).lte('date', dateTo),
+      supabase.from('event_expenses').select('*').eq('event_slug', selectedSlug)
+        .gte('date', dateFrom).lte('date', dateTo).order('date').order('category'),
     ]);
 
     const paidOrders = (orders || []).filter(o => {
@@ -68,9 +71,16 @@ export default function DailyRecPage() {
     const staffCost = (staffHrs || []).reduce((s, r) => s + (Number(r.hours) * Number(r.rate || 0)), 0);
     const staffHoursTotal = (staffHrs || []).reduce((s, r) => s + Number(r.hours), 0);
 
+    // Other expenses
+    const otherExpenses = (expData || []).reduce((s, r) => s + Number(r.amount), 0);
+    const expensesByCategory: Record<string, number> = {};
+    (expData || []).forEach(r => {
+      expensesByCategory[r.category] = (expensesByCategory[r.category] || 0) + Number(r.amount);
+    });
+
     // Gross profit
     const grossProfit = revenue - cogs;
-    const netProfit = revenue - cogs - staffCost;
+    const netProfit = revenue - cogs - staffCost - otherExpenses;
     const margin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
 
     // By payment method
@@ -127,6 +137,8 @@ export default function DailyRecPage() {
       dayMap: Object.entries(dayMap),
       staffMap: Object.entries(staffMap).sort((a, b) => b[1].hours - a[1].hours),
       topProducts: Object.entries(productMap).sort((a, b) => b[1] - a[1]).slice(0, 10),
+      otherExpenses, expensesByCategory,
+      expenses: expData || [],
       dateFrom, dateTo,
       eventName: events.find(e => e.slug === selectedSlug)?.event_name || selectedSlug,
     });
@@ -227,6 +239,9 @@ export default function DailyRecPage() {
                   { label: 'Cost of Goods Sold', value: `(${$(rec.cogs)})`, color: 'text-red-600' },
                   { label: 'Gross Profit', value: $(rec.grossProfit), color: 'text-blue-700', bold: true },
                   { label: `Staff Labor (${rec.staffHoursTotal} hrs)`, value: `(${$(rec.staffCost)})`, color: 'text-red-600' },
+                  ...Object.entries(rec.expensesByCategory).map(([cat, amt]: [string, any]) => ({
+                    label: cat, value: `(${$(amt)})`, color: 'text-red-600'
+                  })),
                   { label: 'Net Profit', value: $(rec.netProfit), color: rec.netProfit >= 0 ? 'text-green-700' : 'text-red-600', bold: true },
                   { label: 'Net Margin', value: `${rec.margin.toFixed(1)}%`, color: 'text-gray-700' },
                 ].map(row => (
@@ -309,6 +324,83 @@ export default function DailyRecPage() {
                   </div>
                 </div>
               )}
+
+              {/* Other Expenses */}
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-black text-lg">🧾 Other Expenses</h3>
+                  <button onClick={() => setShowExpenseForm(!showExpenseForm)}
+                    className="text-xs font-black bg-blue-700 text-white px-3 py-1.5 rounded-xl hover:bg-blue-600 transition-all no-print">
+                    {showExpenseForm ? 'Cancel' : '+ Add'}
+                  </button>
+                </div>
+
+                {showExpenseForm && (
+                  <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-3 no-print">
+                    <div className="grid grid-cols-2 gap-3">
+                      <select className="border-2 border-gray-200 rounded-xl px-3 py-2 font-bold bg-white focus:outline-none focus:border-blue-400"
+                        value={newExpense.category} onChange={e => setNewExpense({...newExpense, category: e.target.value})}>
+                        <option>Truck Rental</option>
+                        <option>Food</option>
+                        <option>DTFs</option>
+                        <option>Supplies</option>
+                        <option>Misc</option>
+                      </select>
+                      <input type="date" className="border-2 border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-blue-400"
+                        value={newExpense.date} onChange={e => setNewExpense({...newExpense, date: e.target.value})} />
+                      <input className="border-2 border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-400"
+                        placeholder="Description (optional)" value={newExpense.description}
+                        onChange={e => setNewExpense({...newExpense, description: e.target.value})} />
+                      <input type="number" step="0.01" className="border-2 border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-blue-400"
+                        placeholder="Amount $" value={newExpense.amount}
+                        onChange={e => setNewExpense({...newExpense, amount: e.target.value})} />
+                    </div>
+                    <button onClick={async () => {
+                      if (!newExpense.amount || !selectedSlug) return;
+                      await supabase.from('event_expenses').insert({
+                        event_slug: selectedSlug,
+                        date: newExpense.date,
+                        category: newExpense.category,
+                        description: newExpense.description || null,
+                        amount: parseFloat(newExpense.amount),
+                      });
+                      setNewExpense({ category: 'Truck Rental', description: '', amount: '', date: new Date().toISOString().split('T')[0] });
+                      setShowExpenseForm(false);
+                      generate();
+                    }} disabled={!newExpense.amount}
+                      className="w-full bg-blue-700 text-white font-black py-2 rounded-xl disabled:opacity-40 hover:bg-blue-600 transition-all">
+                      Save Expense
+                    </button>
+                  </div>
+                )}
+
+                {rec.expenses.length === 0 ? (
+                  <p className="text-gray-400 text-sm text-center py-4">No expenses logged for this period.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {rec.expenses.map((exp: any) => (
+                      <div key={exp.id} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0">
+                        <div>
+                          <span className="text-sm font-bold text-gray-700">{exp.category}</span>
+                          {exp.description && <span className="text-xs text-gray-400 ml-2">{exp.description}</span>}
+                          <span className="text-xs text-gray-300 ml-2">{new Date(exp.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-black text-sm text-red-600">({$(Number(exp.amount))})</span>
+                          <button onClick={async () => {
+                            await supabase.from('event_expenses').delete().eq('id', exp.id);
+                            generate();
+                          }} className="text-gray-300 hover:text-red-500 transition-all no-print text-xs">🗑️</button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-2 border-t-2 border-gray-200 mt-2">
+                      <span className="font-black text-sm">Total Other Expenses</span>
+                      <span className="font-black text-sm text-red-600">({$(rec.otherExpenses)})</span>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Top Products */}
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
