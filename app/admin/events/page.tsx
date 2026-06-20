@@ -1201,7 +1201,7 @@ setSalesLedger(ledgerData || []);
                     {staffHours.map(r => (
                       <tr key={r.id} className="hover:bg-gray-50">
                         <td className="p-3 font-black">{r.staff_name}</td>
-                        <td className="p-3 text-gray-500">{new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                        <td className="p-3 text-gray-500">{r.date ? new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}</td>
                         <td className="p-3 text-gray-500 text-xs">{r.start_time && r.end_time ? `${r.start_time.slice(0,5)} – ${r.end_time.slice(0,5)}` : '—'}</td>
                         <td className="p-3 text-center font-bold">{r.hours}</td>
                         <td className="p-3 text-right text-gray-500">{r.rate > 0 ? `$${Number(r.rate).toFixed(2)}/hr` : '—'}</td>
