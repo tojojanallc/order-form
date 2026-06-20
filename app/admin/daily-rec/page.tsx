@@ -39,12 +39,14 @@ export default function DailyRecPage() {
     else alert('Wrong password or insufficient permissions');
   };
 
-  const generate = async () => {
+  const generate = async (fromOverride?: string, toOverride?: string) => {
     if (!selectedSlug) return;
+    const from = fromOverride || dateFrom;
+    const to = toOverride || dateTo;
     setLoading(true);
 
-    const fromStr = `${dateFrom}T00:00:00.000Z`;
-    const toStr = `${dateTo}T23:59:59.999Z`;
+    const fromStr = `${from}T00:00:00.000Z`;
+    const toStr = `${to}T23:59:59.999Z`;
 
     const [{ data: orders }, { data: ledger }, { data: staffHrs }, { data: expData }, { data: allExpData }] = await Promise.all([
       supabase.from('orders').select('*').eq('event_slug', selectedSlug)
@@ -52,9 +54,9 @@ export default function DailyRecPage() {
       supabase.from('sales_ledger').select('*').eq('event_slug', selectedSlug)
         .gte('created_at', fromStr).lte('created_at', toStr),
       supabase.from('staff_hours').select('*').eq('event_slug', selectedSlug)
-        .gte('date', dateFrom).lte('date', dateTo),
+        .gte('date', from).lte('date', to),
       supabase.from('event_expenses').select('*').eq('event_slug', selectedSlug)
-        .gte('date', dateFrom).lte('date', dateTo).order('date').order('category'),
+        .gte('date', from).lte('date', to).order('date').order('category'),
       supabase.from('event_expenses').select('*').eq('event_slug', selectedSlug)
         .order('date').order('category'),
     ]);
@@ -153,7 +155,7 @@ export default function DailyRecPage() {
       netProfitWithAllExpenses: revenue - cogs - staffCost - allExpensesTotal,
       expenses: expData || [],
       allExpenses: allExpData || [],
-      dateFrom, dateTo,
+      dateFrom: from, dateTo: to,
       eventName: events.find(e => e.slug === selectedSlug)?.event_name || selectedSlug,
     });
     setLoading(false);
@@ -211,11 +213,13 @@ export default function DailyRecPage() {
               </button>
               <button onClick={async () => {
                 if (!selectedSlug) return;
-                const { data } = await supabase.from('orders').select('created_at').eq('event_slug', selectedSlug).order('created_at').limit(1);
+                const { data: first } = await supabase.from('orders').select('created_at').eq('event_slug', selectedSlug).order('created_at').limit(1);
                 const { data: last } = await supabase.from('orders').select('created_at').eq('event_slug', selectedSlug).order('created_at', { ascending: false }).limit(1);
-                if (data?.[0]) setDateFrom(data[0].created_at.split('T')[0]);
-                if (last?.[0]) setDateTo(last[0].created_at.split('T')[0]);
-                setTimeout(generate, 100);
+                const from = first?.[0]?.created_at?.split('T')[0] || dateFrom;
+                const to = last?.[0]?.created_at?.split('T')[0] || dateTo;
+                setDateFrom(from);
+                setDateTo(to);
+                generate(from, to);
               }} disabled={!selectedSlug} className="bg-indigo-600 hover:bg-indigo-700 text-white font-black px-5 rounded-xl disabled:opacity-40 transition-all text-sm">
                 Full Event
               </button>
