@@ -56,6 +56,8 @@ export default function AdminPage() {
   const [newSiteName, setNewSiteName] = useState('');
   const [newSitePrinter, setNewSitePrinter] = useState('');
   const [siteFilter, setSiteFilter] = useState('all');
+  const [staffHours, setStaffHours] = useState<any[]>([]);
+  const [newStaff, setNewStaff] = useState({ name: '', date: new Date().toISOString().split('T')[0], hours: '', rate: '', notes: '' });
   const [newOrderTotal, setNewOrderTotal] = useState(0); 
 
   const [showDailyBreakdown, setShowDailyBreakdown] = useState(false);
@@ -176,6 +178,7 @@ export default function AdminPage() {
     fetchTerminals();
     fetchSites();
     fetchLogoTemplates();
+    fetchStaffHours();
 
     const channel = supabase.channel('global_updates')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
@@ -783,6 +786,32 @@ setSalesLedger(ledgerData || []);
     if (data) setEventSites(data);
   };
 
+  const fetchStaffHours = async () => {
+    if (!supabase || !selectedEventSlug) return;
+    const { data } = await supabase.from('staff_hours').select('*').eq('event_slug', selectedEventSlug).order('date').order('staff_name');
+    if (data) setStaffHours(data);
+  };
+
+  const addStaffHours = async () => {
+    if (!newStaff.name.trim() || !newStaff.hours || !selectedEventSlug) return;
+    await supabase.from('staff_hours').insert({
+      event_slug: selectedEventSlug,
+      staff_name: newStaff.name.trim(),
+      date: newStaff.date,
+      hours: parseFloat(newStaff.hours),
+      rate: parseFloat(newStaff.rate) || 0,
+      notes: newStaff.notes.trim() || null,
+    });
+    setNewStaff({ name: '', date: new Date().toISOString().split('T')[0], hours: '', rate: '', notes: '' });
+    fetchStaffHours();
+  };
+
+  const deleteStaffHours = async (id) => {
+    if (!confirm('Remove this entry?')) return;
+    await supabase.from('staff_hours').delete().eq('id', id);
+    fetchStaffHours();
+  };
+
   const addLogo = async (e) => { 
       e.preventDefault(); 
       if (!newLogoName) return; 
@@ -1060,11 +1089,90 @@ setSalesLedger(ledgerData || []);
 )}
 
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
-            {['orders', 'sites', 'global catalog', 'event stock', 'guests', 'logos', 'terminals', 'settings'].map(tab => (
+            {['orders', 'sites', 'global catalog', 'event stock', 'guests', 'logos', 'terminals', 'settings', ...(isAdmin ? ['staff hours'] : [])].map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded font-bold uppercase text-xs ${activeTab === tab ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>{tab}</button>
             ))}
           </div>
         </div>
+
+        {activeTab === 'staff hours' && isAdmin && (
+          <div className="max-w-3xl mx-auto space-y-6">
+
+            {/* Add entry */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <h2 className="font-black text-xl mb-4">Log Staff Hours</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+                <input className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400 col-span-2 md:col-span-1" placeholder="Staff name" value={newStaff.name} onChange={e => setNewStaff({...newStaff, name: e.target.value})} />
+                <input type="date" className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400" value={newStaff.date} onChange={e => setNewStaff({...newStaff, date: e.target.value})} />
+                <input type="number" step="0.5" className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400" placeholder="Hours" value={newStaff.hours} onChange={e => setNewStaff({...newStaff, hours: e.target.value})} />
+                <input type="number" className="border-2 border-gray-200 rounded-xl px-4 py-2 font-bold focus:outline-none focus:border-blue-400" placeholder="$/hr (optional)" value={newStaff.rate} onChange={e => setNewStaff({...newStaff, rate: e.target.value})} />
+                <input className="border-2 border-gray-200 rounded-xl px-4 py-2 focus:outline-none focus:border-blue-400" placeholder="Notes (optional)" value={newStaff.notes} onChange={e => setNewStaff({...newStaff, notes: e.target.value})} />
+                <button onClick={addStaffHours} disabled={!newStaff.name.trim() || !newStaff.hours} className="bg-blue-700 hover:bg-blue-600 text-white font-black rounded-xl px-6 py-2 disabled:opacity-40 transition-all col-span-2 md:col-span-1">+ Add</button>
+              </div>
+            </div>
+
+            {/* Summary */}
+            {staffHours.length > 0 && (() => {
+              const totalHours = staffHours.reduce((s, r) => s + Number(r.hours), 0);
+              const totalCost = staffHours.reduce((s, r) => s + (Number(r.hours) * Number(r.rate || 0)), 0);
+              const byPerson: Record<string, { hours: number; cost: number }> = {};
+              staffHours.forEach(r => {
+                if (!byPerson[r.staff_name]) byPerson[r.staff_name] = { hours: 0, cost: 0 };
+                byPerson[r.staff_name].hours += Number(r.hours);
+                byPerson[r.staff_name].cost += Number(r.hours) * Number(r.rate || 0);
+              });
+              return (
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 bg-gray-50 border-b flex justify-between items-center">
+                    <span className="font-black text-lg">👥 Summary</span>
+                    <div className="flex gap-4 text-sm">
+                      <span className="font-black">{totalHours} total hrs</span>
+                      {totalCost > 0 && <span className="font-black text-red-600">${totalCost.toFixed(2)} total cost</span>}
+                    </div>
+                  </div>
+                  <div className="divide-y">
+                    {Object.entries(byPerson).map(([name, data]) => (
+                      <div key={name} className="px-6 py-3 flex justify-between items-center">
+                        <span className="font-black">{name}</span>
+                        <div className="flex gap-4 text-sm">
+                          <span className="font-bold text-gray-600">{data.hours} hrs</span>
+                          {data.cost > 0 && <span className="font-bold text-red-600">${data.cost.toFixed(2)}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Log entries */}
+            {staffHours.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center text-gray-400 font-bold">No hours logged yet.</div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 bg-gray-50 border-b"><span className="font-black text-lg">📋 All Entries</span></div>
+                <table className="w-full text-sm">
+                  <thead className="text-[10px] uppercase tracking-widest text-gray-400 border-b bg-gray-50">
+                    <tr><th className="p-3 text-left">Staff</th><th className="p-3 text-left">Date</th><th className="p-3 text-center">Hours</th><th className="p-3 text-right">Rate</th><th className="p-3 text-right">Cost</th><th className="p-3 text-left">Notes</th><th className="p-3"></th></tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {staffHours.map(r => (
+                      <tr key={r.id} className="hover:bg-gray-50">
+                        <td className="p-3 font-black">{r.staff_name}</td>
+                        <td className="p-3 text-gray-500">{new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                        <td className="p-3 text-center font-bold">{r.hours}</td>
+                        <td className="p-3 text-right text-gray-500">{r.rate > 0 ? `$${Number(r.rate).toFixed(2)}/hr` : '—'}</td>
+                        <td className="p-3 text-right font-bold text-red-600">{r.rate > 0 ? `$${(Number(r.hours) * Number(r.rate)).toFixed(2)}` : '—'}</td>
+                        <td className="p-3 text-gray-400 text-xs">{r.notes || ''}</td>
+                        <td className="p-3"><button onClick={() => deleteStaffHours(r.id)} className="text-gray-300 hover:text-red-500 transition-all">🗑️</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {activeTab === 'sites' && (
           <div className="max-w-3xl mx-auto space-y-6">
