@@ -1674,7 +1674,7 @@ if (!ignoreInventory) {
                     if (e.key === 'Enter') {
                       const res = await fetch('/api/verify-price-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: discountPin }) });
                       const data = await res.json();
-                      if (data.valid) { setDiscountUnlocked(true); setDiscountPin(''); }
+                      if (data.success) { setDiscountUnlocked(true); setDiscountPin(''); }
                       else { setDiscountPinError(true); setDiscountPin(''); }
                     }
                   }}
@@ -1683,7 +1683,7 @@ if (!ignoreInventory) {
                 <button onClick={async () => {
                   const res = await fetch('/api/verify-price-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: discountPin }) });
                   const data = await res.json();
-                  if (data.valid) { setDiscountUnlocked(true); setDiscountPin(''); }
+                  if (data.success) { setDiscountUnlocked(true); setDiscountPin(''); }
                   else { setDiscountPinError(true); setDiscountPin(''); }
                 }} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-3 rounded-xl transition-all">Unlock</button>
               </>
