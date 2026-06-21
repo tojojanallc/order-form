@@ -35,6 +35,9 @@ export async function POST(req: Request) {
       page.drawText('** ADD-ON ORDER **', { x: 60, y: cursorY + 4, size: 14, font: fontBold, color: rgb(1, 1, 1) });
       moveDown(30);
     }
+
+    // Site banner
+    if (order.site) {
       page.drawRectangle({ x: 0, y: cursorY - 4, width: 288, height: 26, color: rgb(0, 0, 0) });
       const siteText = order.site.toUpperCase();
       const siteFontSize = siteText.length > 12 ? 13 : 16;
