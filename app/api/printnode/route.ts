@@ -28,8 +28,13 @@ export async function POST(req: Request) {
     const margin = 15;
     const moveDown = (amount: number) => { cursorY -= amount; };
 
-    // Site banner — large bar at very top if site is set
-    if (order.site) {
+    // Add-On Order banner
+    const isAddon = (order.cart_data || []).some((i: any) => i.productId === 'addon-service');
+    if (isAddon) {
+      page.drawRectangle({ x: 0, y: cursorY - 4, width: 288, height: 26, color: rgb(0.2, 0.2, 0.8) });
+      page.drawText('** ADD-ON ORDER **', { x: 60, y: cursorY + 4, size: 14, font: fontBold, color: rgb(1, 1, 1) });
+      moveDown(30);
+    }
       page.drawRectangle({ x: 0, y: cursorY - 4, width: 288, height: 26, color: rgb(0, 0, 0) });
       const siteText = order.site.toUpperCase();
       const siteFontSize = siteText.length > 12 ? 13 : 16;

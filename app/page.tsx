@@ -131,6 +131,12 @@ export default function OrderForm() {
   const [logos, setLogos] = useState([]); 
   // Order lookup
   const [showLookup, setShowLookup] = useState(false);
+  const [showAddon, setShowAddon] = useState(false);
+  const [addonNames, setAddonNames] = useState([{ text: "", position: "Back Center" }]);
+  const [addonNumbers, setAddonNumbers] = useState<{text:string,position:string}[]>([]);
+  const [addonCustomerName, setAddonCustomerName] = useState("");
+  const [addonCustomerPhone, setAddonCustomerPhone] = useState("");
+  const [addonSubmitting, setAddonSubmitting] = useState(false);
   const [lookupQuery, setLookupQuery] = useState('');
   const [lookupResults, setLookupResults] = useState<any[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -1098,6 +1104,7 @@ if (!ignoreInventory) {
               {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
               {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">{assignedSiteName ? `📍 ${assignedSiteName}` : assignedTerminalId === 'BLUETOOTH_READER' ? '📱 BT' : `ID: ${assignedTerminalId.slice(-4)}`}</div>}
               <button onClick={() => { setShowLookup(true); setLookupQuery(''); setLookupResults([]); }} className="absolute bottom-2 right-2 text-[10px] bg-black bg-opacity-20 hover:bg-opacity-40 px-2 py-1 rounded text-white font-bold transition-all">🔍 Lookup</button>
+              <button onClick={() => setShowAddon(true)} className="absolute bottom-2 left-2 text-[10px] bg-black bg-opacity-20 hover:bg-opacity-40 px-2 py-1 rounded text-white font-bold transition-all">✏️ Add-On</button>
             </div>
             
             <div className="p-6 space-y-8">
@@ -1626,6 +1633,147 @@ if (!ignoreInventory) {
         )}
       </div>
     </div>
+
+    {/* Add-On Order Modal */}
+    {showAddon && (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowAddon(false)}>
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="p-6" style={{ backgroundColor: headerColor }}>
+            <h2 className="text-white font-black text-xl">✏️ Add-On Order</h2>
+            <p className="text-white/70 text-sm mt-1">Names & numbers on existing garment</p>
+          </div>
+          <div className="p-6 space-y-4">
+
+            {/* Customer info */}
+            <div className="grid grid-cols-2 gap-3">
+              <input className="border-2 border-gray-200 rounded-xl px-4 py-3 font-bold focus:outline-none focus:border-blue-400"
+                placeholder="Customer Name" value={addonCustomerName} onChange={e => setAddonCustomerName(e.target.value)} />
+              <input className="border-2 border-gray-200 rounded-xl px-4 py-3 font-bold focus:outline-none focus:border-blue-400"
+                placeholder="Phone" type="tel" value={addonCustomerPhone} onChange={e => setAddonCustomerPhone(e.target.value)} />
+            </div>
+
+            {/* Names */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-black uppercase tracking-wider text-gray-500">Names (+$5 each)</label>
+                <button onClick={() => setAddonNames([...addonNames, { text: '', position: 'Back Center' }])}
+                  className="text-xs font-black text-blue-600 hover:text-blue-800">+ Add Name</button>
+              </div>
+              {addonNames.map((n, i) => (
+                <div key={i} className="flex gap-2 mb-2">
+                  <input className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 font-bold uppercase focus:outline-none focus:border-blue-400"
+                    placeholder="NAME" maxLength={12} value={n.text}
+                    onChange={e => setAddonNames(addonNames.map((x, j) => j === i ? { ...x, text: e.target.value.toUpperCase() } : x))} />
+                  <select className="border-2 border-gray-200 rounded-xl px-3 py-2 font-bold bg-white focus:outline-none"
+                    value={n.position} onChange={e => setAddonNames(addonNames.map((x, j) => j === i ? { ...x, position: e.target.value } : x))}>
+                    {getPositionOptions('name').map(p => <option key={p.id} value={p.label}>{p.label}</option>)}
+                  </select>
+                  {addonNames.length > 1 && <button onClick={() => setAddonNames(addonNames.filter((_, j) => j !== i))} className="text-red-400 font-black px-2">✕</button>}
+                </div>
+              ))}
+            </div>
+
+            {/* Numbers */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-xs font-black uppercase tracking-wider text-gray-500">Numbers (+$5 each)</label>
+                <button onClick={() => setAddonNumbers([...addonNumbers, { text: '', position: 'Back Center' }])}
+                  className="text-xs font-black text-blue-600 hover:text-blue-800">+ Add Number</button>
+              </div>
+              {addonNumbers.map((n, i) => (
+                <div key={i} className="flex gap-2 mb-2">
+                  <input className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-blue-400"
+                    placeholder="00" maxLength={3} value={n.text}
+                    onChange={e => setAddonNumbers(addonNumbers.map((x, j) => j === i ? { ...x, text: e.target.value } : x))} />
+                  <select className="border-2 border-gray-200 rounded-xl px-3 py-2 font-bold bg-white focus:outline-none"
+                    value={n.position} onChange={e => setAddonNumbers(addonNumbers.map((x, j) => j === i ? { ...x, position: e.target.value } : x))}>
+                    {getPositionOptions('number').map(p => <option key={p.id} value={p.label}>{p.label}</option>)}
+                  </select>
+                  <button onClick={() => setAddonNumbers(addonNumbers.filter((_, j) => j !== i))} className="text-red-400 font-black px-2">✕</button>
+                </div>
+              ))}
+            </div>
+
+            {/* Total */}
+            {(() => {
+              const validNames = addonNames.filter(n => n.text.trim());
+              const validNumbers = addonNumbers.filter(n => n.text.trim());
+              const total = (validNames.length + validNumbers.length) * 5;
+              return total > 0 ? (
+                <div className="bg-gray-50 rounded-xl p-3 flex justify-between items-center">
+                  <span className="font-bold text-gray-600 text-sm">{validNames.length + validNumbers.length} customization{validNames.length + validNumbers.length !== 1 ? 's' : ''}</span>
+                  <span className="font-black text-xl">${total}.00</span>
+                </div>
+              ) : null;
+            })()}
+
+            {/* Checkout button */}
+            <button disabled={addonSubmitting || !addonCustomerName || (addonNames.every(n => !n.text.trim()) && addonNumbers.length === 0)}
+              onClick={async () => {
+                const validNames = addonNames.filter(n => n.text.trim());
+                const validNumbers = addonNumbers.filter(n => n.text.trim());
+                if (validNames.length + validNumbers.length === 0) return alert('Add at least one name or number');
+                const total = (validNames.length + validNumbers.length) * 5;
+                setAddonSubmitting(true);
+                try {
+                  const addonCart = [{
+                    id: Date.now(), size: 'N/A', productId: 'addon-service', productName: 'Add-On Service',
+                    finalPrice: total, needsShipping: false,
+                    customizations: { names: validNames, numbers: validNumbers, logos: [], backList: false, metallic: false, mainDesign: 'Add-On Order', metallicName: '', metallicTeam: '' }
+                  }];
+                  const res = await fetch('/api/create-retail-order', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cart: addonCart, customerName: addonCustomerName, customerPhone: addonCustomerPhone, customerEmail: '', total, taxCollected: 0, eventSlug: actualEventSlug, eventName, site: assignedSiteName })
+                  });
+                  const data = await res.json();
+                  if (!data.orderId) throw new Error('Order creation failed');
+                  // Send to terminal
+                  setAddonSubmitting(true);
+                  const payRes = await fetch('/api/terminal-pay', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ orderId: data.orderId, amount: total, deviceId: assignedTerminalId })
+                  });
+                  if (!payRes.ok) throw new Error('Terminal payment failed');
+                  // Poll for completion
+                  const payData = await payRes.json();
+                  let attempts = 0;
+                  const poll = setInterval(async () => {
+                    attempts++;
+                    if (attempts > 60) { clearInterval(poll); setAddonSubmitting(false); return; }
+                    const statusRes = await fetch(`/api/terminal-pay?checkoutId=${payData.checkoutId}`);
+                    const status = await statusRes.json();
+                    if (status.status === 'COMPLETED') {
+                      clearInterval(poll);
+                      await fetch('/api/printnode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: data.orderId, mode: 'cloud', printerId: assignedPrinterId }) });
+                      if (addonCustomerPhone) await fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: addonCustomerPhone, message: `Hi ${addonCustomerName}! Your add-on order #${data.orderId} from Lev Custom Merch is confirmed. We'll text you when it's ready!` }) });
+                      setShowAddon(false);
+                      setAddonNames([{ text: '', position: 'Back Center' }]);
+                      setAddonNumbers([]);
+                      setAddonCustomerName('');
+                      setAddonCustomerPhone('');
+                      setAddonSubmitting(false);
+                      alert(`✅ Add-On Order #${data.orderId} complete! Label printing.`);
+                    } else if (status.status === 'CANCELED' || status.status === 'FAILED') {
+                      clearInterval(poll);
+                      setAddonSubmitting(false);
+                      alert('Payment was cancelled or failed.');
+                    }
+                  }, 3000);
+                } catch (err: any) {
+                  alert('Error: ' + err.message);
+                  setAddonSubmitting(false);
+                }
+              }}
+              className={`w-full py-4 rounded-2xl font-black text-white text-lg transition-all ${addonSubmitting ? 'animate-pulse' : ''}`}
+              style={{ backgroundColor: headerColor, opacity: addonSubmitting ? 0.7 : 1 }}>
+              {addonSubmitting ? '⏳ Processing...' : `📟 Pay with Terminal`}
+            </button>
+
+            <button onClick={() => setShowAddon(false)} className="w-full text-gray-400 font-bold py-2 text-sm">Cancel</button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Order Lookup Modal */}
     {showLookup && (
