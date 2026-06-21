@@ -142,6 +142,13 @@ export default function OrderForm() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [names, setNames] = useState([]);
   const [numbers, setNumbers] = useState([]); 
+  const [discountAmount, setDiscountAmount] = useState(0);
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [discountPin, setDiscountPin] = useState("");
+  const [discountPinError, setDiscountPinError] = useState(false);
+  const [discountType, setDiscountType] = useState<"percent"|"fixed">("percent");
+  const [discountValue, setDiscountValue] = useState("");
+  const [discountUnlocked, setDiscountUnlocked] = useState(false);
   const [backNameList, setBackNameList] = useState(false);
   const [metallicHighlight, setMetallicHighlight] = useState(false);
   const [backListConfirmed, setBackListConfirmed] = useState(false);
@@ -537,9 +544,9 @@ export default function OrderForm() {
   const calculateSubtotal = () => cart.reduce((sum, item) => sum + item.finalPrice, 0);
   const calculateTax = () => {
       if (!taxEnabled || taxRate <= 0 || paymentMode === 'hosted') return 0;
-      return calculateSubtotal() * (taxRate / 100);
+      return Math.max(0, calculateSubtotal() - discountAmount) * (taxRate / 100);
   };
-  const calculateGrandTotal = () => calculateSubtotal() + calculateTax();
+  const calculateGrandTotal = () => Math.max(0, calculateSubtotal() - discountAmount) + calculateTax();
 
   const sendConfirmationSMS = async (name, phone, orderId = '') => {
       if (!phone || phone.length < 10) return;
@@ -878,6 +885,7 @@ export default function OrderForm() {
       setOrderComplete(false); 
       setLogos([]); setNames([]); setNumbers([]); 
       setSelectedProduct(null); setSize(''); setSelectedColor('');
+      setDiscountAmount(0); setDiscountValue(''); setDiscountUnlocked(false);
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId('');
       setManualShipOverride(false);
       // inventory / stock maps
@@ -1600,8 +1608,20 @@ if (!ignoreInventory) {
                         <div className="mt-4 border-t-2 border-gray-200 pt-4 space-y-2 mb-6">
                             <div className="flex justify-between text-sm font-bold text-gray-600 uppercase"><span>Subtotal</span><span>${calculateSubtotal().toFixed(2)}</span></div>
                             {taxEnabled && taxRate > 0 && (<div className="flex justify-between text-sm font-bold text-gray-600 uppercase"><span>Sales Tax ({taxRate}%)</span><span>${calculateTax().toFixed(2)}</span></div>)}
+                            {discountAmount > 0 && (
+                              <div className="flex justify-between items-center text-sm font-bold text-green-600">
+                                <span>Discount Applied</span>
+                                <div className="flex items-center gap-2">
+                                  <span>-${discountAmount.toFixed(2)}</span>
+                                  <button onClick={() => { setDiscountAmount(0); setDiscountValue(''); setDiscountUnlocked(false); }} className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                                </div>
+                              </div>
+                            )}
                             <div className="flex justify-between items-center border-t border-gray-200 pt-2 mt-2">
-                                <span className="font-black text-black uppercase tracking-widest">Total Due</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-black uppercase tracking-widest">Total Due</span>
+                                  {!discountAmount && <button onClick={() => setShowDiscountModal(true)} className="text-xs bg-orange-100 text-orange-700 font-black px-2 py-1 rounded-lg hover:bg-orange-200 transition-all">% Discount</button>}
+                                </div>
                                 <span className="font-black text-2xl text-blue-900">${calculateGrandTotal().toFixed(2)}</span>
                             </div>
                         </div>
@@ -1633,6 +1653,87 @@ if (!ignoreInventory) {
         )}
       </div>
     </div>
+
+    {/* Discount Modal */}
+    {showDiscountModal && (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => { setShowDiscountModal(false); setDiscountPin(''); setDiscountPinError(false); }}>
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="p-6 bg-orange-500">
+            <h2 className="text-white font-black text-xl">% Manager Discount</h2>
+            <p className="text-white/70 text-sm mt-1">Requires manager PIN</p>
+          </div>
+          <div className="p-6 space-y-4">
+            {!discountUnlocked ? (
+              <>
+                <p className="text-sm text-gray-500 font-bold">Enter manager PIN to apply a discount</p>
+                <input type="password" maxLength={6}
+                  className={`w-full border-2 rounded-xl px-4 py-3 font-black text-center text-2xl tracking-widest focus:outline-none ${discountPinError ? 'border-red-400 bg-red-50' : 'border-gray-200 focus:border-orange-400'}`}
+                  placeholder="••••" value={discountPin}
+                  onChange={e => { setDiscountPin(e.target.value); setDiscountPinError(false); }}
+                  onKeyDown={async e => {
+                    if (e.key === 'Enter') {
+                      const res = await fetch('/api/verify-price-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: discountPin }) });
+                      const data = await res.json();
+                      if (data.valid) { setDiscountUnlocked(true); setDiscountPin(''); }
+                      else { setDiscountPinError(true); setDiscountPin(''); }
+                    }
+                  }}
+                />
+                {discountPinError && <p className="text-red-500 text-xs font-bold text-center">Wrong PIN</p>}
+                <button onClick={async () => {
+                  const res = await fetch('/api/verify-price-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: discountPin }) });
+                  const data = await res.json();
+                  if (data.valid) { setDiscountUnlocked(true); setDiscountPin(''); }
+                  else { setDiscountPinError(true); setDiscountPin(''); }
+                }} className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-3 rounded-xl transition-all">Unlock</button>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={() => setDiscountType('percent')}
+                    className={`py-3 rounded-xl font-black text-sm transition-all ${discountType === 'percent' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    % Percent
+                  </button>
+                  <button onClick={() => setDiscountType('fixed')}
+                    className={`py-3 rounded-xl font-black text-sm transition-all ${discountType === 'fixed' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                    $ Fixed
+                  </button>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-gray-400 text-xl">{discountType === 'percent' ? '%' : '$'}</span>
+                  <input type="number" min="0" max={discountType === 'percent' ? 100 : calculateSubtotal()}
+                    className="w-full border-2 border-orange-300 rounded-xl pl-10 pr-4 py-3 font-black text-2xl focus:outline-none focus:border-orange-500"
+                    placeholder="0" value={discountValue}
+                    onChange={e => setDiscountValue(e.target.value)} />
+                </div>
+                {discountValue && (
+                  <div className="bg-orange-50 rounded-xl p-3 text-center">
+                    <p className="text-sm text-orange-600 font-bold">
+                      Subtotal: ${calculateSubtotal().toFixed(2)} → 
+                      <span className="font-black ml-1">
+                        ${Math.max(0, calculateSubtotal() - (discountType === 'percent' ? calculateSubtotal() * (parseFloat(discountValue) / 100) : parseFloat(discountValue || '0'))).toFixed(2)}
+                      </span>
+                    </p>
+                  </div>
+                )}
+                <button onClick={() => {
+                  const val = parseFloat(discountValue || '0');
+                  const amt = discountType === 'percent' ? calculateSubtotal() * (val / 100) : val;
+                  setDiscountAmount(Math.min(amt, calculateSubtotal()));
+                  setShowDiscountModal(false);
+                  setDiscountValue('');
+                  setDiscountUnlocked(false);
+                }} disabled={!discountValue || parseFloat(discountValue) <= 0}
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-3 rounded-xl transition-all disabled:opacity-40">
+                  Apply Discount
+                </button>
+              </>
+            )}
+            <button onClick={() => { setShowDiscountModal(false); setDiscountPin(''); setDiscountPinError(false); setDiscountUnlocked(false); }} className="w-full text-gray-400 font-bold py-2 text-sm">Cancel</button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Add-On Order Modal */}
     {showAddon && (
