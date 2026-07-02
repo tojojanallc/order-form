@@ -21,6 +21,8 @@ export default function EventReportPage() {
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggle = (key: string) => setExpanded(e => ({ ...e, [key]: !e[key] }));
+
+  const generate = async () => {
     if (!selectedSlug) return;
     setLoading(true);
 
