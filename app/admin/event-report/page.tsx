@@ -19,7 +19,8 @@ export default function EventReportPage() {
       .then(({ data }) => { if (data) setEvents(data); });
   }, []);
 
-  const generate = async () => {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggle = (key: string) => setExpanded(e => ({ ...e, [key]: !e[key] }));
     if (!selectedSlug) return;
     setLoading(true);
 
@@ -93,6 +94,40 @@ export default function EventReportPage() {
       paymentMap[method] = (paymentMap[method] || 0) + 1;
     });
 
+    // Revenue by day
+    const revenueByDay: Record<string, number> = {};
+    paidOrders.forEach(o => {
+      const day = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      revenueByDay[day] = (revenueByDay[day] || 0) + Number(o.total_price || 0);
+    });
+
+    // Revenue by site
+    const revenueBySite: Record<string, number> = {};
+    paidOrders.forEach(o => {
+      const site = o.site || 'Unknown';
+      revenueBySite[site] = (revenueBySite[site] || 0) + Number(o.total_price || 0);
+    });
+
+    // COGS by product
+    const cogsByProduct: Record<string, { units: number; cost: number }> = {};
+    (ledger || []).forEach(r => {
+      const name = r.product_name || r.product_id || 'Unknown';
+      if (!cogsByProduct[name]) cogsByProduct[name] = { units: 0, cost: 0 };
+      cogsByProduct[name].units += Number(r.qty || 1);
+      cogsByProduct[name].cost += Number(r.cost_basis || 0) * Number(r.qty || 1);
+    });
+
+    // Staff detail
+    const staffDetail = (staffHrs || []).map(r => ({
+      name: r.staff_name,
+      date: r.date,
+      hours: Number(r.hours),
+      rate: Number(r.rate || 0),
+      cost: Number(r.hours) * Number(r.rate || 0),
+      start_time: r.start_time,
+      end_time: r.end_time,
+    }));
+
     // Ship to home
     const shipOrders = orders.filter(o => o.status === 'pending_shipping' || o.status === 'shipped');
 
@@ -112,6 +147,12 @@ export default function EventReportPage() {
       paymentMap,
       shipOrders: shipOrders.length,
       shipPending: shipOrders.filter(o => o.status === 'pending_shipping').length,
+      // Detailed breakdowns
+      revenueByDay: Object.entries(revenueByDay),
+      revenueBySite: Object.entries(revenueBySite).sort((a, b) => b[1] - a[1]),
+      cogsByProduct: Object.entries(cogsByProduct).sort((a, b) => b[1].cost - a[1].cost),
+      staffDetail,
+      expenseDetail: expData || [],
     });
 
     setLoading(false);
@@ -171,21 +212,89 @@ export default function EventReportPage() {
 
             <div className="grid md:grid-cols-2 gap-6">
               {/* Financial Summary */}
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <h3 className="font-black text-lg mb-4">💰 Financials</h3>
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                <h3 className="font-black text-lg p-6 pb-0">💰 Financials</h3>
                 {[
-                  ['Revenue', `$${report.revenue.toFixed(2)}`],
-                  ['Cost of Goods', `$${report.cogs.toFixed(2)}`],
-                  ['Gross Profit', `$${report.grossProfit.toFixed(2)}`],
-                  [`Staff Labor (${report.staffHoursTotal} hrs)`, `$${report.staffCost.toFixed(2)}`],
-                  ...(report.otherExpenses > 0 ? [['Other Expenses', `$${report.otherExpenses.toFixed(2)}`]] : []),
-                  ['Net Profit', `$${report.profit.toFixed(2)}`],
-                  ['Margin', `${report.margin}%`],
-                  ['Avg Order Value', `$${report.avgOrder.toFixed(2)}`],
-                ].map(([label, value]) => (
-                  <div key={label} className="flex justify-between py-2 border-b border-gray-50 last:border-0">
-                    <span className="text-gray-500 text-sm">{label}</span>
-                    <span className="font-black text-sm">{value}</span>
+                  { key: 'revenue', label: 'Revenue', value: `$${report.revenue.toFixed(2)}`, color: 'text-green-700',
+                    detail: (
+                      <div className="px-6 pb-4 space-y-1">
+                        {report.revenueByDay.map(([day, amt]: [string, any]) => (
+                          <div key={day} className="flex justify-between text-sm py-1 border-b border-gray-50">
+                            <span className="text-gray-500">{day}</span><span className="font-bold">${Number(amt).toFixed(2)}</span>
+                          </div>
+                        ))}
+                        {report.revenueBySite.length > 1 && report.revenueBySite.map(([site, amt]: [string, any]) => (
+                          <div key={site} className="flex justify-between text-sm py-1 border-b border-gray-50">
+                            <span className="text-gray-500">📍 {site}</span><span className="font-bold">${Number(amt).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  },
+                  { key: 'cogs', label: 'Cost of Goods Sold', value: `$${report.cogs.toFixed(2)}`, color: 'text-red-600',
+                    detail: (
+                      <div className="px-6 pb-4 space-y-1">
+                        {report.cogsByProduct.map(([name, data]: [string, any]) => (
+                          <div key={name} className="flex justify-between text-sm py-1 border-b border-gray-50">
+                            <span className="text-gray-500 truncate pr-2">{name}</span>
+                            <span className="font-bold shrink-0">{data.units} × ${(data.cost / data.units).toFixed(2)} = ${data.cost.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  },
+                  { key: 'gross', label: 'Gross Profit', value: `$${report.grossProfit.toFixed(2)}`, color: 'text-blue-700', bold: true, noDetail: true },
+                  { key: 'staff', label: `Staff Labor (${report.staffHoursTotal} hrs)`, value: `$${report.staffCost.toFixed(2)}`, color: 'text-red-600',
+                    detail: (
+                      <div className="px-6 pb-4 space-y-1">
+                        {report.staffDetail.map((r: any, i: number) => (
+                          <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-50">
+                            <div>
+                              <span className="font-bold text-gray-700">{r.name}</span>
+                              <span className="text-gray-400 text-xs ml-2">{new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                              {r.start_time && r.end_time && <span className="text-gray-400 text-xs ml-2">{r.start_time.slice(0,5)}–{r.end_time.slice(0,5)}</span>}
+                            </div>
+                            <span className="font-bold">{r.hours}h @ ${r.rate}/hr = ${r.cost.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  },
+                  ...(report.otherExpenses > 0 ? [{
+                    key: 'expenses', label: 'Other Expenses', value: `$${report.otherExpenses.toFixed(2)}`, color: 'text-red-600',
+                    detail: (
+                      <div className="px-6 pb-4 space-y-1">
+                        {report.expenseDetail.map((r: any) => (
+                          <div key={r.id} className="flex justify-between text-sm py-1 border-b border-gray-50">
+                            <div>
+                              <span className="font-bold text-gray-700">{r.category}</span>
+                              {r.description && <span className="text-gray-400 text-xs ml-2">{r.description}</span>}
+                              <span className="text-gray-400 text-xs ml-2">{new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                            </div>
+                            <span className="font-bold">${Number(r.amount).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  }] : []),
+                  { key: 'net', label: 'Net Profit', value: `$${report.profit.toFixed(2)}`, color: report.profit >= 0 ? 'text-green-700' : 'text-red-600', bold: true, noDetail: true },
+                  { key: 'margin', label: 'Net Margin', value: `${report.margin}%`, color: 'text-gray-700', noDetail: true },
+                  { key: 'avg', label: 'Avg Order Value', value: `$${report.avgOrder.toFixed(2)}`, color: 'text-gray-700', noDetail: true },
+                ].map(row => (
+                  <div key={row.key}>
+                    <div
+                      className={`flex justify-between items-center px-6 py-3 border-b border-gray-50 ${!row.noDetail ? 'cursor-pointer hover:bg-gray-50' : ''} ${row.bold ? 'border-t-2 border-gray-200 bg-gray-50/50' : ''}`}
+                      onClick={() => !row.noDetail && toggle(row.key)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm ${row.bold ? 'font-black' : 'text-gray-500'}`}>{row.label}</span>
+                        {!row.noDetail && <span className="text-gray-300 text-xs">{expanded[row.key] ? '▲' : '▼'}</span>}
+                      </div>
+                      <span className={`font-black text-sm ${row.color}`}>{row.value}</span>
+                    </div>
+                    {!row.noDetail && expanded[row.key] && (
+                      <div className="bg-gray-50 border-b border-gray-100">{row.detail}</div>
+                    )}
                   </div>
                 ))}
               </div>
