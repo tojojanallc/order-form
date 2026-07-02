@@ -23,11 +23,13 @@ export default function EventReportPage() {
     if (!selectedSlug) return;
     setLoading(true);
 
-    const [{ data: orders }, { data: ledger }, { data: inventory }, { data: settings }] = await Promise.all([
+    const [{ data: orders }, { data: ledger }, { data: inventory }, { data: settings }, { data: staffHrs }, { data: expData }] = await Promise.all([
       supabase.from('orders').select('*').eq('event_slug', selectedSlug).neq('status', 'refunded'),
       supabase.from('sales_ledger').select('*').eq('event_slug', selectedSlug),
       supabase.from('inventory').select('*').eq('event_slug', selectedSlug),
       supabase.from('event_settings').select('*').eq('slug', selectedSlug).single(),
+      supabase.from('staff_hours').select('*').eq('event_slug', selectedSlug),
+      supabase.from('event_expenses').select('*').eq('event_slug', selectedSlug),
     ]);
 
     if (!orders) { setLoading(false); return; }
@@ -35,7 +37,11 @@ export default function EventReportPage() {
     const paidOrders = orders.filter(o => o.payment_status === 'paid' || Number(o.total_price) === 0);
     const revenue = paidOrders.reduce((s, o) => s + Number(o.total_price || 0), 0);
     const cogs = (ledger || []).reduce((s, r) => s + (Number(r.cost_basis || 0) * Number(r.qty || 1)), 0);
-    const profit = revenue - cogs;
+    const staffCost = (staffHrs || []).reduce((s, r) => s + (Number(r.hours) * Number(r.rate || 0)), 0);
+    const staffHoursTotal = (staffHrs || []).reduce((s, r) => s + Number(r.hours), 0);
+    const otherExpenses = (expData || []).reduce((s, r) => s + Number(r.amount), 0);
+    const grossProfit = revenue - cogs;
+    const profit = grossProfit - staffCost - otherExpenses;
 
     // Product breakdown
     const productMap: Record<string, { units: number; revenue: number }> = {};
@@ -95,7 +101,7 @@ export default function EventReportPage() {
       date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
       totalOrders: paidOrders.length,
       totalItems: paidOrders.reduce((s, o) => s + (o.cart_data?.length || 0), 0),
-      revenue, cogs, profit,
+      revenue, cogs, grossProfit, staffCost, staffHoursTotal, otherExpenses, profit,
       margin: revenue > 0 ? Math.round((profit / revenue) * 100) : 0,
       avgOrder: paidOrders.length > 0 ? revenue / paidOrders.length : 0,
       products: Object.entries(productMap).sort((a, b) => b[1].units - a[1].units),
@@ -170,7 +176,10 @@ export default function EventReportPage() {
                 {[
                   ['Revenue', `$${report.revenue.toFixed(2)}`],
                   ['Cost of Goods', `$${report.cogs.toFixed(2)}`],
-                  ['Gross Profit', `$${report.profit.toFixed(2)}`],
+                  ['Gross Profit', `$${report.grossProfit.toFixed(2)}`],
+                  [`Staff Labor (${report.staffHoursTotal} hrs)`, `$${report.staffCost.toFixed(2)}`],
+                  ...(report.otherExpenses > 0 ? [['Other Expenses', `$${report.otherExpenses.toFixed(2)}`]] : []),
+                  ['Net Profit', `$${report.profit.toFixed(2)}`],
                   ['Margin', `${report.margin}%`],
                   ['Avg Order Value', `$${report.avgOrder.toFixed(2)}`],
                 ].map(([label, value]) => (
