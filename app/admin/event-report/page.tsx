@@ -149,6 +149,17 @@ export default function EventReportPage() {
       paymentMap,
       shipOrders: shipOrders.length,
       shipPending: shipOrders.filter(o => o.status === 'pending_shipping').length,
+      customerList: paidOrders.map(o => ({
+        id: o.id,
+        name: o.customer_name,
+        phone: o.phone,
+        total: Number(o.total_price || 0),
+        items: (o.cart_data || []).length,
+        site: o.site,
+        status: o.status,
+        date: o.created_at,
+        cart: o.cart_data || [],
+      })).sort((a, b) => a.name?.localeCompare(b.name)),
       // Detailed breakdowns
       revenueByDay: Object.entries(revenueByDay),
       revenueBySite: Object.entries(revenueBySite).sort((a, b) => b[1] - a[1]),
@@ -392,6 +403,44 @@ export default function EventReportPage() {
                     <span className="font-black text-sm">{count} orders</span>
                   </div>
                 ))}
+              </div>
+
+              {/* Customer List */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="flex justify-between items-center p-6 pb-0 mb-4">
+                  <h3 className="font-black text-lg">👤 Customer Orders ({report.customerList.length})</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-y border-gray-100">
+                      <tr>
+                        <th className="text-left p-3 text-xs font-black uppercase tracking-wider text-gray-400">#</th>
+                        <th className="text-left p-3 text-xs font-black uppercase tracking-wider text-gray-400">Customer</th>
+                        <th className="text-left p-3 text-xs font-black uppercase tracking-wider text-gray-400">Items</th>
+                        <th className="text-left p-3 text-xs font-black uppercase tracking-wider text-gray-400">Site</th>
+                        <th className="text-right p-3 text-xs font-black uppercase tracking-wider text-gray-400">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {report.customerList.map((o: any) => (
+                        <tr key={o.id} className="hover:bg-gray-50">
+                          <td className="p-3 text-gray-400 font-mono text-xs">{o.id}</td>
+                          <td className="p-3">
+                            <p className="font-bold text-gray-900">{o.name}</p>
+                            {o.phone && o.phone !== 'N/A' && <p className="text-xs text-gray-400">{o.phone}</p>}
+                          </td>
+                          <td className="p-3">
+                            {o.cart.map((item: any, i: number) => (
+                              <p key={i} className="text-xs text-gray-600">{item.productName} — {item.size}</p>
+                            ))}
+                          </td>
+                          <td className="p-3 text-xs text-gray-500">{o.site || '—'}</td>
+                          <td className="p-3 text-right font-black text-green-700">${o.total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
