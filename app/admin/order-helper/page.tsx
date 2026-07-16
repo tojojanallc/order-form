@@ -68,25 +68,14 @@ export default function OrderHelperPage() {
         reader.onerror = () => rej(new Error('Failed to read file'));
         reader.readAsDataURL(pdfFile);
       });
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/parse-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-              { type: 'text', text: `Analyze this tournament/meet schedule PDF and extract info. Return ONLY valid JSON:\n{"eventName":"name","divisions":[{"ageGroup":"10U","numTeams":4,"athletesPerTeam":12,"notes":""}],"totalTeams":0,"estimatedAthletes":0,"eventDates":"date range"}` }
-            ]
-          }]
-        })
+        body: JSON.stringify({ base64 }),
       });
       const data = await response.json();
-      const text = data.content?.[0]?.text || '';
-      const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
-      setParsedSchedule(parsed);
+      if (!data.success) throw new Error(data.error || 'Parse failed');
+      setParsedSchedule(data.schedule);
     } catch (err: any) {
       setParseError('Could not parse PDF. Try again or enter attendees manually.');
     }
