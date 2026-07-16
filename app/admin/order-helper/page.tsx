@@ -10,6 +10,27 @@ const supabase = createClient(
 
 const SIZE_ORDER = ['YS','YM','YL','YXL','XS','S','M','L','XL','2XL','3XL'];
 
+const CATEGORY_MAP: { pattern: RegExp; category: string }[] = [
+  { pattern: /hoodie|hooded sweatshirt|pullover/i, category: 'Hoodie' },
+  { pattern: /crewneck|crew neck|fleece crew/i, category: 'Crewneck' },
+  { pattern: /sweatpant|jogger|fleece pant/i, category: 'Sweatpants' },
+  { pattern: /t-shirt|tee|fine jersey|tie.?dye/i, category: 'T-Shirt' },
+  { pattern: /long.?sleeve/i, category: 'Long Sleeve' },
+  { pattern: /tank/i, category: 'Tank' },
+  { pattern: /zip/i, category: 'Zip Hoodie' },
+];
+
+const isYouth = (name: string) => /youth|kids|child/i.test(name);
+
+const getCategory = (productName: string) => {
+  for (const { pattern, category } of CATEGORY_MAP) {
+    if (pattern.test(productName)) {
+      return isYouth(productName) ? `${category} (Youth)` : category;
+    }
+  }
+  return isYouth(productName) ? 'Other (Youth)' : 'Other';
+};
+
 export default function OrderHelperPage() {
   const [expectedAttendees, setExpectedAttendees] = useState('');
   const [buffer, setBuffer] = useState('15');
@@ -47,8 +68,9 @@ export default function OrderHelperPage() {
         const rawName = (item.productName || '').trim();
         const size = (item.size || '').trim();
         if (!rawName || !size || size === 'N/A') return;
-        if (!salesMap[rawName]) salesMap[rawName] = {};
-        salesMap[rawName][size] = (salesMap[rawName][size] || 0) + 1;
+        const category = getCategory(rawName);
+        if (!salesMap[category]) salesMap[category] = {};
+        salesMap[category][size] = (salesMap[category][size] || 0) + 1;
         itemsPerEvent[slug] = (itemsPerEvent[slug] || 0) + 1;
       });
     });
@@ -76,14 +98,7 @@ export default function OrderHelperPage() {
         return { productName, totalSold, avgPerEvent: totalSold / uniqueEvents, sizes, totalRecommended };
       });
 
-    const { data: costData } = await supabase.from('inventory_master').select('product_id, cost_price');
-    const costMap: Record<string, number> = {};
-    (costData || []).forEach((r: any) => {
-      const name = r.product_id?.split('|')[0]?.trim();
-      if (name && !costMap[name]) costMap[name] = Number(r.cost_price || 0);
-    });
-
-    setResults({ recommendations, avgItemsPerEvent, scaleFactor, costMap });
+    setResults({ recommendations, avgItemsPerEvent, scaleFactor });
     setLoading(false);
   };
 
@@ -128,10 +143,7 @@ export default function OrderHelperPage() {
             </div>
 
             <div className="space-y-4">
-              {results.recommendations.map((rec: any) => {
-                const unitCost = results.costMap[rec.productName] || 0;
-                const estCost = unitCost > 0 ? rec.totalRecommended * unitCost : null;
-                return (
+              {results.recommendations.map((rec: any) => (
                   <div key={rec.productName} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                     <div className="flex justify-between items-center px-6 py-4 bg-gray-50 border-b border-gray-100">
                       <div>
@@ -141,7 +153,6 @@ export default function OrderHelperPage() {
                       <div className="text-right">
                         <p className="text-2xl font-black text-blue-700">{rec.totalRecommended}</p>
                         <p className="text-xs text-gray-400">total recommended</p>
-                        {estCost && <p className="text-xs text-red-500 font-bold mt-0.5">~${estCost.toFixed(2)} blanks</p>}
                       </div>
                     </div>
                     <div className="p-6">
@@ -160,31 +171,8 @@ export default function OrderHelperPage() {
                       </div>
                     </div>
                   </div>
-                );
-              })}
+              ))}
             </div>
-
-            {results.recommendations.some((r: any) => results.costMap[r.productName] > 0) && (
-              <div className="mt-6 bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-                <h3 className="font-black text-lg mb-4">💰 Estimated Blank Cost</h3>
-                {results.recommendations.map((rec: any) => {
-                  const unitCost = results.costMap[rec.productName] || 0;
-                  if (!unitCost) return null;
-                  return (
-                    <div key={rec.productName} className="flex justify-between py-2 border-b border-gray-50 last:border-0 text-sm">
-                      <span className="text-gray-600">{rec.productName} × {rec.totalRecommended}</span>
-                      <span className="font-black">${(rec.totalRecommended * unitCost).toFixed(2)}</span>
-                    </div>
-                  );
-                })}
-                <div className="flex justify-between pt-3 border-t-2 border-gray-200 mt-2">
-                  <span className="font-black">Total Estimated Blank Cost</span>
-                  <span className="font-black text-red-600">
-                    ${results.recommendations.reduce((s: number, rec: any) => s + (rec.totalRecommended * (results.costMap[rec.productName] || 0)), 0).toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
