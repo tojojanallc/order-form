@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 
 const SS_BASE = 'https://api.ssactivewear.com/v2';
-const auth = () => Buffer.from(`${process.env.SS_ACCOUNT_NUMBER}:${process.env.SS_API_KEY}`).toString('base64');
-const headers = { 'Authorization': `Basic ${auth()}`, 'Content-Type': 'application/json' };
+const getAuth = () => Buffer.from(`${process.env.SS_ACCOUNT_NUMBER}:${process.env.SS_API_KEY}`).toString('base64');
+const getHeaders = () => ({ 'Authorization': `Basic ${getAuth()}`, 'Content-Type': 'application/json' });
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   try {
     // Search styles by keyword or part number
     const url = `${SS_BASE}/styles/${encodeURIComponent(query)}?mediatype=json`;
-    const res = await fetch(url, { headers: headers() });
+    const res = await fetch(url, { headers: getHeaders() });
 
     if (!res.ok) {
       const err = await res.text();
