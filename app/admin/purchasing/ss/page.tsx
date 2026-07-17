@@ -147,6 +147,7 @@ export default function SSPurchasingPage() {
   const colors = selectedProduct?.colors || selectedProduct?.Colors || [];
   const getColorName = (c: any) => c.colorName || c.ColorName || c.name || c.colorCode || '';
   const getColorCode = (c: any) => c.colorCode || c.ColorCode || c.code || '';
+  const sizes = selectedColor
     ? [...new Set((productDetail?.inventory || [])
         .filter((i: any) => i.colorCode === selectedColor.colorCode)
         .map((i: any) => i.sizeCode))]
