@@ -1,198 +1,121 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/supabase'; 
+import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 
-// --- TYPES ---
-interface Vendor {
-  name: string;
-}
-
-interface PurchaseOrder {
-  id: string;
-  po_number: string;
-  created_at: string;
-  total_amount: number;
-  status: 'ordered' | 'received' | 'cancelled' | 'draft';
-  vendors: Vendor; // Assumes a relationship exists
-}
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+);
 
 export default function ManagePOsPage() {
-  const [pos, setPos] = useState<PurchaseOrder[]>([]);
+  const [pos, setPos] = useState<any[]>([]);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [items, setItems] = useState<Record<number, any[]>>({});
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
 
   useEffect(() => {
-    fetchPOs();
+    supabase.from('purchase_orders').select('*').order('created_at', { ascending: false })
+      .then(({ data }) => { if (data) setPos(data); setLoading(false); });
   }, []);
 
-  const fetchPOs = async () => {
-    setLoading(true);
-    // Fetch POs and the related Vendor Name
-    const { data, error } = await supabase
-      .from('purchases')
-      .select('*, vendors (name)')
-      .order('created_at', { ascending: false });
-      
-    if (data) setPos(data);
-    setLoading(false);
+  const loadItems = async (poId: number) => {
+    if (items[poId]) { setExpanded(expanded === poId ? null : poId); return; }
+    const { data } = await supabase.from('purchase_order_items').select('*').eq('po_id', poId).order('product_name');
+    if (data) setItems({ ...items, [poId]: data });
+    setExpanded(poId);
   };
 
-  const cancelPO = async (id: string, poNumber: string) => {
-    if (!confirm(`⚠️ ARE YOU SURE?\n\nCancel PO #${poNumber}? This cannot be undone.`)) return;
-
-    const { error } = await supabase
-      .from('purchases')
-      .update({ status: 'cancelled' })
-      .eq('id', id);
-
-    if (error) {
-        alert("Error: " + error.message);
-    } else {
-        fetchPOs(); // Refresh list
-    }
-  };
-
-  const deleteDraft = async (id: string) => {
-      if (!confirm("🗑️ Delete this record permanently?")) return;
-      
-      // Cascade delete items first (if no foreign key cascade is set)
-      await supabase.from('purchase_items').delete().eq('purchase_id', id);
-      await supabase.from('purchases').delete().eq('id', id);
-      fetchPOs();
-  };
-
-  // Filter Logic
-  const filtered = pos.filter(po => 
-    po.po_number.toLowerCase().includes(search.toLowerCase()) || 
-    po.vendors?.name?.toLowerCase().includes(search.toLowerCase())
-  );
+  const statusColor = (s: string) => ({ draft: 'bg-yellow-100 text-yellow-700', ordered: 'bg-blue-100 text-blue-700', received: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-600' }[s] || 'bg-gray-100 text-gray-600');
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
-      <div className="max-w-[1600px] mx-auto">
-        
-        {/* HEADER */}
-        <div className="flex justify-between items-end mb-10">
-          <div>
-            <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline">← Dashboard</Link>
-            <h1 className="text-4xl font-black tracking-tight text-slate-900">Purchase Orders</h1>
-            <p className="text-gray-500 font-medium">Manage vendor relationships and incoming stock.</p>
-          </div>
-          
-          <Link 
-            href="/admin/purchasing/create" 
-            className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-600 transition-colors shadow-lg"
-          >
-            + Create New PO
-          </Link>
+    <div className="min-h-screen bg-gray-50 font-sans p-6">
+      <div className="max-w-4xl mx-auto">
+        <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Command Center</Link>
+        <div className="flex justify-between items-center mt-2 mb-8">
+          <h1 className="text-4xl font-black">📋 Purchase Orders</h1>
+          <Link href="/admin/purchasing/ss" className="bg-slate-900 text-white font-black px-5 py-2 rounded-xl text-sm hover:bg-slate-700 transition-all">+ New S&S Order</Link>
         </div>
 
-        {/* MAIN CARD */}
-        <div className="bg-white rounded-[40px] border border-gray-200 shadow-sm overflow-hidden min-h-[600px] flex flex-col">
-          
-          {/* TOOLBAR */}
-          <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-             <div className="flex items-center gap-4">
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Search Records</span>
-                <input 
-                    placeholder="Search PO # or Vendor..." 
-                    className="bg-white border border-gray-200 p-2 px-4 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 w-80 shadow-sm"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                />
-             </div>
-             <div className="flex gap-4">
-                <div className="bg-white px-4 py-2 rounded-xl border border-gray-100 shadow-sm">
-                    <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest mr-2">Open Orders</span>
-                    <span className="font-black text-blue-600">{pos.filter(p => p.status === 'ordered').length}</span>
+        {loading ? <p className="text-gray-400 animate-pulse">Loading...</p> : pos.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center text-gray-400 font-bold">No purchase orders yet.</div>
+        ) : (
+          <div className="space-y-3">
+            {pos.map(po => (
+              <div key={po.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="flex items-center justify-between p-5 cursor-pointer hover:bg-gray-50" onClick={() => loadItems(po.id)}>
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <p className="font-black text-lg">{po.po_number}</p>
+                      <p className="text-xs text-gray-400">{po.supplier} · {new Date(po.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      {po.event_slug && <p className="text-xs text-blue-500 mt-0.5">📅 {po.event_slug}</p>}
+                      {po.notes && <p className="text-xs text-gray-400 mt-0.5">{po.notes}</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="font-black text-xl text-green-700">${Number(po.total_cost).toFixed(2)}</p>
+                    </div>
+                    <span className={`text-xs font-black px-3 py-1 rounded-full ${statusColor(po.status)}`}>{po.status}</span>
+                    <span className="text-gray-400">{expanded === po.id ? '▲' : '▼'}</span>
+                  </div>
                 </div>
-             </div>
+
+                {expanded === po.id && items[po.id] && (
+                  <div className="border-t border-gray-100">
+                    {/* Status update */}
+                    <div className="px-5 py-3 bg-gray-50 border-b flex gap-2">
+                      {['draft','ordered','received','cancelled'].map(s => (
+                        <button key={s} onClick={async () => {
+                          await supabase.from('purchase_orders').update({ status: s }).eq('id', po.id);
+                          setPos(pos.map(p => p.id === po.id ? { ...p, status: s } : p));
+                        }} className={`text-xs font-black px-3 py-1 rounded-full transition-all ${po.status === s ? statusColor(s) : 'bg-gray-200 text-gray-500 hover:bg-gray-300'}`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                          <th className="text-left p-3 text-xs font-black uppercase tracking-wider text-gray-400">Product</th>
+                          <th className="text-left p-3 text-xs font-black uppercase tracking-wider text-gray-400">Color</th>
+                          <th className="text-center p-3 text-xs font-black uppercase tracking-wider text-gray-400">Size</th>
+                          <th className="text-center p-3 text-xs font-black uppercase tracking-wider text-gray-400">Qty</th>
+                          <th className="text-right p-3 text-xs font-black uppercase tracking-wider text-gray-400">Unit</th>
+                          <th className="text-right p-3 text-xs font-black uppercase tracking-wider text-gray-400">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {items[po.id].map((item, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                {item.image_url && <img src={item.image_url} alt="" className="w-8 h-8 object-cover rounded shrink-0" />}
+                                <span className="font-bold text-xs">{item.product_name}</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-xs text-gray-600">{item.color_name}</td>
+                            <td className="p-3 text-center font-black text-xs">{item.size}</td>
+                            <td className="p-3 text-center font-black">{item.qty}</td>
+                            <td className="p-3 text-right text-xs text-gray-500">${Number(item.unit_cost).toFixed(2)}</td>
+                            <td className="p-3 text-right font-black text-green-700">${Number(item.total_cost).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="border-t-2 border-gray-200">
+                        <tr>
+                          <td colSpan={5} className="p-3 font-black text-right text-sm">Total</td>
+                          <td className="p-3 font-black text-right text-green-700">${Number(po.total_cost).toFixed(2)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-
-          {/* TABLE */}
-          <div className="overflow-y-auto flex-1">
-            <table className="w-full text-left">
-              <thead className="sticky top-0 bg-white shadow-sm z-10">
-                <tr className="text-[10px] font-black uppercase text-gray-400 tracking-widest border-b border-gray-100">
-                  <th className="p-6">PO Number</th>
-                  <th className="p-6">Vendor Details</th>
-                  <th className="p-6">Order Date</th>
-                  <th className="p-6 text-right">Total Value</th>
-                  <th className="p-6 text-center">Status</th>
-                  <th className="p-6 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {loading ? (
-                    <tr><td colSpan={6} className="p-20 text-center font-bold text-gray-300 animate-pulse">LOADING ORDERS...</td></tr>
-                ) : filtered.length === 0 ? (
-                    <tr><td colSpan={6} className="p-20 text-center font-bold text-gray-400 italic">No matching orders found.</td></tr>
-                ) : filtered.map(po => (
-                  <tr key={po.id} className="group hover:bg-blue-50/30 transition-all">
-                    
-                    <td className="p-6">
-                        <Link href={`/admin/purchasing/${po.id}`} className="font-mono font-black text-blue-600 hover:underline text-sm">
-                            #{po.po_number}
-                        </Link>
-                    </td>
-
-                    <td className="p-6">
-                        <div className="font-bold text-sm uppercase text-slate-800">{po.vendors?.name || 'Unknown Vendor'}</div>
-                    </td>
-                    
-                    <td className="p-6">
-                        <span className="text-xs font-bold text-gray-500">{new Date(po.created_at).toLocaleDateString()}</span>
-                    </td>
-
-                    <td className="p-6 text-right">
-                        <span className="text-sm font-black text-slate-900">${po.total_amount?.toFixed(2)}</span>
-                    </td>
-
-                    <td className="p-6 text-center">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest
-                            ${po.status === 'received' ? 'bg-green-100 text-green-700' : 
-                              po.status === 'cancelled' ? 'bg-red-100 text-red-600' : 
-                              'bg-orange-100 text-orange-600'}
-                        `}>
-                            {po.status}
-                        </span>
-                    </td>
-
-                    <td className="p-6 text-right">
-                       <div className="flex justify-end gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                            {/* Actions only available if not yet received/finalized */}
-                            {po.status === 'ordered' && (
-                                <>
-                                    <button 
-                                        onClick={() => cancelPO(po.id, po.po_number)} 
-                                        className="px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 font-bold text-[10px] uppercase hover:bg-orange-50"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button 
-                                        onClick={() => deleteDraft(po.id)} 
-                                        className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 font-bold text-[10px] uppercase hover:bg-red-50"
-                                    >
-                                        Delete
-                                    </button>
-                                </>
-                            )}
-                            <Link 
-                                href={`/admin/purchasing/${po.id}`}
-                                className="px-3 py-1.5 rounded-lg bg-gray-100 text-slate-600 font-bold text-[10px] uppercase hover:bg-slate-200"
-                            >
-                                View
-                            </Link>
-                       </div>
-                    </td>
-
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
