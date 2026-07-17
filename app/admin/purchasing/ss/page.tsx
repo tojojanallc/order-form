@@ -81,7 +81,6 @@ const getCleanName = (productName: string): string => {
         items.push({
           ss_style: selectedStyle.partNumber,
           product_name: getCleanName(`${selectedStyle.brandName} ${selectedStyle.styleName} ${selectedStyle.title}`),
-          ss_product_name: `${selectedStyle.brandName} ${selectedStyle.styleName} ${selectedStyle.title}`,
           color_name: selectedColor.colorName,
           color_code: selectedColor.colorCode,
           size: sizeName,
