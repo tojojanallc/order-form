@@ -8,7 +8,19 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
-export default function SSPurchasingPage() {
+const getCleanName = (productName: string): string => {
+  const n = productName.toLowerCase();
+  const youth = /youth|kids|child/i.test(productName);
+  const prefix = youth ? 'Youth ' : '';
+  if (/hoodie|hooded/i.test(n)) return `${prefix}Hoodie`;
+  if (/crewneck|crew neck|crew/i.test(n)) return `${prefix}Crewneck`;
+  if (/sweatpant|jogger/i.test(n)) return `${prefix}Sweatpants`;
+  if (/long.?sleeve/i.test(n)) return `${prefix}Long Sleeve`;
+  if (/t-shirt|tee|jersey|tie.?dye/i.test(n)) return `${prefix}T-Shirt`;
+  if (/tank/i.test(n)) return `${prefix}Tank`;
+  if (/zip/i.test(n)) return `${prefix}Zip Hoodie`;
+  return productName; // fallback to original
+};
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -68,7 +80,8 @@ export default function SSPurchasingPage() {
         const sizeData = selectedColor.sizes.find((s: any) => s.sizeName === sizeName);
         items.push({
           ss_style: selectedStyle.partNumber,
-          product_name: `${selectedStyle.brandName} ${selectedStyle.styleName} ${selectedStyle.title}`,
+          product_name: getCleanName(`${selectedStyle.brandName} ${selectedStyle.styleName} ${selectedStyle.title}`),
+          ss_product_name: `${selectedStyle.brandName} ${selectedStyle.styleName} ${selectedStyle.title}`,
           color_name: selectedColor.colorName,
           color_code: selectedColor.colorCode,
           size: sizeName,
