@@ -52,7 +52,7 @@ export default function SSPurchasingPage() {
     setColors([]);
     setLoadingColors(true);
     try {
-      const res = await fetch(`/api/ss-product?style=${encodeURIComponent(style.partNumber)}`);
+      const res = await fetch(`/api/ss-product?styleID=${style.styleID}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setColors(data.colors || []);
@@ -68,7 +68,7 @@ export default function SSPurchasingPage() {
         const sizeData = selectedColor.sizes.find((s: any) => s.sizeName === sizeName);
         items.push({
           ss_style: selectedStyle.partNumber,
-          product_name: `${selectedStyle.brandName} ${selectedStyle.styleName} - ${selectedStyle.title}`,
+          product_name: `${selectedStyle.brandName} ${selectedStyle.styleName} ${selectedStyle.title}`,
           color_name: selectedColor.colorName,
           color_code: selectedColor.colorCode,
           size: sizeName,
