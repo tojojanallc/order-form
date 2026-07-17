@@ -21,6 +21,8 @@ const getCleanName = (productName: string): string => {
   if (/zip/i.test(n)) return `${prefix}Zip Hoodie`;
   return productName; // fallback to original
 };
+
+export default function SSPurchasingPage() {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
