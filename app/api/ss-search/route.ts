@@ -5,32 +5,27 @@ const getHeaders = () => ({ 'Authorization': `Basic ${Buffer.from(`${process.env
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const query = searchParams.get('q') || '';
-  try {
-    // Try exact part number first
-    const exactRes = await fetch(`${SS_BASE}/products?partNumber=${encodeURIComponent(query)}&mediatype=json`, { headers: getHeaders() });
-    if (exactRes.ok) {
-      const skus: any[] = await exactRes.json();
-      if (skus.length > 0) {
-        // Return as a single style entry
-        const first = skus[0];
-        return NextResponse.json({ styles: [{
-          styleID: first.styleID,
-          partNumber: query,
-          brandName: first.brandName,
-          styleName: first.styleName,
-          title: first.title || first.styleName,
-          baseCategory: first.baseCategory,
-          styleImage: first.colorFrontImage,
-        }]});
-      }
-    }
+  const query = (searchParams.get('q') || '').trim();
 
-    // Fall back to keyword search
+  try {
     const res = await fetch(`${SS_BASE}/styles?keywords=${encodeURIComponent(query)}&mediatype=json`, { headers: getHeaders() });
     if (!res.ok) return NextResponse.json({ error: await res.text() }, { status: res.status });
-    const styles = await res.json();
-    return NextResponse.json({ styles: Array.isArray(styles) ? styles : [] });
+    const allStyles: any[] = await res.json();
+
+    // Filter client-side to narrow results
+    const q = query.toLowerCase();
+    const filtered = allStyles.filter(s => {
+      const styleName = (s.styleName || '').toLowerCase();
+      const title = (s.title || '').toLowerCase();
+      const brand = (s.brandName || '').toLowerCase();
+      const unique = (s.uniqueStyleName || '').toLowerCase();
+      // Exact style name match, or title/brand contains all query words
+      const words = q.split(/\s+/);
+      const fullText = `${styleName} ${title} ${brand} ${unique}`;
+      return styleName === q || unique === q || words.every(w => fullText.includes(w));
+    });
+
+    return NextResponse.json({ styles: filtered.slice(0, 20) });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
