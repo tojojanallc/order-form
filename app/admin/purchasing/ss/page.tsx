@@ -80,7 +80,7 @@ export default function SSPurchasingPage() {
         const img = getImageForColor(selectedColor.colorCode);
         items.push({
           ss_style: selectedProduct.style,
-          product_name: selectedProduct.title,
+          product_name: selectedProduct.styleName || selectedProduct.title || `Style ${selectedProduct.style}`,
           color_name: selectedColor.colorName,
           color_code: selectedColor.colorCode,
           size,
@@ -144,8 +144,9 @@ export default function SSPurchasingPage() {
     }
   };
 
-  const colors = selectedProduct?.colors || [];
-  const sizes = selectedColor
+  const colors = selectedProduct?.colors || selectedProduct?.Colors || [];
+  const getColorName = (c: any) => c.colorName || c.ColorName || c.name || c.colorCode || '';
+  const getColorCode = (c: any) => c.colorCode || c.ColorCode || c.code || '';
     ? [...new Set((productDetail?.inventory || [])
         .filter((i: any) => i.colorCode === selectedColor.colorCode)
         .map((i: any) => i.sizeCode))]
@@ -178,11 +179,12 @@ export default function SSPurchasingPage() {
             {searchResults.length > 0 && !selectedProduct && (
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 max-h-72 overflow-y-auto">
                 <p className="text-xs font-black uppercase tracking-wider text-gray-400 mb-3">{searchResults.length} results</p>
-                {searchResults.map(p => (
-                  <button key={p.style} onClick={() => selectProduct(p)}
+                <details className="mb-3"><summary className="text-xs text-gray-400 cursor-pointer">Debug: raw response</summary><pre className="text-xs overflow-auto max-h-32">{JSON.stringify(searchResults[0], null, 2)}</pre></details>
+                {searchResults.map((p, idx) => (
+                  <button key={p.style || idx} onClick={() => selectProduct(p)}
                     className="w-full text-left p-3 rounded-xl mb-1 hover:bg-gray-50 border-2 border-transparent hover:border-gray-200 transition-all">
-                    <p className="font-black text-sm">{p.title}</p>
-                    <p className="text-xs text-gray-400">Style #{p.style}</p>
+                    <p className="font-black text-sm">{p.styleName || p.title || p.name || p.StyleName || `Style ${p.style || p.Style}`}</p>
+                    <p className="text-xs text-gray-400">Style #{p.style || p.Style} · {p.brandName || p.brand || p.BrandName || ''}</p>
                   </button>
                 ))}
               </div>
@@ -192,8 +194,8 @@ export default function SSPurchasingPage() {
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="font-black text-lg">{selectedProduct.title}</h3>
-                    <p className="text-xs text-gray-400">Style #{selectedProduct.style}</p>
+                    <h3 className="font-black text-lg">{selectedProduct.styleName || selectedProduct.title || `Style ${selectedProduct.style}`}</h3>
+                    <p className="text-xs text-gray-400">Style #{selectedProduct.style} · {selectedProduct.brandName || ''}</p>
                   </div>
                   <button onClick={() => { setSelectedProduct(null); setProductDetail(null); setSelectedColor(null); }}
                     className="text-gray-400 hover:text-gray-600 text-sm font-bold">✕ Clear</button>
