@@ -41,6 +41,12 @@ export default function ManagePOsPage() {
     const newItems = items[poId].map(i => i.id === item.id ? { ...i, qty, total_cost } : i);
     const newTotal = newItems.reduce((s, i) => s + Number(i.total_cost), 0);
     await supabase.from('purchase_orders').update({ total_cost: newTotal }).eq('id', poId);
+    // Sync inventory if PO is linked to an event
+    const po = pos.find(p => p.id === poId);
+    if (po?.event_slug && item.product_name && item.size) {
+      const productId = `${item.product_name} | ${item.size} | ${item.color_name}`;
+      await supabase.from('inventory').upsert({ product_id: productId, size: item.size, count: qty, active: true, event_slug: po.event_slug, cost_price: item.unit_cost }, { onConflict: 'product_id,size,event_slug' });
+    }
     setItems({ ...items, [poId]: newItems });
     setPos(pos.map(p => p.id === poId ? { ...p, total_cost: newTotal } : p));
     setEditingItem(null);
@@ -51,6 +57,12 @@ export default function ManagePOsPage() {
     if (!confirm(`Remove ${item.product_name} ${item.color_name} ${item.size}?`)) return;
     setSaving(true);
     await supabase.from('purchase_order_items').delete().eq('id', item.id);
+    // Remove from inventory if linked to event
+    const po = pos.find(p => p.id === poId);
+    if (po?.event_slug && item.product_name && item.size) {
+      const productId = `${item.product_name} | ${item.size} | ${item.color_name}`;
+      await supabase.from('inventory').delete().eq('product_id', productId).eq('event_slug', po.event_slug);
+    }
     const newItems = items[poId].filter(i => i.id !== item.id);
     const newTotal = newItems.reduce((s, i) => s + Number(i.total_cost), 0);
     await supabase.from('purchase_orders').update({ total_cost: newTotal }).eq('id', poId);
@@ -73,6 +85,13 @@ export default function ManagePOsPage() {
       const newItems = [...(items[poId] || []), data];
       const newTotal = newItems.reduce((s, i) => s + Number(i.total_cost), 0);
       await supabase.from('purchase_orders').update({ total_cost: newTotal }).eq('id', poId);
+      // Sync to inventory if linked to event
+      const po = pos.find(p => p.id === poId);
+      if (po?.event_slug) {
+        const productId = `${newItem.product_name} | ${newItem.size} | ${newItem.color_name}`;
+        await supabase.from('products').upsert({ id: productId, name: newItem.product_name, base_price: 0 }, { onConflict: 'id', ignoreDuplicates: true });
+        await supabase.from('inventory').upsert({ product_id: productId, size: newItem.size, count: qty, active: true, event_slug: po.event_slug, cost_price: unit_cost }, { onConflict: 'product_id,size,event_slug' });
+      }
       setItems({ ...items, [poId]: newItems });
       setPos(pos.map(p => p.id === poId ? { ...p, total_cost: newTotal } : p));
     }
