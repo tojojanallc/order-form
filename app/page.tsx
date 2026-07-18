@@ -47,7 +47,7 @@ const parseProductId = (id) => {
   return { baseName: id, size: null, color: null };
 };
 
-const mergedName = (name) => name.replace(/\s*\b(Youth|Ladies)\b\s*/gi, ' ').trim();
+const mergedName = (name) => name.trim();
 const colorHex = (c: string): string => {
   const map: Record<string, string> = {
     "black": "#111", "white": "#fff", "navy": "#1a2a5e", "red": "#c0392b",
