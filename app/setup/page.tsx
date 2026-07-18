@@ -94,14 +94,28 @@ export default function SetupPage() {
                   {site.printer_id && <span className="block text-xs font-mono text-gray-400 mt-0.5">🖨️ {printers.find(p => p.printer_id === site.printer_id)?.name || site.printer_id}</span>}
                 </button>
               ))}
+              {siteName && (
+                <button onClick={() => { setSiteName(''); localStorage.removeItem('site_name'); }}
+                  className="w-full text-left p-3 rounded-lg border border-gray-600 font-bold text-gray-400 hover:border-red-400 hover:text-red-400 transition-all">
+                  ✕ No site / Clear
+                </button>
+              )}
             </div>
           ) : (
-            <input
-              className="w-full bg-gray-700 border border-gray-500 rounded-lg px-4 py-3 text-white font-bold text-lg focus:outline-none focus:border-blue-400"
-              placeholder="e.g. Site A, North Entrance"
-              value={siteName}
-              onChange={e => setSiteName(e.target.value)}
-            />
+            <div className="space-y-2">
+              <input
+                className="w-full bg-gray-700 border border-gray-500 rounded-lg px-4 py-3 text-white font-bold text-lg focus:outline-none focus:border-blue-400"
+                placeholder="e.g. Site A, North Entrance"
+                value={siteName}
+                onChange={e => setSiteName(e.target.value)}
+              />
+              {siteName && (
+                <button onClick={() => { setSiteName(''); localStorage.removeItem('site_name'); }}
+                  className="w-full text-left p-3 rounded-lg border border-gray-600 font-bold text-gray-400 hover:border-red-400 hover:text-red-400 transition-all">
+                  ✕ Clear site name
+                </button>
+              )}
+            </div>
           )}
         </div>
 
