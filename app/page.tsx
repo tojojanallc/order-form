@@ -47,7 +47,7 @@ const parseProductId = (id) => {
   return { baseName: id, size: null, color: null };
 };
 
-const mergedName = (name) => name.trim();
+const mergedName = (name) => name.replace(/\s*\b(Youth|Ladies)\b\s*/gi, ' ').trim();
 const colorHex = (c: string): string => {
   const map: Record<string, string> = {
     "black": "#111", "white": "#fff", "navy": "#1a2a5e", "red": "#c0392b",
@@ -595,10 +595,15 @@ export default function OrderForm() {
     const missingNumberPos = numbers.some(n => !n.position);
     if (missingLogoPos || missingNamePos || missingNumberPos) { alert("Please select a Position for every Accent, Name, and Number."); return; }
 
+    const isYouthSize = ['YS','YM','YL','YXL','YXS'].includes(size);
+    const displayName = isYouthSize && !selectedProduct.name.toLowerCase().includes('youth')
+      ? `Youth ${selectedProduct.name}`
+      : selectedProduct.name;
+
     const newItem = {
       id: Date.now(),
       productId: selectedProductRecord.id,
-      productName: selectedProduct.name,
+      productName: displayName,
       size: size,
       color: hasMultipleColors ? selectedColor : null,
       needsShipping: isOutOfStock, 
