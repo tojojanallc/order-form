@@ -1451,8 +1451,54 @@ setSalesLedger(ledgerData || []);
 
         {/* --- EVENT STOCK TAB (LOCAL MANAGER) --- */}
         {activeTab === 'event stock' && (
-            <div className="max-w-4xl mx-auto">
-                <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
+            <div className="max-w-4xl mx-auto space-y-4">
+
+              {/* Return Summary */}
+              {(() => {
+                const remaining = inventory.filter(i => i.active && i.count > 0);
+                if (remaining.length === 0) return null;
+                // Group by product name + color
+                const grouped: Record<string, { items: any[], total: number }> = {};
+                remaining.forEach(item => {
+                  const name = getProductName(item.product_id);
+                  const color = item.product_id.split(' | ')[2] || '';
+                  const key = `${name} — ${color}`;
+                  if (!grouped[key]) grouped[key] = { items: [], total: 0 };
+                  grouped[key].items.push(item);
+                  grouped[key].total += item.count;
+                });
+                return (
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="flex justify-between items-center px-6 py-4 bg-orange-50 border-b border-orange-100">
+                      <div>
+                        <h3 className="font-black text-lg text-orange-900">📦 Return to S&S Summary</h3>
+                        <p className="text-xs text-orange-600 mt-0.5">Remaining unsold inventory — use this to process your S&S return</p>
+                      </div>
+                      <span className="font-black text-2xl text-orange-700">{remaining.reduce((s, i) => s + i.count, 0)} pcs</span>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      {Object.entries(grouped).sort().map(([key, data]) => (
+                        <div key={key}>
+                          <div className="flex justify-between items-center mb-2">
+                            <p className="font-black text-sm">{key}</p>
+                            <span className="text-xs font-bold text-gray-500">{data.total} total</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {data.items.sort((a, b) => SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size)).map(item => (
+                              <div key={item.size} className="bg-orange-50 border border-orange-200 rounded-xl px-3 py-2 text-center min-w-[60px]">
+                                <p className="text-xs font-black text-orange-700">{item.size}</p>
+                                <p className="text-xl font-black text-orange-900">{item.count}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="bg-white shadow rounded-lg overflow-hidden border border-gray-300 flex flex-col h-[700px]">
                     <div className="bg-blue-900 text-white p-4 font-bold uppercase text-sm tracking-wide shrink-0">
                         Manage Stock & Prices ({selectedEventSlug})
                     </div>
