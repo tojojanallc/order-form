@@ -26,13 +26,15 @@ export default function EventReportPage() {
     if (!selectedSlug) return;
     setLoading(true);
 
-    const [{ data: orders }, { data: ledger }, { data: inventory }, { data: settings }, { data: staffHrs }, { data: expData }] = await Promise.all([
+    const [{ data: orders }, { data: ledger }, { data: inventory }, { data: settings }, { data: staffHrs }, { data: expData }, { data: productsData }, { data: poItems }] = await Promise.all([
       supabase.from('orders').select('*').eq('event_slug', selectedSlug).neq('status', 'refunded'),
       supabase.from('sales_ledger').select('*').eq('event_slug', selectedSlug),
       supabase.from('inventory').select('*').eq('event_slug', selectedSlug),
       supabase.from('event_settings').select('*').eq('slug', selectedSlug).single(),
       supabase.from('staff_hours').select('*').eq('event_slug', selectedSlug),
       supabase.from('event_expenses').select('*').eq('event_slug', selectedSlug),
+      supabase.from('products').select('*'),
+      supabase.from('purchase_order_items').select('*, purchase_orders!inner(event_slug)').eq('purchase_orders.event_slug', selectedSlug),
     ]);
 
     if (!orders) { setLoading(false); return; }
@@ -130,8 +132,34 @@ export default function EventReportPage() {
       end_time: r.end_time,
     }));
 
-    // Ship to home
-    const shipOrders = orders.filter(o => o.status === 'pending_shipping' || o.status === 'shipped');
+    // Product detail — inventory items with product info, sold count, remaining
+    const productDetail = (inventory || []).map(inv => {
+      const prod = (productsData || []).find(p => p.id === inv.product_id);
+      const parts = inv.product_id.split(' | ');
+      const productName = parts[0] || '';
+      const size = parts[1] || inv.size;
+      const color = parts[2] || '';
+      // Count sold from orders
+      let sold = 0;
+      paidOrders.forEach(o => {
+        (o.cart_data || []).forEach((item: any) => {
+          if (item.productId === inv.product_id || (item.productName === productName && item.size === size)) sold++;
+        });
+      });
+      // Find PO item for this product
+      const poItem = (poItems || []).find(p => p.product_id === inv.product_id || (p.product_name === productName && p.size === size && p.color_name === color));
+      return {
+        productName, size, color,
+        image_url: prod?.image_url || poItem?.image_url || null,
+        base_price: prod?.base_price || 0,
+        cost_price: inv.cost_price || poItem?.unit_cost || 0,
+        ordered: (poItem?.qty || 0),
+        sold,
+        remaining: inv.count,
+        sku: poItem?.sku || '',
+        ss_style: poItem?.ss_style || '',
+      };
+    }).sort((a, b) => a.productName.localeCompare(b.productName) || a.size.localeCompare(b.size));
 
     setReport({
       eventName: settings?.event_name || selectedSlug,
@@ -149,6 +177,7 @@ export default function EventReportPage() {
       paymentMap,
       shipOrders: shipOrders.length,
       shipPending: shipOrders.filter(o => o.status === 'pending_shipping').length,
+      productDetail,
       customerList: paidOrders.map(o => ({
         id: o.id,
         name: o.customer_name,
@@ -404,6 +433,62 @@ export default function EventReportPage() {
                   </div>
                 ))}
               </div>
+
+              {/* Product Detail */}
+              {report.productDetail?.length > 0 && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <h3 className="font-black text-lg p-6 pb-0 mb-4">🏷️ Product Detail</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-y border-gray-100">
+                        <tr>
+                          <th className="text-left p-3 text-xs font-black uppercase tracking-wider text-gray-400">Product</th>
+                          <th className="text-left p-3 text-xs font-black uppercase tracking-wider text-gray-400">Color</th>
+                          <th className="text-center p-3 text-xs font-black uppercase tracking-wider text-gray-400">Size</th>
+                          <th className="text-center p-3 text-xs font-black uppercase tracking-wider text-gray-400">Ordered</th>
+                          <th className="text-center p-3 text-xs font-black uppercase tracking-wider text-gray-400">Sold</th>
+                          <th className="text-center p-3 text-xs font-black uppercase tracking-wider text-gray-400">Remaining</th>
+                          <th className="text-right p-3 text-xs font-black uppercase tracking-wider text-gray-400">Cost</th>
+                          <th className="text-right p-3 text-xs font-black uppercase tracking-wider text-gray-400">Price</th>
+                          <th className="text-right p-3 text-xs font-black uppercase tracking-wider text-gray-400">Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {report.productDetail.map((p: any, i: number) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="p-3">
+                              <div className="flex items-center gap-2">
+                                {p.image_url && <img src={p.image_url} alt="" className="w-8 h-8 object-cover rounded shrink-0" />}
+                                <span className="font-bold">{p.productName}</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-gray-600">{p.color}</td>
+                            <td className="p-3 text-center font-black">{p.size}</td>
+                            <td className="p-3 text-center text-gray-500">{p.ordered || '—'}</td>
+                            <td className="p-3 text-center font-black text-green-700">{p.sold}</td>
+                            <td className="p-3 text-center">
+                              <span className={`font-black ${p.remaining > 0 ? 'text-orange-500' : 'text-gray-300'}`}>{p.remaining}</span>
+                            </td>
+                            <td className="p-3 text-right text-gray-500">${Number(p.cost_price).toFixed(2)}</td>
+                            <td className="p-3 text-right font-bold">${Number(p.base_price).toFixed(2)}</td>
+                            <td className="p-3 text-right font-black text-green-700">${(p.sold * Number(p.base_price)).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="border-t-2 border-gray-200 bg-gray-50">
+                        <tr>
+                          <td colSpan={4} className="p-3 font-black text-right text-sm">Totals</td>
+                          <td className="p-3 text-center font-black text-green-700">{report.productDetail.reduce((s: number, p: any) => s + p.sold, 0)}</td>
+                          <td className="p-3 text-center font-black text-orange-500">{report.productDetail.reduce((s: number, p: any) => s + p.remaining, 0)}</td>
+                          <td className="p-3 text-right font-black text-red-600">${report.productDetail.reduce((s: number, p: any) => s + (p.cost_price * p.sold), 0).toFixed(2)}</td>
+                          <td></td>
+                          <td className="p-3 text-right font-black text-green-700">${report.productDetail.reduce((s: number, p: any) => s + (p.sold * p.base_price), 0).toFixed(2)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Customer List */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
