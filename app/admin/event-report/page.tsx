@@ -132,6 +132,9 @@ export default function EventReportPage() {
       end_time: r.end_time,
     }));
 
+    // Ship to home
+    const shipOrders = orders.filter(o => o.status === 'pending_shipping' || o.status === 'shipped');
+
     // Product detail — inventory items with product info, sold count, remaining
     const productDetail = (inventory || []).map(inv => {
       const prod = (productsData || []).find(p => p.id === inv.product_id);
