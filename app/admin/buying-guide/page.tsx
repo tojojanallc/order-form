@@ -37,9 +37,9 @@ HISTORICAL SIZE DISTRIBUTION from similar events: YS:${hist.YS}% YM:${hist.YM}% 
 Buy for ${parseInt(form.expected_attendance) * parseInt(form.num_days)} total person-days. Target 65% sell-through. Respond ONLY with valid JSON:
 {"summary":"2-3 sentence strategy","total_units":number,"products":[{"name":"string","total":number,"sizes":{"YS":0,"YM":0,"YL":0,"YXL":0,"S":0,"M":0,"L":0,"XL":0,"2XL":0,"3XL":0},"price_point":"low/mid/high","notes":"string"}],"tips":["tip1","tip2","tip3"],"risk_items":["item"],"safe_bets":["item"]}`
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('/api/buying-guide', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+      body: JSON.stringify({ prompt })
     })
     const data = await res.json()
     try {
