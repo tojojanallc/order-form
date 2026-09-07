@@ -267,6 +267,8 @@ export default function AdminDashboard() {
                 <div className="grid grid-cols-2 gap-3 mt-8">
                     <Link href="/admin/purchasing/create" className="bg-slate-900 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-orange-500 transition-colors">+ Create</Link>
                     <Link href="/admin/purchasing/manage" className="bg-gray-50 text-slate-600 py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-colors">Manage</Link>
+                    <Link href="/admin/buying-guide" className="bg-blue-600 text-white py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-colors">🛍️ Buying Guide</Link>
+                    <Link href="/admin/purchasing/manage" className="bg-gray-50 text-slate-600 py-3 rounded-xl text-center font-black text-[10px] uppercase tracking-widest hover:bg-gray-200 transition-colors">Manage</Link>
                 </div>
             </div>
         </div>
