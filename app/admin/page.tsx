@@ -104,7 +104,13 @@ export default function AdminDashboard() {
                 <h1 className="text-4xl font-black tracking-tight text-slate-900">Command Center</h1>
             </div>
             
-            <div className="flex items-center gap-4 bg-white p-2 px-5 rounded-3xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-3">
+                <a href="https://portal.levcustom.com/admin" target="_blank"
+                    className="flex items-center gap-2 bg-[#0a2342] text-white px-4 py-2 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-[#29ABE2] transition-all">
+                    <span>Lev Portal</span>
+                    <span className="text-[10px] opacity-60">↗</span>
+                </a>
+                <div className="flex items-center gap-4 bg-white p-2 px-5 rounded-3xl shadow-sm border border-gray-100">
                 <div className="text-right">
                     <p className="text-[9px] font-black uppercase text-gray-400 leading-none">Security Active</p>
                     <p className="text-xs font-bold text-slate-900">{userEmail}</p>
@@ -116,6 +122,7 @@ export default function AdminDashboard() {
                 >
                     Sign Out
                 </button>
+            </div>
             </div>
         </div>
 
