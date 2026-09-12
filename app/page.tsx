@@ -127,8 +127,10 @@ export default function OrderForm() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedColor, setSelectedColor] = useState('');
   const [size, setSize] = useState('');
-  const [selectedMainDesign, setSelectedMainDesign] = useState(''); 
-  const [logos, setLogos] = useState([]); 
+  const [selectedMainDesign, setSelectedMainDesign] = useState('');
+  const [logos, setLogos] = useState([]);
+  const [addOnQty, setAddOnQty] = useState<Record<string, number>>({});
+  const [showAddOnModal, setShowAddOnModal] = useState(false);
   // Order lookup
   const [showLookup, setShowLookup] = useState(false);
   const [showAddon, setShowAddon] = useState(false);
@@ -595,10 +597,33 @@ export default function OrderForm() {
     const missingNumberPos = numbers.some(n => !n.position);
     if (missingLogoPos || missingNamePos || missingNumberPos) { alert("Please select a Position for every Accent, Name, and Number."); return; }
 
+    // If product has add-ons, show the modal first
+    const productAddOns = selectedProductRecord?.add_ons || [];
+    if (productAddOns.length > 0 && !showAddOnModal) {
+      setAddOnQty({});
+      setShowAddOnModal(true);
+      return;
+    }
+    setShowAddOnModal(false);
+    completeAddToCart();
+  };
+
+  const completeAddToCart = () => {
     const isYouthSize = ['YS','YM','YL','YXL','YXS'].includes(size);
     const displayName = isYouthSize && !selectedProduct.name.toLowerCase().includes('youth')
       ? `Youth ${selectedProduct.name}`
       : selectedProduct.name;
+
+    // Calculate add-on total
+    const productAddOns = selectedProductRecord?.add_ons || [];
+    let addOnTotal = 0;
+    const selectedAddOns: any[] = [];
+    productAddOns.forEach((ao: any) => {
+      const qty = addOnQty[ao.name] || 0;
+      const extra = Math.max(0, qty - (ao.included || 0));
+      addOnTotal += extra * ao.price;
+      if (qty > 0) selectedAddOns.push({ name: ao.name, qty, extra, extraCost: extra * ao.price });
+    });
 
     const newItem = {
       id: Date.now(),
@@ -606,16 +631,17 @@ export default function OrderForm() {
       productName: displayName,
       size: size,
       color: hasMultipleColors ? selectedColor : null,
-      needsShipping: isOutOfStock, 
+      needsShipping: isOutOfStock,
       custom_name: names.length > 0 ? names[0].text : (metallicHighlight ? metallicName : null),
       has_heat_sheet: backNameList,
-      customizations: { 
+      customizations: {
           mainDesign: selectedMainDesign, logos, names, numbers,
           backList: backNameList, metallic: metallicHighlight,
           metallicName: metallicHighlight ? metallicName : '',
-          metallicTeam: metallicHighlight ? metallicTeam : ''
+          metallicTeam: metallicHighlight ? metallicTeam : '',
+          addOns: selectedAddOns,
       },
-      finalPrice: calculateItemTotal() 
+      finalPrice: calculateItemTotal() + addOnTotal,
     };
     
     setCart([...cart, newItem]);
@@ -1987,5 +2013,54 @@ const PlacementVisualizer = ({ garmentType, logoSize }) => {
             : 'Left Chest / Pocket'}
       </p>
     </div>
+
+      {/* Add-On Modal */}
+      {showAddOnModal && selectedProductRecord?.add_ons?.length > 0 && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 24, padding: 36, width: 400, maxWidth: '90vw', boxShadow: '0 25px 50px rgba(0,0,0,0.3)' }}>
+            <div style={{ fontFamily: 'sans-serif' }}>
+              <div style={{ fontSize: 22, fontWeight: 900, color: '#1a1a1a', marginBottom: 4 }}>Add-Ons</div>
+              <div style={{ fontSize: 13, color: '#666', marginBottom: 24 }}>How many patches for this hat?</div>
+              {(selectedProductRecord.add_ons || []).map((ao: any) => {
+                const qty = addOnQty[ao.name] || ao.included || 0;
+                const extra = Math.max(0, qty - (ao.included || 0));
+                return (
+                  <div key={ao.name} style={{ background: '#f8f8f8', borderRadius: 12, padding: '16px 20px', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 700 }}>{ao.name}</div>
+                        <div style={{ fontSize: 12, color: '#666' }}>{ao.included} included · +${ao.price} each additional</div>
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: extra > 0 ? '#16a34a' : '#999' }}>
+                        {extra > 0 ? `+$${extra * ao.price}` : 'Included'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
+                      <button onClick={() => setAddOnQty(p => ({ ...p, [ao.name]: Math.max(ao.included || 0, (p[ao.name] || ao.included || 0) - 1) }))}
+                        style={{ width: 44, height: 44, borderRadius: '50%', border: '2px solid #ddd', background: '#fff', fontSize: 22, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                      <div style={{ flex: 1, textAlign: 'center' }}>
+                        <div style={{ fontSize: 32, fontWeight: 900 }}>{qty}</div>
+                        <div style={{ fontSize: 10, color: '#999', textTransform: 'uppercase', letterSpacing: '0.08em' }}>patches</div>
+                      </div>
+                      <button onClick={() => setAddOnQty(p => ({ ...p, [ao.name]: Math.min(ao.max || 10, (p[ao.name] || ao.included || 0) + 1) }))}
+                        style={{ width: 44, height: 44, borderRadius: '50%', border: '2px solid #000', background: '#000', color: '#fff', fontSize: 22, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+                <button onClick={() => setShowAddOnModal(false)}
+                  style={{ flex: 1, padding: '14px', border: '2px solid #ddd', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', background: '#fff' }}>
+                  Cancel
+                </button>
+                <button onClick={completeAddToCart}
+                  style={{ flex: 2, padding: '14px', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 900, cursor: 'pointer', background: '#000', color: '#fff' }}>
+                  Add to Cart →
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
   );
 };
