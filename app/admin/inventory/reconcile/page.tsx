@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/supabase'; 
+import { supabase } from '@/supabase';
 import Link from 'next/link';
+import { returnEventStockToWarehouse, describeUnmatched } from '@/lib/returnEventStock';
 import * as XLSX from 'xlsx';
 
 export default function ReconcilePage() {
@@ -73,6 +74,12 @@ export default function ReconcilePage() {
     if (!confirm("Confirm Final Audit? This returns stock to Glendale and archives the meet.")) return;
     setLoading(true);
     try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { returnedUnits, unmatched } = await returnEventStockToWarehouse(eventSlug, user?.email);
+        if (unmatched.length > 0 && !confirm(
+            `Returned ${returnedUnits} units to Glendale.\n\nThese couldn't be matched to a warehouse item and are still on this event:\n${describeUnmatched(unmatched)}\n\nArchive anyway? (Cancel keeps the event open so you can move them from Event Stock.)`
+        )) { await loadStockAndSales(eventSlug); return; }
+
         await supabase.from('event_settings').update({
             status: 'archived',
             staffing_cost: expenses.staffing,
@@ -82,16 +89,6 @@ export default function ReconcilePage() {
             total_processing_fees: totals.fees,
             total_invoiced_value: totals.value
         }).eq('slug', eventSlug);
-
-        for (const item of eventStock) {
-            if (item.count > 0) {
-                const { data: master } = await supabase.from('inventory_master').select('quantity_on_hand').eq('sku', item.product_id).eq('size', item.size).single();
-                if (master) {
-                    await supabase.from('inventory_master').update({ quantity_on_hand: master.quantity_on_hand + item.count }).eq('sku', item.product_id).eq('size', item.size);
-                }
-            }
-        }
-        await supabase.from('inventory').delete().eq('event_slug', eventSlug);
         window.location.href = "/admin/events/history";
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }

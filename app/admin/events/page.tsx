@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx'; 
 import { refundOrder } from '@/app/actions/refund-order';
+import { returnEventStockToWarehouse, describeUnmatched } from '@/lib/returnEventStock';
 import Link from 'next/link';
 
 // --- CONFIG ---
@@ -554,8 +555,18 @@ setSalesLedger(ledgerData || []);
   };
 
   const closeEvent = async () => { 
-      if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return; 
-      setLoading(true); 
+      if (prompt(`Type 'CLOSE' to confirm archive:`) !== 'CLOSE') return;
+      setLoading(true);
+      try {
+          const { data: { user } } = await supabase.auth.getUser();
+          const { returnedUnits, unmatched } = await returnEventStockToWarehouse(selectedEventSlug, user?.email);
+          if (unmatched.length > 0 && !confirm(
+              `Returned ${returnedUnits} units to the warehouse.\n\nThese couldn't be matched to a warehouse item and are still on this event:\n${describeUnmatched(unmatched)}\n\nArchive anyway? (Cancel keeps the event open so you can move them with "Return to Warehouse".)`
+          )) { fetchInventory(); setLoading(false); return; }
+      } catch (err: any) {
+          alert("Couldn't return stock to the warehouse — event NOT archived: " + err.message);
+          setLoading(false); return;
+      }
       const { data: updateData, error: updateError } = await supabase.from('event_settings').update({ status: 'archived' }).eq('slug', selectedEventSlug).select();
       if (updateError || !updateData.length) { alert("Error archiving"); setLoading(false); return; }
       await supabase.from('orders').update({ status: 'completed' }).eq('event_slug', selectedEventSlug).neq('status', 'completed').neq('status', 'refunded');
