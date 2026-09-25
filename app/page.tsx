@@ -289,17 +289,7 @@ export default function OrderForm() {
           setAccentOptions(logoData.filter(l => !l.category || l.category === 'accent'));
       }
 
-      const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', finalSlug); 
-      if (invData) {
-        const stockMap = {}; const activeMap = {}; const priceMap = {};
-        invData.forEach(item => {
-            const key = `${item.product_id}_${item.size}`;
-            stockMap[key] = item.count;
-            activeMap[key] = item.active;
-            if (item.override_price) priceMap[key] = item.override_price;
-        });
-        setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
-      }
+      await loadInventoryMaps(finalSlug);
 
       const { data: guestData } = await supabase.from('guests').select('*').eq('event_slug', finalSlug); 
       if (guestData) setGuests(guestData);
@@ -307,6 +297,20 @@ export default function OrderForm() {
 
     fetchData();
   }, [params]);
+
+  // Keys are `${product_id}_${size}` everywhere (visibility, stock, and calculateItemTotal)
+  const loadInventoryMaps = async (slug) => {
+    const { data: invData } = await supabase.from('inventory').select('*').eq('event_slug', slug);
+    if (!invData) return;
+    const stockMap = {}; const activeMap = {}; const priceMap = {};
+    invData.forEach(item => {
+      const key = `${item.product_id}_${item.size}`;
+      stockMap[key] = item.count;
+      activeMap[key] = item.active;
+      if (item.override_price) priceMap[key] = item.override_price;
+    });
+    setInventory(stockMap); setActiveItems(activeMap); setPriceOverrides(priceMap);
+  };
 
   const fetchTerminals = async () => {
       const { data } = await supabase.from('terminals').select('*');
@@ -391,6 +395,21 @@ export default function OrderForm() {
       visibleProducts.push(p);
     }
   });
+
+  // Price shown on the product picker: the event price (override) of its active variants, not the catalog base_price
+  const pickerPrice = (p) => {
+    const prices = products
+      .filter(pp => mergedName(pp.name) === mergedName(p.name))
+      .map(pp => {
+        const { size: s } = parseProductId(pp.id);
+        const key = `${pp.id}_${s}`;
+        return s && activeItems[key] ? Number(priceOverrides[key] || pp.base_price || 0) : null;
+      })
+      .filter(v => v !== null);
+    if (prices.length === 0) return `$${p.base_price}`;
+    const min = Math.min(...prices), max = Math.max(...prices);
+    return min === max ? `$${min}` : `from $${min}`;
+  };
 
   useEffect(() => {
       if (visibleProducts.length > 0) {
@@ -919,32 +938,8 @@ export default function OrderForm() {
       setDiscountAmount(0); setDiscountValue(''); setDiscountUnlocked(false);
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId('');
       setManualShipOverride(false);
-      // inventory / stock maps
-if (!ignoreInventory) {
-  const { data: invData } = await supabase
-    .from('inventory')
-    .select('*')
-    .eq('event_slug', finalSlug);
-
-  if (invData) {
-    const stockMap = {};
-    const activeMap = {};
-    const priceMap = {};
-    invData.forEach((item) => {
-      const key = `${item.product_id}_${item.size}`;
-      stockMap[key] = item.count;
-      activeMap[key] = item.active;
-      if (item.override_price != null) priceMap[item.product_id] = item.override_price;
-    });
-    setInventory(stockMap);
-    setActiveItems(activeMap);
-    setPriceOverrides(priceMap);
-  }
-} else {
-  setInventory({});
-  setActiveItems({});
-  setPriceOverrides({});
-}
+      // refresh stock counts after the sale (finalSlug only exists inside the initial fetch)
+      if (actualEventSlug) await loadInventoryMaps(actualEventSlug);
       window.scrollTo(0, 0);
   };
 
@@ -1241,7 +1236,7 @@ if (!ignoreInventory) {
                                     {visibleProducts.length === 1 ? (
                                       // Single product — just show the name, no picker needed
                                       <p className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium">
-                                        {displayName(visibleProducts[0].name, products)}{showPrice ? ` — $${visibleProducts[0].base_price}` : ''}
+                                        {displayName(visibleProducts[0].name, products)}{showPrice ? ` — ${pickerPrice(visibleProducts[0])}` : ''}
                                       </p>
                                     ) : (
                                       // Multiple products — show image cards
@@ -1276,7 +1271,7 @@ if (!ignoreInventory) {
                                                 <div className="h-24 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400 mb-1 rounded">No Image</div>
                                               )}
                                               <span className="text-xs font-semibold leading-tight">{displayName(p.name, products)}</span>
-                                              {showPrice && <span className="text-xs text-gray-500">${p.base_price}</span>}
+                                              {showPrice && <span className="text-xs text-gray-500">{pickerPrice(p)}</span>}
                                               {uniqueColors.length > 0 && (
                                                 <div className="flex flex-wrap justify-center gap-1 mt-1.5">
                                                   {uniqueColors.slice(0, 8).map(c => (
@@ -1966,54 +1961,6 @@ if (!ignoreInventory) {
         </div>
       </div>
     )}
-    </>
-  );
-}
-// ── PlacementVisualizer ──
-const PlacementVisualizer = ({ garmentType, logoSize }) => {
-  const isBottom = garmentType === 'bottom';
-  const accentColor = "#1e3a8a";
-
-  const TopSVG = () => (
-    <svg viewBox="0 0 200 220" className="w-28 h-28 drop-shadow">
-      <path d="M60 30 L35 65 L60 75 L60 190 L140 190 L140 75 L165 65 L140 30 Q100 50 60 30Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="2" />
-      <path d="M75 30 Q100 10 125 30 Q110 45 100 48 Q90 45 75 30Z" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1.5" />
-      <rect x="78" y="130" width="44" height="30" rx="3" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1" />
-      {logoSize === 'large' ? (
-        <rect x="72" y="75" width="56" height="48" rx="4" fill={accentColor} fillOpacity="0.75">
-          <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
-        </rect>
-      ) : (
-        <circle cx="118" cy="85" r="10" fill={accentColor} fillOpacity="0.85">
-          <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
-        </circle>
-      )}
-    </svg>
-  );
-
-  const BottomSVG = () => (
-    <svg viewBox="0 0 200 220" className="w-28 h-28 drop-shadow">
-      <rect x="55" y="20" width="90" height="18" rx="4" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1.5" />
-      <path d="M55 38 L65 200 L100 200 L100 38Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
-      <path d="M145 38 L135 200 L100 200 L100 38Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
-      <circle cx="75" cy="80" r="10" fill={accentColor} fillOpacity="0.85">
-        <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
-      </circle>
-    </svg>
-  );
-
-  return (
-    <div className="flex flex-col items-center justify-center p-3 bg-white rounded-lg border border-gray-200 h-full min-h-[140px]">
-      {isBottom ? <BottomSVG /> : <TopSVG />}
-      <p className="text-[10px] font-black text-gray-400 uppercase mt-2 text-center leading-tight">
-        {isBottom
-          ? 'Thigh / Pocket'
-          : logoSize === 'large'
-            ? 'Full Front / Center'
-            : 'Left Chest / Pocket'}
-      </p>
-    </div>
-
       {/* Add-On Modal */}
       {showAddOnModal && selectedProductRecord?.add_ons?.length > 0 && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -2062,5 +2009,52 @@ const PlacementVisualizer = ({ garmentType, logoSize }) => {
           </div>
         </div>
       )}
+    </>
+  );
+}
+// ── PlacementVisualizer ──
+const PlacementVisualizer = ({ garmentType, logoSize }) => {
+  const isBottom = garmentType === 'bottom';
+  const accentColor = "#1e3a8a";
+
+  const TopSVG = () => (
+    <svg viewBox="0 0 200 220" className="w-28 h-28 drop-shadow">
+      <path d="M60 30 L35 65 L60 75 L60 190 L140 190 L140 75 L165 65 L140 30 Q100 50 60 30Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="2" />
+      <path d="M75 30 Q100 10 125 30 Q110 45 100 48 Q90 45 75 30Z" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1.5" />
+      <rect x="78" y="130" width="44" height="30" rx="3" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1" />
+      {logoSize === 'large' ? (
+        <rect x="72" y="75" width="56" height="48" rx="4" fill={accentColor} fillOpacity="0.75">
+          <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
+        </rect>
+      ) : (
+        <circle cx="118" cy="85" r="10" fill={accentColor} fillOpacity="0.85">
+          <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
+        </circle>
+      )}
+    </svg>
+  );
+
+  const BottomSVG = () => (
+    <svg viewBox="0 0 200 220" className="w-28 h-28 drop-shadow">
+      <rect x="55" y="20" width="90" height="18" rx="4" fill="#d1d5db" stroke="#9ca3af" strokeWidth="1.5" />
+      <path d="M55 38 L65 200 L100 200 L100 38Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
+      <path d="M145 38 L135 200 L100 200 L100 38Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
+      <circle cx="75" cy="80" r="10" fill={accentColor} fillOpacity="0.85">
+        <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite" />
+      </circle>
+    </svg>
+  );
+
+  return (
+    <div className="flex flex-col items-center justify-center p-3 bg-white rounded-lg border border-gray-200 h-full min-h-[140px]">
+      {isBottom ? <BottomSVG /> : <TopSVG />}
+      <p className="text-[10px] font-black text-gray-400 uppercase mt-2 text-center leading-tight">
+        {isBottom
+          ? 'Thigh / Pocket'
+          : logoSize === 'large'
+            ? 'Full Front / Center'
+            : 'Left Chest / Pocket'}
+      </p>
+    </div>
   );
 };
