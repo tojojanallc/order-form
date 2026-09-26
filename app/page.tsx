@@ -1599,11 +1599,12 @@ export default function OrderForm() {
                             <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-2 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
                             <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Email" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
                             {/* One tap fills in the domain — replaces anything already typed after "@" */}
-                            <div className="flex gap-1.5 mb-2">
+                            {/* Swipeable row so no button gets squeezed off the narrow checkout panel */}
+                            <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x" style={{ WebkitOverflowScrolling: 'touch' }}>
                                 {['@gmail.com', '@yahoo.com', '@hotmail.com'].map(domain => (
                                     <button key={domain} type="button"
                                         onClick={() => setCustomerEmail(prev => prev.split('@')[0].trim() + domain)}
-                                        className="flex-1 py-2 rounded-lg border border-gray-200 bg-gray-50 text-xs font-bold text-gray-700 hover:bg-blue-50 hover:border-blue-300 active:scale-95 transition-all">
+                                        className="shrink-0 snap-start whitespace-nowrap px-4 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm font-bold text-gray-700 hover:bg-blue-50 hover:border-blue-300 active:scale-95 transition-all">
                                         {domain}
                                     </button>
                                 ))}
