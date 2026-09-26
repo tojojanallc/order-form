@@ -1597,7 +1597,17 @@ export default function OrderForm() {
                     ) : (
                         <>
                             <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-2 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-2 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
+                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Email" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
+                            {/* One tap fills in the domain — replaces anything already typed after "@" */}
+                            <div className="flex gap-1.5 mb-2">
+                                {['@gmail.com', '@yahoo.com', '@hotmail.com'].map(domain => (
+                                    <button key={domain} type="button"
+                                        onClick={() => setCustomerEmail(prev => prev.split('@')[0].trim() + domain)}
+                                        className="flex-1 py-2 rounded-lg border border-gray-200 bg-gray-50 text-xs font-bold text-gray-700 hover:bg-blue-50 hover:border-blue-300 active:scale-95 transition-all">
+                                        {domain}
+                                    </button>
+                                ))}
+                            </div>
                             <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Phone Number" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
                             <p className="text-[10px] text-gray-500 leading-tight mb-4">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p>
                         </>
