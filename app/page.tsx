@@ -630,10 +630,11 @@ export default function OrderForm() {
   const completeAddToCart = () => {
     // Name from the chosen size's own row: youth + adult share one card, so selectedProduct may be the other one
     const baseName = selectedProductRecord?.name || selectedProduct.name;
-    const isYouthSize = ['YS','YM','YL','YXL','YXS'].includes(size);
-    const displayName = isYouthSize && !baseName.toLowerCase().includes('youth')
-      ? `Youth ${baseName}`
-      : baseName;
+    const isYouthSize = ['YS','YM','YL','YXL','YXS'].includes(size) || /^youth\s/i.test(size);
+    // Adult sizes (S, M, L...) must never read as youth on the cart, receipt, or order
+    const displayName = isYouthSize
+      ? (baseName.toLowerCase().includes('youth') ? baseName : `Youth ${baseName}`)
+      : baseName.replace(/\s*\byouth\b\s*/gi, ' ').trim();
 
     // Calculate add-on total
     const productAddOns = selectedProductRecord?.add_ons || [];
