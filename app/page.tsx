@@ -510,7 +510,7 @@ export default function OrderForm() {
       totalBaseStock += (inventory[key] || 0);
     });
     const qtyInCart = cart.filter(item =>
-      item.productName === selectedProduct.name &&
+      mergedName(item.productName || '') === mergedName(selectedProduct.name) &&
       item.size === size &&
       (!hasMultipleColors || item.color === selectedColor)
     ).length;
@@ -628,10 +628,12 @@ export default function OrderForm() {
   };
 
   const completeAddToCart = () => {
+    // Name from the chosen size's own row: youth + adult share one card, so selectedProduct may be the other one
+    const baseName = selectedProductRecord?.name || selectedProduct.name;
     const isYouthSize = ['YS','YM','YL','YXL','YXS'].includes(size);
-    const displayName = isYouthSize && !selectedProduct.name.toLowerCase().includes('youth')
-      ? `Youth ${selectedProduct.name}`
-      : selectedProduct.name;
+    const displayName = isYouthSize && !baseName.toLowerCase().includes('youth')
+      ? `Youth ${baseName}`
+      : baseName;
 
     // Calculate add-on total
     const productAddOns = selectedProductRecord?.add_ons || [];
@@ -740,17 +742,9 @@ export default function OrderForm() {
             const errData = await payRes.json();
             throw new Error(errData.details || errData.error || 'Terminal connection failed');
         }
-        const decrementInventory = async (cartItems) => {
-            for (const item of cartItems) {
-                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
-                if (current && current.count > 0) {
-                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
-                }
-            }
-        };
+        // Stock comes off in the database (trigger_decrement_inventory on orders insert) — don't decrement again here
         const handleSuccess = () => {
             if (window.pollingRef) clearInterval(window.pollingRef);
-            decrementInventory(cart);
             sendConfirmationSMS(customerName, customerPhone, orderId);
             sendReceiptEmail(orderId, customerName, customerEmail, cart, calculateGrandTotal());
             setLastOrderId(orderId);
@@ -831,17 +825,6 @@ export default function OrderForm() {
         });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
-        const decrementInventory = async (cartItems) => {
-            for (const item of cartItems) {
-                const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size).single();
-                if (current && current.count > 0) {
-                    await supabase.from('inventory').update({ count: current.count - (item.quantity || 1) }).eq('event_slug', actualEventSlug).eq('product_id', item.productId).eq('size', item.size);
-                }
-            }
-        };
-        if (!ignoreInventory) {
-  await decrementInventory(cart);
-}
         setLastOrderId(data.orderId); 
         if (customerPhone) sendConfirmationSMS(customerName, customerPhone, data.orderId);
         if (customerEmail) sendReceiptEmail(data.orderId, customerName, customerEmail, cart, calculateGrandTotal());
