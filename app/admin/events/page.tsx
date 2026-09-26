@@ -33,6 +33,7 @@ const STATUSES = {
   shipped: { label: 'Shipped', color: 'bg-green-200 text-green-900 border-green-400' },
   completed: { label: 'Completed', color: 'bg-gray-200 text-gray-600 border-gray-400' },
   refunded: { label: 'Refunded', color: 'bg-red-100 text-red-800 border-red-300' },
+  canceled: { label: 'Canceled', color: 'bg-red-50 text-red-700 border-red-200' },
 };
 
 export default function AdminPage() {
@@ -582,9 +583,22 @@ setSalesLedger(ledgerData || []);
       setLoading(false); 
   };
 
+  // Cancelling a sale puts its items back on the event; un-cancelling takes them out again
+  const adjustEventStock = async (cartData, direction) => {
+      if (!Array.isArray(cartData)) return;
+      for (const item of cartData) {
+          if (!item?.productId || !item?.size) continue;
+          const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', selectedEventSlug).eq('product_id', item.productId).eq('size', item.size).maybeSingle();
+          if (current) await supabase.from('inventory').update({ count: Math.max(0, current.count + direction * (item.quantity || 1)) }).eq('event_slug', selectedEventSlug).eq('product_id', item.productId).eq('size', item.size);
+      }
+  };
+
   const handleStatusChange = async (orderId, newStatus) => {
+      const order = orders.find(o => o.id === orderId);
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
       await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
+      const wasCanceled = order?.status === 'canceled', isCanceled = newStatus === 'canceled';
+      if (order && wasCanceled !== isCanceled) { await adjustEventStock(order.cart_data, isCanceled ? 1 : -1); fetchInventory(); }
       if (newStatus === 'ready') {
           try {
               const { data: orderData } = await supabase.from('orders').select('customer_name, phone').eq('id', orderId).single();
@@ -625,7 +639,7 @@ setSalesLedger(ledgerData || []);
       await supabase.from('orders').update({ payment_status: 'paid' }).eq('id', orderId);
   };
 
-  const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); if (Array.isArray(cartData)) { for (const item of cartData) { if (item?.productId && item?.size) { const { data: current } = await supabase.from('inventory').select('count').eq('event_slug', selectedEventSlug).eq('product_id', item.productId).eq('size', item.size).single(); if (current) { await supabase.from('inventory').update({ count: current.count + 1 }).eq('event_slug', selectedEventSlug).eq('product_id', item.productId).eq('size', item.size); } } } } await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
+  const deleteOrder = async (orderId, cartData) => { if (!confirm("Delete Order?")) return; setLoading(true); const order = orders.find(o => o.id === orderId); if (order?.status !== 'canceled') await adjustEventStock(cartData, 1); await supabase.from('orders').delete().eq('id', orderId); fetchOrders(); fetchInventory(); setLoading(false); };
   const handleRefund = async (orderId, paymentIntentId) => { if (!confirm("Refund?")) return; setLoading(true); try { const result = await refundOrder(orderId, paymentIntentId); if (result.success) { alert("Refunded."); setOrders(orders.map(o => o.id === orderId ? { ...o, status: 'refunded' } : o)); } else { alert("Failed: " + result.message); } } catch(e) { alert("Error: " + e.message); } setLoading(false); };
   const discoverPrinters = async () => { setLoading(true); try { const res = await fetch('/api/printnode/printers'); const data = await res.json(); if (!res.ok) { alert('Error: ' + (data.error || 'Could not reach PrintNode')); } else if (Array.isArray(data)) { setAvailablePrinters(data); if (data.length === 0) alert('No printers found on your PrintNode account.'); } } catch (e) { alert('Network error reaching printer service.'); } setLoading(false); };
 

@@ -37,7 +37,19 @@ export async function POST(req) {
       }
       
       if (status === 'CANCELED') {
+          const { data: order } = await supabase.from('orders').select('status, event_slug, cart_data').eq('id', orderId).single();
           await supabase.from('orders').update({ status: 'canceled' }).eq('id', orderId);
+          // The kiosk already took these items out of event stock and logged the sale — undo both
+          if (order && order.status !== 'canceled') {
+              for (const item of order.cart_data || []) {
+                  if (!item?.productId || !item?.size) continue;
+                  const { data: current } = await supabase.from('inventory').select('count')
+                      .eq('event_slug', order.event_slug).eq('product_id', item.productId).eq('size', item.size).maybeSingle();
+                  if (current) await supabase.from('inventory').update({ count: current.count + (item.quantity || 1) })
+                      .eq('event_slug', order.event_slug).eq('product_id', item.productId).eq('size', item.size);
+              }
+              await supabase.from('sales_ledger').delete().eq('order_id', orderId);
+          }
       }
     }
 
