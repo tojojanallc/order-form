@@ -593,6 +593,15 @@ setSalesLedger(ledgerData || []);
       }
   };
 
+  const saveOrderNote = async (orderId, text) => {
+      const note = text.trim() || null;
+      const current = orders.find(o => o.id === orderId);
+      if ((current?.admin_notes || null) === note) return;
+      setOrders(orders.map(o => o.id === orderId ? { ...o, admin_notes: note } : o));
+      const { error } = await supabase.from('orders').update({ admin_notes: note }).eq('id', orderId);
+      if (error) alert('Note not saved: ' + error.message);
+  };
+
   const handleStatusChange = async (orderId, newStatus) => {
       const order = orders.find(o => o.id === orderId);
       setOrders(orders.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
@@ -1361,7 +1370,7 @@ setSalesLedger(ledgerData || []);
                 const displayColor = isPaid ? 'text-green-600' : 'text-red-500';
                 return (
                 <tr key={order.id} className={`border-b hover:bg-gray-50 ${order.printed ? 'bg-gray-50' : 'bg-white'}`}>
-                    <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select><div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div></td>
+                    <td className="p-4 align-top"><select value={order.status || 'pending'} onChange={(e) => handleStatusChange(order.id, e.target.value)} className={`p-2 rounded border-2 uppercase font-bold text-xs ${STATUSES[order.status || 'pending']?.color}`}>{Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select><div className={`text-[10px] uppercase font-bold mt-1 ${displayColor}`}>{displayPaymentLabel}</div><textarea defaultValue={order.admin_notes || ''} placeholder="📝 Add a note…" rows={2} onBlur={(e) => saveOrderNote(order.id, e.target.value)} className={`mt-2 w-full min-w-[9rem] p-2 text-xs rounded border resize-y focus:outline-none focus:border-blue-400 ${order.admin_notes ? 'bg-yellow-50 border-yellow-300 text-yellow-900' : 'bg-white border-gray-200 text-gray-700'}`} /></td>
                     <td className="p-4 align-top text-sm text-gray-500 font-medium" suppressHydrationWarning>{new Date(order.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                     <td className="p-4 align-top"><div className="font-bold">{order.customer_name}</div><div className="text-sm">{order.phone}</div><div className="text-xs text-gray-400">{order.email}</div><button onClick={() => { setEditingCustomer(order); setCustomerForm({ name: order.customer_name || '', phone: order.phone || '', email: order.email || '' }); }} className="text-blue-600 hover:text-blue-800 text-xs font-bold underline mt-1">✏️ Edit Info</button></td>
                     <td className="p-4 align-top">{order.site ? <span className="text-xs font-black bg-slate-100 text-slate-700 px-2 py-1 rounded-full">📍 {order.site}</span> : <span className="text-xs text-gray-300">—</span>}</td>
