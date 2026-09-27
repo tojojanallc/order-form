@@ -13,7 +13,7 @@ export async function POST(req: any) {
     const { cart, guestName, guestId: incomingGuestId, eventName, eventSlug, customerPhone, shippingInfo, site } = body;
 
     const currentEvent = (eventSlug && eventSlug !== '') ? eventSlug : 'default';
-    const hasShipping = cart.some((i: any) => i.needsShipping);
+    const hasShipping = cart.some((i: any) => i.needsShipping) || !!shippingInfo?.address;
 
     // Resolve guest ID — create the guest now if they were new (no ID yet)
     let resolvedGuestId = incomingGuestId;

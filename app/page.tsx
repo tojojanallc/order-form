@@ -159,6 +159,7 @@ export default function OrderForm() {
   const [showSetup, setShowSetup] = useState(false);
   const [availableTerminals, setAvailableTerminals] = useState([]);
   const [ignoreInventory, setIgnoreInventory] = useState(false);
+  const [requireAddress, setRequireAddress] = useState(false);
   const [manualShipOverride, setManualShipOverride] = useState(false);
   const [upsellMode, setUpsellMode] = useState<null|"name"|"number"|"roster">(null);
 
@@ -274,6 +275,7 @@ export default function OrderForm() {
         setTaxEnabled(settings.tax_enabled || false);
         setTaxRate(settings.tax_rate || 0);
         setIgnoreInventory(!!settings.ignore_inventory);
+        setRequireAddress(!!settings.require_address);
         setOpenGuestEntry(!!settings.open_guest_entry);
         setWelcomeMessage(settings.welcome_message || '');
         setRosterImageUrl(settings.roster_image_url || '');
@@ -714,7 +716,10 @@ export default function OrderForm() {
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
   const updateNumber = (i, f, v) => { const n = [...numbers]; n[i][f] = v; setNumbers(n); }; 
-  const cartRequiresShipping = cart.some(item => item.needsShipping);
+  // Admin "Require Address" makes every order collect a shipping address (e.g. out of transfers, orders ship later)
+  const cartRequiresShipping = cart.some(item => item.needsShipping) || requireAddress;
+  const showAddressForm = cartRequiresShipping && (paymentMode !== 'hosted' || requireAddress);
+  const addressMissing = () => showAddressForm && ![shippingAddress, shippingCity, shippingState, shippingZip].every(v => v.trim());
   const getLogoImage = (type) => { const found = logoOptions.find(l => l.label === type); return found ? found.image_url : null; };
 
   const handleTerminalCheckout = async () => {
@@ -722,13 +727,14 @@ export default function OrderForm() {
     if (!customerName) return alert("Please enter Name");
     if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.");
     if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
+    if (addressMissing()) return alert("Please enter the full shipping address.");
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
     try {
         const createRes = await fetch('/api/create-retail-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: actualEventSlug, eventName, site: assignedSiteName })
+            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventSlug: actualEventSlug, eventName, site: assignedSiteName, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
         });
         if (!createRes.ok) throw new Error("Order creation failed");
         const orderData = await createRes.json();
@@ -768,6 +774,7 @@ export default function OrderForm() {
   const handleBluetoothCheckout = async () => {
     if (cart.length === 0) return alert('Cart is empty');
     if (!customerName) return alert('Please enter customer name');
+    if (addressMissing()) return alert('Please enter the full shipping address.');
     setIsSubmitting(true);
     try {
       // 1. Create order in Supabase first (pending)
@@ -816,6 +823,7 @@ export default function OrderForm() {
   const handleCashCheckout = async () => {
     if (cart.length === 0) return alert('Cart is empty');
     if (!customerName) return alert("Please enter Name");
+    if (addressMissing()) return alert("Please enter the full shipping address.");
     if (!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
     try {
@@ -839,6 +847,7 @@ export default function OrderForm() {
   };
 
   const handleCheckout = async () => {
+    if (addressMissing()) return alert("Please enter the full shipping address.");
     if (paymentMode === 'hosted' && selectedGuest) {
         setIsSubmitting(true);
         try {
@@ -1614,7 +1623,7 @@ export default function OrderForm() {
                             <p className="text-[10px] text-gray-500 leading-tight mb-4">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p>
                         </>
                     )}
-                    {cartRequiresShipping && paymentMode !== 'hosted' && (
+                    {showAddressForm && (
                     <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4">
                       <h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4>
                       <input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} />

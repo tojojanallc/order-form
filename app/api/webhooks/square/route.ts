@@ -23,11 +23,13 @@ export async function POST(req) {
         // Terminal Checkouts generate a list of payment_ids. We need the first one for refunds.
         const paymentId = checkout.payment_ids ? checkout.payment_ids[0] : null;
 
+        // Keep orders that are being shipped in pending_shipping
+        const { data: existing } = await supabase.from('orders').select('status').eq('id', orderId).single();
         const { error } = await supabase
           .from('orders')
           .update({ 
             payment_status: 'paid', 
-            status: 'pending', 
+            status: existing?.status === 'pending_shipping' ? 'pending_shipping' : 'pending', 
             payment_intent_id: paymentId // <--- NOW SAVING THE CORRECT ID FOR REFUNDS
           })
           .eq('id', orderId);

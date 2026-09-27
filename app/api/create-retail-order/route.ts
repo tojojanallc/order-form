@@ -31,7 +31,7 @@ export async function POST(req: any) {
       return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
     }
 
-    const hasBackorder = cart.some((item: any) => item.needsShipping);
+    const hasBackorder = cart.some((item: any) => item.needsShipping) || !!shippingInfo?.address;
 
     // 1. Create the Order
     const { data: order, error: orderError } = await supabase

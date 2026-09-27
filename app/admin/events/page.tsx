@@ -71,6 +71,7 @@ export default function AdminPage() {
   
   // --- INVENTORY STATE ---
   const [ignoreInventory, setIgnoreInventory] = useState(false);
+  const [requireAddress, setRequireAddress] = useState(false);
   const [openGuestEntry, setOpenGuestEntry] = useState(false);
   const [inventory, setInventory] = useState([]); 
   const [products, setProducts] = useState([]); 
@@ -512,6 +513,7 @@ setSalesLedger(ledgerData || []);
           setTaxEnabled(data.tax_enabled || false);
           setTaxRate(data.tax_rate || 0);
           setIgnoreInventory(!!data.ignore_inventory);
+          setRequireAddress(!!data.require_address);
           setOpenGuestEntry(!!data.open_guest_entry);
       } 
   };
@@ -546,6 +548,7 @@ setSalesLedger(ledgerData || []);
           tax_enabled: taxEnabled,
           tax_rate: taxRate,
           ignore_inventory: ignoreInventory,
+          require_address: requireAddress,
           open_guest_entry: openGuestEntry,
       }).eq('slug', selectedEventSlug); 
       if (error) {
@@ -1681,6 +1684,21 @@ setSalesLedger(ledgerData || []);
       type="checkbox"
       checked={ignoreInventory}
       onChange={(e) => setIgnoreInventory(e.target.checked)}
+      className="w-6 h-6 cursor-pointer accent-emerald-600"
+    />
+  </div>
+
+  <div className="flex items-center justify-between mt-4 pt-4 border-t border-emerald-200">
+    <div>
+      <div className="text-gray-800 font-bold">Require Address?</div>
+      <div className="text-[10px] text-emerald-800 mt-1 italic font-medium">
+        If enabled, customers must enter a full shipping address before checkout and orders come in as Pending Shipping (e.g. when out of transfers).
+      </div>
+    </div>
+    <input
+      type="checkbox"
+      checked={requireAddress}
+      onChange={(e) => setRequireAddress(e.target.checked)}
       className="w-6 h-6 cursor-pointer accent-emerald-600"
     />
   </div>

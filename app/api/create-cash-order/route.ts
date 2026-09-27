@@ -12,7 +12,7 @@ export async function POST(req: any) {
     const { cart, customerName, customerPhone, customerEmail, total, taxCollected, eventName, eventSlug, shippingInfo, site } = body;
 
     const currentEvent = eventSlug || 'default';
-    const hasBackorder = cart.some((item: any) => item.needsShipping);
+    const hasBackorder = cart.some((item: any) => item.needsShipping) || !!shippingInfo?.address;
 
     // 1. Create the Order
     // Your trigger 'decrement_inventory_on_order' will still handle the event-level stock count.
