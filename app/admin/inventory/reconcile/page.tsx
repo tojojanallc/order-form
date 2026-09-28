@@ -77,7 +77,7 @@ export default function ReconcilePage() {
         const { data: { user } } = await supabase.auth.getUser();
         const { returnedUnits, unmatched } = await returnEventStockToWarehouse(eventSlug, user?.email);
         if (unmatched.length > 0 && !confirm(
-            `Returned ${returnedUnits} units to Glendale.\n\nThese couldn't be matched to a warehouse item and are still on this event:\n${describeUnmatched(unmatched)}\n\nArchive anyway? (Cancel keeps the event open so you can move them from Event Stock.)`
+            `Returned ${returnedUnits} units to inventory.\n\nThese couldn't be matched to a warehouse item and are still on this event:\n${describeUnmatched(unmatched)}\n\nArchive anyway? (Cancel keeps the event open so you can move them from Event Stock.)`
         )) { await loadStockAndSales(eventSlug); return; }
 
         await supabase.from('event_settings').update({

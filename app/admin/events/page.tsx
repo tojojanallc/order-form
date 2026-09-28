@@ -565,7 +565,7 @@ setSalesLedger(ledgerData || []);
           const { data: { user } } = await supabase.auth.getUser();
           const { returnedUnits, unmatched } = await returnEventStockToWarehouse(selectedEventSlug, user?.email);
           if (unmatched.length > 0 && !confirm(
-              `Returned ${returnedUnits} units to the warehouse.\n\nThese couldn't be matched to a warehouse item and are still on this event:\n${describeUnmatched(unmatched)}\n\nArchive anyway? (Cancel keeps the event open so you can move them with "Return to Warehouse".)`
+              `Returned ${returnedUnits} units to inventory.\n\nThese couldn't be matched to a warehouse item and are still on this event:\n${describeUnmatched(unmatched)}\n\nArchive anyway? (Cancel keeps the event open so you can move them with "Return to Warehouse".)`
           )) { fetchInventory(); setLoading(false); return; }
       } catch (err: any) {
           alert("Couldn't return stock to the warehouse — event NOT archived: " + err.message);
@@ -915,7 +915,9 @@ setSalesLedger(ledgerData || []);
     
     setLoading(true);
     try {
-        const { data: masterItem, error: fetchError } = await supabase
+        // Stock sent from the portal tracker goes back there; older stock goes back to the kiosk warehouse
+        const { data: trackerItem } = await supabase.from('lev_inventory_items').select('id').eq('sku', item.product_id).maybeSingle();
+        const { data: masterItem, error: fetchError } = trackerItem ? { data: null, error: null } : await supabase
             .from('inventory_master')
             .select('*')
             .eq('sku', item.product_id)
@@ -924,7 +926,14 @@ setSalesLedger(ledgerData || []);
 
         if (fetchError) throw fetchError;
 
-        if (masterItem) {
+        if (trackerItem) {
+            const { data: { user } } = await supabase.auth.getUser();
+            const { error: moveError } = await supabase.from('lev_inventory_moves').insert({
+                item_id: trackerItem.id, qty: item.count, type: 'from_event', event_slug: selectedEventSlug,
+                note: 'Returned from ' + selectedEventSlug, created_by: user?.email || null,
+            });
+            if (moveError) throw moveError;
+        } else if (masterItem) {
             await supabase.from('inventory_master')
                 .update({ quantity_on_hand: masterItem.quantity_on_hand + item.count })
                 .eq('sku', item.product_id)

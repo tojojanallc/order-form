@@ -115,6 +115,12 @@ export default function LoadTruck() {
             </button>
         </div>
 
+        <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+            <b>Stock now lives in the portal.</b> Load events from{' '}
+            <a href="https://portal.levcustom.com/admin/inventory" target="_blank" rel="noreferrer" className="font-bold text-blue-700 underline">Portal → Inventory → 🚚 Send</a>.
+            This page only moves leftover stock from the old warehouse below. Closing an event returns its leftovers to the portal automatically.
+        </div>
+
         <div className="grid grid-cols-12 gap-6 mb-8">
             <div className="col-span-4 bg-slate-900 p-6 rounded-3xl text-white">
                 <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Target Event</p>
