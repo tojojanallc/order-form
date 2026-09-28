@@ -103,7 +103,7 @@ export async function POST(req: any) {
             <div style="text-align: center; margin-top: 40px; border-top: 1px solid #eee; padding-top: 30px;">
                 <p style="font-size: 12px; color: #888; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Powered by</p>
                 <img src="${companyLogoUrl}" alt="Lev Custom Merch" style="max-width: 120px; height: auto;" />
-                <p style="font-size: 12px; color: #aaa; margin-top: 15px;">2125 W. Hemlock Rd.<br/>Glendale, WI 53209</p>
+                <p style="font-size: 12px; color: #aaa; margin-top: 15px;">6969 N Port Washington Rd<br/>Ste 150B #2180<br/>Glendale, WI 53217</p>
             </div>
         </div>`,
     });
