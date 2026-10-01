@@ -1,0 +1,33 @@
+/* Lev brand for the kiosk admin (scoped to .lev-admin so the customer kiosk is untouched).
+   Navy #0a2342 · Lev blue #29ABE2 · Outfit headings · Inter body — same as portal.levcustom.com */
+.lev-admin { --lev-navy: #0a2342; --lev-blue: #29ABE2; --lev-blue-dark: #1e9bd0; min-height: 100vh; background: #f4f6fa; color: #0f172a; }
+
+/* Top bar */
+.lev-admin-bar { background: var(--lev-navy); height: 60px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; position: sticky; top: 0; z-index: 40; font-family: Inter, system-ui, sans-serif; }
+.lev-admin-wordmark { font-family: var(--font-outfit), Outfit, sans-serif; font-weight: 900; font-size: 22px; color: #fff; text-decoration: none; letter-spacing: -0.5px; white-space: nowrap; }
+.lev-admin-wordmark span { color: var(--lev-blue); }
+.lev-admin-tab { padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.7); text-decoration: none; white-space: nowrap; }
+.lev-admin-tab:hover { color: #fff; }
+.lev-admin-tab.on { background: rgba(41,171,226,0.18); color: var(--lev-blue); }
+.lev-admin-pill { background: var(--lev-blue); color: #fff; border-radius: 100px; padding: 7px 14px; font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.lev-admin-pill:hover { background: var(--lev-blue-dark); }
+
+/* Pages: their own backgrounds give way to the brand background */
+.lev-admin .min-h-screen.bg-gray-50, .lev-admin .min-h-screen.bg-slate-50, .lev-admin .min-h-screen.bg-gray-100 { background: transparent; }
+
+/* Headings in Outfit, navy */
+.lev-admin h1, .lev-admin h2, .lev-admin h3 { font-family: var(--font-outfit), Outfit, sans-serif; }
+.lev-admin h1.text-slate-900, .lev-admin h1.text-gray-900, .lev-admin h1.text-black { color: var(--lev-navy); }
+
+/* Dark brand surfaces → Lev navy */
+.lev-admin .bg-slate-900, .lev-admin .bg-blue-900, .lev-admin .bg-gray-900, .lev-admin .bg-blue-950 { background-color: var(--lev-navy); }
+.lev-admin .hover\:bg-blue-800:hover, .lev-admin .hover\:bg-slate-700:hover, .lev-admin .hover\:bg-slate-800:hover { background-color: #12355f; }
+.lev-admin .hover\:bg-blue-600:hover, .lev-admin .hover\:bg-blue-700:hover { background-color: var(--lev-blue-dark); }
+
+/* Primary blue → Lev blue */
+.lev-admin .bg-blue-600, .lev-admin .bg-blue-500 { background-color: var(--lev-blue); }
+.lev-admin .text-blue-600, .lev-admin .text-blue-500, .lev-admin .text-blue-400 { color: var(--lev-blue); }
+.lev-admin .text-blue-900, .lev-admin .text-blue-800 { color: var(--lev-navy); }
+.lev-admin .border-blue-600, .lev-admin .border-blue-500 { border-color: var(--lev-blue); }
+.lev-admin .accent-blue-900 { accent-color: var(--lev-navy); }
+.lev-admin .focus\:ring-blue-500:focus, .lev-admin .focus\:ring-blue-400:focus { --tw-ring-color: var(--lev-blue); }
