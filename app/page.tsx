@@ -1358,8 +1358,9 @@ export default function OrderForm() {
   const showPrice = paymentMode === 'retail';
   const garmentNow = isBottomSelected ? 'bottom' : isHoodieSelected ? 'hoodie' : 'top';
   const mainOpt = availableMainOptions.find(o => o.label === selectedMainDesign);
-  const preview = (compact = false) => (
-    <LivePreview compact={compact} productImg={selectedProductRecord?.image_url} mainImg={mainOpt?.image_url} mainPlacement={mainOpt?.placement || 'large'} garment={garmentNow}
+  const preview = (compact = false, view = 'both') => (
+    <LivePreview compact={compact} view={view} color={selectedColor || parseProductId(selectedProductRecord?.id || '').color || ''} rosterImg={backNameList && rosterImageUrl ? rosterImageUrl : null}
+      productImg={selectedProductRecord?.image_url} mainImg={mainOpt?.image_url} mainPlacement={mainOpt?.placement || 'large'} garment={garmentNow}
       accents={logos.map(l => ({ label: l.type, position: l.position, img: getLogoImage(l.type) }))} names={names} numbers={numbers} />
   );
   const livePreviewOn = !!extras.livePreview && !!selectedProductRecord?.image_url;
@@ -1675,7 +1676,7 @@ export default function OrderForm() {
                                     const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign);
                                     const placement = currentLogoObj?.placement || 'large';
                                     const garmentType = isBottomSelected ? 'bottom' : isHoodieSelected ? 'hoodie' : 'top';
-                                    return livePreviewOn ? preview(true) : <PlacementVisualizer garmentType={garmentType} logoSize={placement} />;
+                                    return livePreviewOn ? preview(true, 'front') : <PlacementVisualizer garmentType={garmentType} logoSize={placement} />;
                                   })()}
                                 </div>
                             </div>
@@ -2064,7 +2065,7 @@ export default function OrderForm() {
                 <div className="text-5xl font-black text-gray-900 tracking-wide break-all mt-1" style={{ fontFamily: 'var(--font-lev-heading), Impact, sans-serif' }}>{r.t.split('').join('\u2009')}</div>
               </div>
             ))}
-            {livePreviewOn && <div className="pt-2">{preview(true)}</div>}
+            {livePreviewOn && <div className="pt-2">{preview(true, 'both')}</div>}
           </div>
           <div className="p-6 pt-0 grid grid-cols-2 gap-3">
             <button onClick={() => setShowSpell(false)} className="py-4 rounded-2xl border-2 border-gray-200 font-black text-lg text-gray-700">✏️ Fix it</button>
@@ -2486,31 +2487,90 @@ const LevMark = ({ label = 'Powered by', className = '' }) => {
   );
 };
 
-// Live preview: the chosen design on a photo of the actual shirt and color, accents and back print listed underneath.
-// Front-photo positions are approximate (center chest for large designs, left chest for small, upper thigh on bottoms).
-const LivePreview = ({ productImg, mainImg, mainPlacement, garment, accents = [], names = [], numbers = [], compact = false }) => {
+// Live preview: the chosen design on a photo of the actual shirt and color (front), and the names / numbers / roster
+// printed on its back. Positions are approximate (center chest for large designs, left chest for small, upper thigh
+// on bottoms; names across the upper back with the number underneath).
+// S&S photos come in pairs — "…_f_fm.jpg" is the front, "…_b_fm.jpg" the back; without one, a drawn outline in the color.
+const backPhoto = (front) => (front && /_f_([a-z]+)\.(jpe?g|png)$/i.test(front)) ? front.replace(/_f_([a-z]+)\.(jpe?g|png)$/i, '_b_$1.$2') : null;
+
+const GarmentOutline = ({ garment, fill }) => (
+  <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full">
+    {garment === 'hoodie'
+      ? <path d="M38 10 Q50 2 62 10 L64 18 L80 22 L94 62 L84 66 L74 40 L74 94 L26 94 L26 40 L16 66 L6 62 L20 22 L36 18 Z" fill={fill} stroke="#00000033" strokeWidth="0.8" />
+      : <path d="M38 10 Q50 16 62 10 L80 16 L96 34 L84 44 L76 36 L76 94 L24 94 L24 36 L16 44 L4 34 L20 16 Z" fill={fill} stroke="#00000033" strokeWidth="0.8" />}
+  </svg>
+);
+
+const BackView = ({ productImg, garment, color, names = [], numbers = [], rosterImg = null, label = true }) => {
+  const [photoOk, setPhotoOk] = useState(true);
+  const photo = backPhoto(productImg);
+  const top = garment === 'hoodie' ? 36 : 27;          // hoods take the top of the back
+  const center = names.filter(n => String(n.text || '').trim() && /back center/i.test(n.position || ''));
+  const bottom = names.filter(n => String(n.text || '').trim() && /back bottom/i.test(n.position || ''));
+  const nums = numbers.filter(n => String(n.text || '').trim() && /back/i.test(n.position || ''));
+  let y = top;
+  // y is the top of the next line; each line sits below the one before (name over number)
+  const text = (t, size, key) => {
+    const base = y + size * 0.74;
+    const el = <text key={key} x="50" y={base} textAnchor="middle" fontSize={size} fontWeight="900" letterSpacing={size > 14 ? 0 : 0.8}
+      style={{ fontFamily: 'var(--font-lev-heading), Impact, sans-serif', paintOrder: 'stroke' }} fill="#ffffff" stroke="#111827" strokeWidth={size > 14 ? 1.4 : 0.9}>{t}</text>;
+    y = base + 3;
+    return el;
+  };
+  const longest = Math.max(1, ...center.map(n => String(n.text).length));
+  const nameSize = Math.max(5, Math.min(9, 60 / longest));
+  return (
+    <div className="relative bg-white rounded-xl overflow-hidden w-full" style={{ aspectRatio: '1 / 1' }}>
+      {photo && photoOk
+        ? <img src={photo} alt="" className="absolute inset-0 w-full h-full object-contain" draggable={false} onError={() => setPhotoOk(false)} />
+        : <GarmentOutline garment={garment} fill={color ? colorHex(color) : '#d1d5db'} />}
+      {rosterImg && <img src={rosterImg} alt="" className="absolute object-contain" style={{ left: '30%', width: '40%', top: `${top + 2}%`, height: '42%' }} draggable={false} />}
+      <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full pointer-events-none">
+        {!rosterImg && center.map((n, i) => text(String(n.text).toUpperCase(), nameSize, `n${i}`))}
+        {!rosterImg && nums.map((n, i) => text(String(n.text), 24, `#${i}`))}
+        {bottom.map((n, i) => { y = 78 + i * 8; return text(String(n.text).toUpperCase(), 6, `b${i}`); })}
+      </svg>
+      {label && <span className="absolute bottom-1.5 right-2 text-[10px] font-bold text-gray-400 bg-white/80 px-1.5 rounded">Back</span>}
+    </div>
+  );
+};
+
+// view: 'both' (front + back when there's something on the back), 'front', or 'back'
+const LivePreview = ({ productImg, mainImg, mainPlacement, garment, color = '', accents = [], names = [], numbers = [], rosterImg = null, compact = false, view = 'both' }) => {
   const spot = garment === 'bottom' ? { left: '34%', top: '44%', width: '16%' }
     : mainPlacement === 'small' ? { left: '61%', top: garment === 'hoodie' ? '31%' : '27%', width: '13%' }
     : { left: '50%', top: garment === 'hoodie' ? '36%' : '31%', width: '30%' };
-  const back = [...names.filter(n => String(n.text || '').trim()).map(n => ({ t: String(n.text).toUpperCase(), big: false, pos: n.position })),
-                ...numbers.filter(n => String(n.text || '').trim()).map(n => ({ t: String(n.text), big: true, pos: n.position }))];
+  const onBack = (t) => /back/i.test(t || '');
+  const hasBack = garment !== 'bottom' && (names.some(n => String(n.text || '').trim() && onBack(n.position)) || numbers.some(n => String(n.text || '').trim() && onBack(n.position)) || !!rosterImg);
+  const showFront = view !== 'back';
+  const showBack = view === 'back' || (view === 'both' && hasBack);
+  // Everything that isn't drawn on a picture (sleeves, legs) is listed underneath
+  const elsewhere = [...names.filter(n => String(n.text || '').trim() && !onBack(n.position)).map(n => ({ t: String(n.text).toUpperCase(), big: false, pos: n.position })),
+                     ...numbers.filter(n => String(n.text || '').trim() && !onBack(n.position)).map(n => ({ t: String(n.text), big: true, pos: n.position }))];
+  const front = (
+    <div className="relative bg-white rounded-xl overflow-hidden w-full" style={{ aspectRatio: '1 / 1' }}>
+      <img src={productImg} alt="" className="absolute inset-0 w-full h-full object-contain" draggable={false} />
+      {mainImg && <img src={mainImg} alt="" draggable={false} className="absolute object-contain drop-shadow-sm"
+        style={{ ...spot, transform: spot.left === '50%' ? 'translateX(-50%)' : undefined, maxHeight: '34%' }} />}
+      <span className="absolute bottom-1.5 right-2 text-[10px] font-bold text-gray-400 bg-white/80 px-1.5 rounded">{showBack ? 'Front' : 'Preview'}</span>
+    </div>
+  );
+  const max = showFront && showBack ? (compact ? 400 : 560) : (compact ? 220 : 340);
   return (
     <div className={compact ? '' : 'bg-gray-50 p-3 rounded-2xl border border-gray-100'}>
-      <div className="relative mx-auto bg-white rounded-xl overflow-hidden" style={{ width: '100%', maxWidth: compact ? 220 : 340, aspectRatio: '1 / 1' }}>
-        <img src={productImg} alt="" className="absolute inset-0 w-full h-full object-contain" draggable={false} />
-        {mainImg && <img src={mainImg} alt="" draggable={false} className="absolute object-contain drop-shadow-sm"
-          style={{ ...spot, transform: spot.left === '50%' ? 'translateX(-50%)' : undefined, maxHeight: '34%' }} />}
-        <span className="absolute bottom-1.5 right-2 text-[10px] font-bold text-gray-400 bg-white/80 px-1.5 rounded">Preview</span>
+      <div className="mx-auto grid gap-2" style={{ maxWidth: max, gridTemplateColumns: showFront && showBack ? '1fr 1fr' : '1fr' }}>
+        {showFront && front}
+        {showBack && <BackView productImg={productImg} garment={garment} color={color} names={names} numbers={numbers} rosterImg={rosterImg} />}
       </div>
-      {(accents.length > 0 || back.length > 0) && (
+      {(accents.length > 0 || elsewhere.length > 0) && view !== 'back' && (
         <div className="flex flex-wrap justify-center gap-2 mt-2">
           {accents.map((a, i) => (
             <div key={i} className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-700">
               {a.img ? <img src={a.img} alt="" className="h-6 w-6 object-contain" /> : null}{a.label}{a.position ? <span className="text-gray-400 font-semibold">· {a.position}</span> : null}
             </div>
           ))}
-          {back.map((b, i) => (
-            <div key={`b${i}`} className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-center leading-none">
+          {elsewhere.map((b, i) => (
+            <div key={`e${i}`} className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-center leading-none">
               <div className={`font-black text-gray-900 ${b.big ? 'text-2xl' : 'text-base tracking-wider'}`} style={{ fontFamily: 'var(--font-lev-heading), Impact, sans-serif' }}>{b.t}</div>
               <div className="text-[10px] text-gray-400 font-semibold mt-0.5">{b.pos}</div>
             </div>
