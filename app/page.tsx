@@ -47,7 +47,9 @@ const parseProductId = (id) => {
   return { baseName: id, size: null, color: null };
 };
 
-const mergedName = (name) => name.replace(/\s*\b(Youth|Ladies)\b\s*/gi, ' ').trim();
+// Youth / ladies / adult cuts of the same style share one product card: "Colortone Youth Multi-Color Tie-Dyed T-Shirt"
+// and "Colortone Unisex Multi-Color Tie-Dyed T-Shirt" both → "Colortone Multi-Color Tie-Dyed T-Shirt"
+const mergedName = (name) => name.replace(/\s*\b(Youth|Ladies|Unisex|Adult)\b\s*/gi, ' ').replace(/\s+/g, ' ').trim();
 const colorHex = (c: string): string => {
   const map: Record<string, string> = {
     "black": "#111", "white": "#fff", "navy": "#1a2a5e", "red": "#c0392b",
