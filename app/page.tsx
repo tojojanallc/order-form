@@ -2513,7 +2513,7 @@ const BackView = ({ productImg, garment, color, names = [], numbers = [], roster
   const text = (t, size, key) => {
     const base = y + size * 0.74;
     const el = <text key={key} x="50" y={base} textAnchor="middle" fontSize={size} fontWeight="900" letterSpacing={size > 14 ? 0 : 0.8}
-      style={{ fontFamily: 'var(--font-lev-heading), Impact, sans-serif', paintOrder: 'stroke' }} fill="#ffffff" stroke="#111827" strokeWidth={size > 14 ? 1.4 : 0.9}>{t}</text>;
+      style={{ fontFamily: 'var(--font-lev-heading), Impact, sans-serif' }} fill="#ffffff">{t}</text>;
     y = base + 3;
     return el;
   };
