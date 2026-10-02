@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use client'; 
 
-import React, { useState, useEffect } from 'react'; 
+import React, { useState, useEffect, useRef } from 'react'; 
 import { createClient } from '@supabase/supabase-js';
 import { useParams } from 'next/navigation';
 
@@ -550,6 +550,26 @@ export default function OrderForm() {
       return options;
   };
 
+  // Customers don't know "Left Sleeve" from "Back Center", so every accent / name / number starts on the usual
+  // spot that's still free on this garment — they can still change it.
+  const POSITION_PREFS = {
+    logo: ['Left Sleeve', 'Right Sleeve', 'Back Center', 'Left Thigh (Upper)', 'Right Thigh (Upper)', 'Rear (Center)', 'Back Pocket'],
+    name: ['Back Center', 'Back Bottom', 'Left Sleeve', 'Right Sleeve', 'Left Thigh (Upper)', 'Right Thigh (Upper)', 'Rear (Center)'],
+    number: ['Back Center', 'Left Sleeve', 'Right Sleeve', 'Back Bottom', 'Left Thigh (Upper)', 'Right Thigh (Upper)', 'Rear (Center)'],
+  };
+  const defaultPosition = (itemType, c = { logos, names, numbers }) => {
+    const options = getPositionOptions(itemType, itemType === 'logo').map(o => o.label);
+    if (!options.length) return '';
+    // A name and a number can share the back (name over number); nothing else doubles up
+    const taken = new Set([
+      ...(c.logos || []).map(l => l.position),
+      ...(itemType !== 'number' ? (c.names || []).map(n => n.position) : []),
+      ...(itemType !== 'name' ? (c.numbers || []).map(n => n.position) : []),
+    ].filter(Boolean));
+    const ranked = [...(POSITION_PREFS[itemType] || []).filter(l => options.includes(l)), ...options];
+    return ranked.find(l => !taken.has(l)) || ranked[0];
+  };
+
   const calculateItemTotal = () => {
     if (!selectedProductRecord) return 0;
     let basePrice = selectedProductRecord.base_price;
@@ -714,7 +734,7 @@ export default function OrderForm() {
     // Scroll to top of form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: '' }]); };
+  const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: defaultPosition('logo') }]); };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
   const updateNumber = (i, f, v) => { const n = [...numbers]; n[i][f] = v; setNumbers(n); }; 
@@ -938,6 +958,57 @@ export default function OrderForm() {
       window.scrollTo(0, 0);
   };
 
+  // ── Walk-away reset ──────────────────────────────────────────────────────────
+  // If a customer leaves mid-order, ask "Still there?" after IDLE_SECONDS without a tap, then start fresh so the
+  // next person never sees their cart or details. Never while a payment is in progress or on the setup screen.
+  const IDLE_SECONDS = 90, WARN_SECONDS = 20, DONE_SECONDS = 15;
+  const [idleLeft, setIdleLeft] = useState<number | null>(null);
+  const [doneLeft, setDoneLeft] = useState(DONE_SECONDS);
+  const lastTouch = useRef(Date.now());
+  const idleRef = useRef<any>({});
+
+  const startOver = () => {
+      resetApp();
+      setSelectedGuest(null); setGuestSearch(''); setGuestError('');
+      setBackNameList(false); setMetallicHighlight(false); setBackListConfirmed(false); setMetallicName(''); setMetallicTeam('');
+      setUpsellMode(null); setAddOnQty({}); setShowAddOnModal(false);
+      setShowLookup(false); setLookupQuery(''); setLookupResults([]);
+      setShowAddon(false); setAddonNames([{ text: '', position: 'Back Center' }]); setAddonNumbers([]); setAddonCustomerName(''); setAddonCustomerPhone('');
+      setShowDiscountModal(false); setDiscountPin(''); setDiscountPinError(false);
+      setIdleLeft(null);
+  };
+  idleRef.current = {
+      startOver,
+      busy: isSubmitting || isTerminalProcessing || addonSubmitting || showSetup || orderComplete,
+      inProgress: cart.length > 0 || !!size || logos.length > 0 || names.length > 0 || numbers.length > 0 || backNameList
+          || !!(customerName || customerEmail || customerPhone || shippingAddress) || !!selectedGuest || !!guestSearch
+          || showLookup || showAddon || showDiscountModal || showAddOnModal || discountAmount > 0,
+  };
+
+  useEffect(() => {
+      const touched = () => { lastTouch.current = Date.now(); };
+      const evs = ['pointerdown', 'touchstart', 'keydown', 'input', 'scroll'];
+      evs.forEach(e => window.addEventListener(e, touched, { capture: true, passive: true }));
+      const t = setInterval(() => {
+          const { busy, inProgress, startOver } = idleRef.current;
+          if (busy || !inProgress) { lastTouch.current = Date.now(); setIdleLeft(null); return; }
+          const idle = (Date.now() - lastTouch.current) / 1000;
+          if (idle < IDLE_SECONDS) { setIdleLeft(null); return; }
+          const left = Math.ceil(IDLE_SECONDS + WARN_SECONDS - idle);
+          if (left <= 0) { lastTouch.current = Date.now(); startOver(); window.scrollTo(0, 0); } else setIdleLeft(left);
+      }, 1000);
+      return () => { clearInterval(t); evs.forEach(e => window.removeEventListener(e, touched, { capture: true } as any)); };
+  }, []);
+
+  // The "You're all set!" screen goes back to the start on its own
+  useEffect(() => {
+      if (!orderComplete) return;
+      setDoneLeft(DONE_SECONDS);
+      const t = setInterval(() => setDoneLeft(s => s - 1), 1000);
+      return () => clearInterval(t);
+  }, [orderComplete]);
+  useEffect(() => { if (orderComplete && doneLeft <= 0) idleRef.current.startOver(); }, [doneLeft, orderComplete]);
+
   if (showSetup) {
       const [setupSiteName, setSetupSiteName] = (window as any)._setupState || [assignedSiteName, (v) => { (window as any)._setupState = [v, (window as any)._setupState?.[1]]; }];
 
@@ -1069,6 +1140,7 @@ export default function OrderForm() {
                   <p className="text-2xl font-mono text-white font-black mb-2 bg-white/10 py-2 px-4 rounded-xl inline-block">#{lastOrderId || '---'}</p>
                   {paymentMode === 'hosted' ? <p className="text-white/70 mt-4 mb-8 text-lg">Your custom gear is being prepared. See you out there! 🙌</p> : <p className="text-white/70 mt-4 mb-8 text-lg">Your custom gear is being prepared. We'll text you when it's ready! 🙌</p>}
                   <button onClick={resetApp} className="text-gray-900 font-black py-4 px-8 rounded-2xl shadow-xl hover:opacity-90 w-full text-xl tracking-wide bg-white">Next Guest ➡️</button>
+                  <p className="text-white/50 text-xs mt-3">Starting over for the next guest in {Math.max(0, doneLeft)}s</p>
               </div>
           </div>
       );
@@ -1124,6 +1196,17 @@ export default function OrderForm() {
           -webkit-backdrop-filter: blur(20px);
         }
       `}</style>
+      {idleLeft !== null && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6" style={{ background: 'rgba(15,23,42,0.75)' }}>
+          <div className="bg-white rounded-3xl shadow-2xl p-10 max-w-md w-full text-center">
+            <div className="text-6xl mb-3">👋</div>
+            <h2 className="text-3xl font-black text-gray-900 mb-2">Still there?</h2>
+            <p className="text-gray-500 text-lg mb-6">This order will clear in <b className="text-gray-900">{idleLeft}</b> second{idleLeft === 1 ? '' : 's'} so the next guest can start fresh.</p>
+            <button onClick={() => setIdleLeft(null)} className="w-full text-white font-black py-4 rounded-2xl text-xl shadow-lg" style={{ backgroundColor: headerColor }}>I'm still here</button>
+            <button onClick={() => { idleRef.current.startOver(); window.scrollTo(0, 0); }} className="w-full text-gray-500 font-bold py-3 mt-2 text-base">Start over</button>
+          </div>
+        </div>
+      )}
       <div className="min-h-screen font-sans text-gray-900" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)`, animation: 'gradientShift 8s ease infinite', backgroundSize: '200% 200%' }}>
       <div className="w-[85%] mx-auto py-6 grid md:grid-cols-3 gap-8">
         <div className={`space-y-6 ${(paymentMode === 'retail' || selectedGuest) ? 'md:col-span-2' : 'md:col-span-3'}`}>
@@ -1417,10 +1500,10 @@ export default function OrderForm() {
                             ))}
                             <div className="flex gap-2 mt-3">
                                 {showPersonalization && (
-                                    <button onClick={() => setNames([...names, { text: '', position: '' }])} className="flex-1 py-3 border-2 border-dashed border-gray-200 text-gray-400 rounded-xl hover:border-blue-500 hover:text-blue-600 font-bold bg-white transition-all">+ Add Name</button>
+                                    <button onClick={() => setNames([...names, { text: '', position: defaultPosition('name') }])} className="flex-1 py-3 border-2 border-dashed border-gray-200 text-gray-400 rounded-xl hover:border-blue-500 hover:text-blue-600 font-bold bg-white transition-all">+ Add Name</button>
                                 )}
                                 {showNumbers && (
-                                    <button onClick={() => setNumbers([...numbers, { text: '', position: '' }])} className="flex-1 py-3 border-2 border-dashed border-gray-200 text-gray-400 rounded-xl hover:border-blue-500 hover:text-blue-600 font-bold bg-white transition-all">+ Add Number</button>
+                                    <button onClick={() => setNumbers([...numbers, { text: '', position: defaultPosition('number') }])} className="flex-1 py-3 border-2 border-dashed border-gray-200 text-gray-400 rounded-xl hover:border-blue-500 hover:text-blue-600 font-bold bg-white transition-all">+ Add Number</button>
                                 )}
                             </div>
                         </section>
@@ -1570,7 +1653,8 @@ export default function OrderForm() {
                         </>
                       ) : (() => {
                         let upsellText = '';
-                        let upsellPosition = getPositionOptions(upsellMode)[0]?.label || 'Back Center';
+                        const upsellDefault = defaultPosition(upsellMode, cart[0]?.customizations || {}) || 'Back Center';
+                        let upsellPosition = upsellDefault;
                         return (
                           <>
                             <p className="font-black text-amber-800 text-sm mb-3">{upsellMode === 'name' ? 'Add a Name (+$5)' : 'Add a Number (+$5)'}</p>
@@ -1584,7 +1668,7 @@ export default function OrderForm() {
                             />
                             <select className="w-full border-2 border-amber-200 rounded-xl p-3 font-bold bg-white mb-3 focus:outline-none"
                               onChange={e => { upsellPosition = e.target.value; }}
-                              defaultValue={getPositionOptions(upsellMode)[0]?.label || 'Back Center'}>
+                              defaultValue={upsellDefault}>
                               {getPositionOptions(upsellMode).map(pos => (
                                 <option key={pos.id} value={pos.label}>{pos.label}</option>
                               ))}
