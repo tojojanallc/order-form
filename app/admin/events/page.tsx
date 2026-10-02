@@ -535,14 +535,8 @@ setSalesLedger(ledgerData || []);
   const saveSettings = async () => { 
       const { error } = await supabase.from('event_settings').update({ 
           printer_type: printerType, 
-          offer_back_names: offerBackNames, 
-          offer_metallic: offerMetallic, 
-          offer_personalization: offerPersonalization,          
-          offer_numbers: offerNumbers,
           printnode_enabled: pnEnabled, 
           ...(pnPrinterId ? { printnode_printer_id: pnPrinterId } : {}),
-          ignore_inventory: ignoreInventory,
-          require_address: requireAddress,
       }).eq('slug', selectedEventSlug); 
       if (error) {
           alert("❌ Save failed: " + error.message);
@@ -1662,54 +1656,9 @@ setSalesLedger(ledgerData || []);
         )}
 
         {activeTab === 'settings' && (
-            <div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200 text-sm text-blue-900">Event name, welcome message, logo, roster image, header color, payment mode and sales tax are set in the portal: <a className="font-bold underline" href={`https://portal.levcustom.com/admin/events/${selectedEventSlug}`} target="_blank" rel="noreferrer">open this event in the portal ↗</a></div>
+            <div className="max-w-xl mx-auto"><div className="bg-white p-8 rounded-lg shadow border border-gray-200"><h2 className="font-bold text-2xl mb-6">Event Settings</h2><div className="mb-6 bg-blue-50 p-4 rounded border border-blue-200 text-sm text-blue-900">Event name, look, payment mode, sales tax, personalization options and stock/shipping are set in the portal: <a className="font-bold underline" href={`https://portal.levcustom.com/admin/events/${selectedEventSlug}`} target="_blank" rel="noreferrer">open this event in the portal ↗</a></div>
 
-{/* Inventory Configuration */}
-<div className="mb-6 bg-emerald-50 p-4 rounded border border-emerald-200 text-slate-900">
-  <label className="block text-emerald-900 font-bold mb-3 border-b border-emerald-200 pb-2 uppercase text-xs tracking-widest">
-    Inventory
-  </label>
-
-  <div className="flex items-center justify-between">
-    <div>
-      <div className="text-gray-800 font-bold">Ignore Inventory?</div>
-      <div className="text-[10px] text-emerald-800 mt-1 italic font-medium">
-        If enabled, kiosk will NOT show stock status, will NOT enforce stock limits, and will NOT decrement inventory.
-      </div>
-    </div>
-
-    <input
-      type="checkbox"
-      checked={ignoreInventory}
-      onChange={(e) => setIgnoreInventory(e.target.checked)}
-      className="w-6 h-6 cursor-pointer accent-emerald-600"
-    />
-  </div>
-
-  <div className="flex items-center justify-between mt-4 pt-4 border-t border-emerald-200">
-    <div>
-      <div className="text-gray-800 font-bold">Require Address?</div>
-      <div className="text-[10px] text-emerald-800 mt-1 italic font-medium">
-        If enabled, customers must enter a full shipping address before checkout and orders come in as Pending Shipping (e.g. when out of transfers).
-      </div>
-    </div>
-    <input
-      type="checkbox"
-      checked={requireAddress}
-      onChange={(e) => setRequireAddress(e.target.checked)}
-      className="w-6 h-6 cursor-pointer accent-emerald-600"
-    />
-  </div>
-</div>
-
-                <div className="mb-6 bg-purple-50 p-4 rounded border border-purple-200"><label className="block text-purple-900 font-bold mb-3 border-b border-purple-200 pb-2">Cloud Printing (PrintNode)</label><div className="flex items-center justify-between mb-3"><span className="text-gray-800">Enable Cloud Print?</span><input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)} className="w-5 h-5" /></div>{pnEnabled && (<div className="space-y-3"><p className="text-xs text-purple-700 bg-purple-100 p-2 rounded">🔑 API key is stored securely in Vercel — no need to enter it here.</p><div className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" placeholder="Printer ID" value={pnPrinterId} onChange={e => { setPnPrinterId(e.target.value); setPrinterStatus(null); }} /><button onClick={discoverPrinters} className="bg-purple-600 text-white px-3 text-xs rounded font-bold">Find</button><button onClick={checkPrinterStatus} disabled={checkingPrinter} className="bg-green-600 text-white px-3 text-xs rounded font-bold disabled:opacity-50">{checkingPrinter ? '...' : 'Test'}</button></div>{availablePrinters.length > 0 && (<div className="bg-white border p-2 rounded max-h-32 overflow-y-auto">{availablePrinters.map(p => (<div key={p.id} className="text-xs p-1 hover:bg-gray-100 cursor-pointer flex justify-between" onClick={() => { setPnPrinterId(String(p.id)); setPrinterStatus(null); }}><span>{p.name}</span><span className="font-mono text-gray-500">{p.id}</span></div>))}</div>)}{printerStatus && (<div className={"p-2 rounded text-xs font-medium " + (printerStatus.online ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800")}>{printerStatus.message}{printerStatus.computerName && <span className="block mt-1 text-gray-600">Computer: {printerStatus.computerName}</span>}</div>)}</div>)}</div><div className="mb-6 bg-gray-100 p-4 rounded border border-gray-200"><label className="block text-gray-800 font-bold mb-3 border-b border-gray-300 pb-2">Printer Output (Local)</label><div className="space-y-2"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="label" checked={printerType === 'label'} onChange={() => setPrinterType('label')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Thermal Label (4x6)</span><span className="text-xs text-gray-500">Standard for fast packing.</span></div></label><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="standard" checked={printerType === 'standard'} onChange={() => setPrinterType('standard')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Standard Sheet (8.5x11)</span><span className="text-xs text-gray-500">Large font packing slip for laser printers.</span></div></label></div></div><div className="mb-6 bg-gray-50 p-4 rounded border">
-    <label className="block text-gray-700 font-bold mb-3 border-b pb-2">Customization Options</label>
-    <div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Team Roster List?</span><input type="checkbox" checked={offerBackNames} onChange={(e) => setOfferBackNames(e.target.checked)} className="w-6 h-6" /></div>
-    <div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Metallic Upgrade?</span><input type="checkbox" checked={offerMetallic} onChange={(e) => setOfferMetallic(e.target.checked)} className="w-6 h-6" /></div>
-    <div className="flex items-center justify-between mb-3"><span className="font-bold text-gray-800">Offer Custom Names?</span><input type="checkbox" checked={offerPersonalization} onChange={(e) => setOfferPersonalization(e.target.checked)} className="w-6 h-6" /></div>
-    <hr className="border-gray-200 my-4" />
-    <div className="flex items-center justify-between"><span className="font-bold text-gray-800">Offer Custom Numbers?</span><input type="checkbox" checked={offerNumbers} onChange={(e) => setOfferNumbers(e.target.checked)} className="w-6 h-6" /></div>
-</div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>
+<div className="mb-6 bg-purple-50 p-4 rounded border border-purple-200"><label className="block text-purple-900 font-bold mb-3 border-b border-purple-200 pb-2">Cloud Printing (PrintNode)</label><div className="flex items-center justify-between mb-3"><span className="text-gray-800">Enable Cloud Print?</span><input type="checkbox" checked={pnEnabled} onChange={e => setPnEnabled(e.target.checked)} className="w-5 h-5" /></div>{pnEnabled && (<div className="space-y-3"><p className="text-xs text-purple-700 bg-purple-100 p-2 rounded">🔑 API key is stored securely in Vercel — no need to enter it here.</p><div className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" placeholder="Printer ID" value={pnPrinterId} onChange={e => { setPnPrinterId(e.target.value); setPrinterStatus(null); }} /><button onClick={discoverPrinters} className="bg-purple-600 text-white px-3 text-xs rounded font-bold">Find</button><button onClick={checkPrinterStatus} disabled={checkingPrinter} className="bg-green-600 text-white px-3 text-xs rounded font-bold disabled:opacity-50">{checkingPrinter ? '...' : 'Test'}</button></div>{availablePrinters.length > 0 && (<div className="bg-white border p-2 rounded max-h-32 overflow-y-auto">{availablePrinters.map(p => (<div key={p.id} className="text-xs p-1 hover:bg-gray-100 cursor-pointer flex justify-between" onClick={() => { setPnPrinterId(String(p.id)); setPrinterStatus(null); }}><span>{p.name}</span><span className="font-mono text-gray-500">{p.id}</span></div>))}</div>)}{printerStatus && (<div className={"p-2 rounded text-xs font-medium " + (printerStatus.online ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800")}>{printerStatus.message}{printerStatus.computerName && <span className="block mt-1 text-gray-600">Computer: {printerStatus.computerName}</span>}</div>)}</div>)}</div><div className="mb-6 bg-gray-100 p-4 rounded border border-gray-200"><label className="block text-gray-800 font-bold mb-3 border-b border-gray-300 pb-2">Printer Output (Local)</label><div className="space-y-2"><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="label" checked={printerType === 'label'} onChange={() => setPrinterType('label')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Thermal Label (4x6)</span><span className="text-xs text-gray-500">Standard for fast packing.</span></div></label><label className="flex items-center gap-3 cursor-pointer"><input type="radio" name="printer_type" value="standard" checked={printerType === 'standard'} onChange={() => setPrinterType('standard')} className="w-5 h-5 text-gray-900" /><div><span className="font-bold block text-gray-800">Standard Sheet (8.5x11)</span><span className="text-xs text-gray-500">Large font packing slip for laser printers.</span></div></label></div></div><button onClick={saveSettings} className="w-full bg-blue-900 text-white font-bold py-3 rounded text-lg hover:bg-blue-800 shadow mb-8">Save Changes</button><div className="border-t pt-6 mt-6"><h3 className="font-bold text-red-700 mb-2 uppercase text-sm">Danger Zone</h3><button onClick={closeEvent} className="w-full bg-red-100 text-red-800 font-bold py-3 rounded border border-red-300 hover:bg-red-200">🏁 Close Event (Archive All)</button></div></div></div>
         )}
 
         {showPinModal && (
