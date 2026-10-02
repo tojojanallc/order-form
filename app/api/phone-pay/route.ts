@@ -10,14 +10,14 @@ import { confirmSession } from '@/app/lib/stripePay';
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
+// Stripe rejects an empty description, so it's only sent when there's text
+const product = (name: string, description?: string) => ({ name: name || 'Item', ...(description && description.trim() ? { description: description.trim().slice(0, 400) } : {}) });
+
 function lineItems(cart: any[]) {
   return cart.map((item: any) => ({
     price_data: {
       currency: 'usd',
-      product_data: {
-        name: item.productName,
-        description: [`Size: ${item.size}`, ...(item.customizations?.names || []).map((n: any) => `Name: ${n.text}`), ...(item.customizations?.numbers || []).map((n: any) => `#${n.text}`)].join(', ').slice(0, 400),
-      },
+      product_data: product(item.productName, [item.size ? `Size: ${item.size}` : '', ...(item.customizations?.names || []).map((n: any) => n.text ? `Name: ${n.text}` : ''), ...(item.customizations?.numbers || []).map((n: any) => n.text ? `#${n.text}` : '')].filter(Boolean).join(', ')),
       unit_amount: Math.round(Number(item.finalPrice) * 100),
     },
     quantity: 1,
@@ -56,9 +56,10 @@ export async function POST(req: Request) {
     }]).select('id').single();
     if (error) throw error;
 
+    try {
     const items = lineItems(cart);
     const tax = Math.round((Number(taxCollected) || 0) * 100);
-    if (tax > 0) items.push({ price_data: { currency: 'usd', product_data: { name: 'Sales tax', description: '' }, unit_amount: tax }, quantity: 1 } as any);
+    if (tax > 0) items.push({ price_data: { currency: 'usd', product_data: product('Sales tax'), unit_amount: tax }, quantity: 1 } as any);
     // Discounts: charge the order total, not the sum of the lines
     const lineSum = items.reduce((s: number, l: any) => s + l.price_data.unit_amount, 0);
     const want = Math.round((Number(total) || 0) * 100);
@@ -79,6 +80,12 @@ export async function POST(req: Request) {
       expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
     });
     return NextResponse.json({ orderId: order.id, sessionId: session.id, url: session.url });
+    } catch (e) {
+      // Stripe refused: don't leave the unpaid order (and the stock it took) behind
+      await db.from('orders').update({ status: 'canceled', payment_status: 'unpaid' }).eq('id', order.id);
+      await restockCart(db, eventSlug || 'default', cart);
+      throw e;
+    }
   } catch (e: any) {
     console.error('Phone pay error:', e);
     return NextResponse.json({ error: e.message }, { status: 500 });
