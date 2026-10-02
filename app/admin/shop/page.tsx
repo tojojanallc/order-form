@@ -115,7 +115,7 @@ export default function NewShopOrderPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-6xl mx-auto">
-        <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block">← COMMAND CENTER</Link>
+        <Link href="/admin/events" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block">← EVENT ADMIN</Link>
         
         <div className="flex justify-between items-end mb-8">
             <h1 className="text-4xl font-black tracking-tight">New Shop Order</h1>

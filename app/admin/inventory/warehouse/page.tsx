@@ -53,8 +53,8 @@ function WarehouseContent() {
         {/* TOP BAR: AUTH & BRANDING (Matches Command Center) */}
         <div className="flex justify-between items-center mb-12">
             <div>
-                <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-[0.2em] hover:underline">
-                    ← Command Center
+                <Link href="/admin/events" className="text-[10px] font-black uppercase text-blue-600 tracking-[0.2em] hover:underline">
+                    ← Event admin
                 </Link>
                 <h1 className="text-5xl font-black tracking-tight text-slate-900 mt-2">Master Warehouse</h1>
             </div>

@@ -11,11 +11,11 @@ export default function AdminLoginPage() {
   const [ms, setMs] = useState<boolean | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
-  const [next, setNext] = useState('/admin');
+  const [next, setNext] = useState('/admin/events');
 
   useEffect(() => {
     const n = new URLSearchParams(window.location.search).get('next') || '';
-    const dest = n.startsWith('/admin') && !n.startsWith('/admin/login') ? n : '/admin';
+    const dest = n.startsWith('/admin') && !n.startsWith('/admin/login') ? n : '/admin/events';
     setNext(dest);
     // Already signed in → straight in
     supabase.auth.getSession().then(({ data }) => { if (data.session) router.replace(dest); });

@@ -185,7 +185,7 @@ export default function DailyRecPage() {
       <div className="max-w-4xl mx-auto">
 
         <div className="no-print mb-8">
-          <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Command Center</Link>
+          <Link href="/admin/events" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Event admin</Link>
           <h1 className="text-4xl font-black mt-2 mb-6">📊 Daily Sales Rec</h1>
 
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">

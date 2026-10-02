@@ -51,7 +51,7 @@ export default function ShippingDashboard() {
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
-            <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Command Center</Link>
+            <Link href="/admin/events" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Event admin</Link>
             <h1 className="text-4xl font-black tracking-tight mt-1">🚚 Ship to Home</h1>
           </div>
           <div className="flex gap-2">

@@ -103,7 +103,7 @@ export default function ReceivePO() {
       <div className="max-w-[1600px] mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-[0.2em] hover:underline">← Back to Command Center</Link>
+            <Link href="/admin/events" className="text-[10px] font-black uppercase text-blue-600 tracking-[0.2em] hover:underline">← Event admin</Link>
             <h1 className="text-4xl font-black tracking-tight text-slate-900 mt-1">Receive Stock</h1>
           </div>
           <div className="flex items-center gap-4 bg-white p-2 px-5 rounded-3xl shadow-sm border border-gray-100">

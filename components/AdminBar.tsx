@@ -3,7 +3,6 @@ import { usePathname } from 'next/navigation'
 
 const PORTAL = 'https://portal.levcustom.com'
 const LINKS = [
-  { label: 'Command Center', href: '/admin', exact: true },
   { label: 'Event admin', href: '/admin/events' },
   { label: 'Shipping', href: '/admin/shipping' },
   { label: 'Analytics', href: '/admin/analytics' },
@@ -13,11 +12,11 @@ const LINKS = [
 export default function AdminBar() {
   const path = usePathname() || ''
   if (path === '/admin/login' || path.startsWith('/admin/production')) return null
-  const on = (l: typeof LINKS[number]) => l.exact ? path === l.href : path === l.href || path.startsWith(l.href + '/')
+  const on = (l: typeof LINKS[number]) => path === l.href || path.startsWith(l.href + '/')
   return (
     <div className="lev-admin-bar">
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, minWidth: 0 }}>
-        <a href="/admin" className="lev-admin-wordmark">Lev <span>Kiosk</span></a>
+        <a href="/admin/events" className="lev-admin-wordmark">Lev <span>Kiosk</span></a>
         <nav style={{ display: 'flex', gap: 2, overflowX: 'auto' }}>
           {LINKS.map(l => <a key={l.href} href={l.href} className={`lev-admin-tab${on(l) ? ' on' : ''}`}>{l.label}</a>)}
         </nav>

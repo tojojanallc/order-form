@@ -127,7 +127,7 @@ export default function AnalyticsPage() {
         {/* Header */}
         <div className="mb-8 flex justify-between items-start flex-wrap gap-4">
           <div>
-            <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Command Center</Link>
+            <Link href="/admin/events" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Event admin</Link>
             <h1 className="text-4xl font-black tracking-tight mt-1">📊 Product Performance</h1>
             <p className="text-sm text-gray-500 mt-1">What sells, what sizes move, and where the profit comes from.</p>
           </div>

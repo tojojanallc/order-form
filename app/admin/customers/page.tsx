@@ -127,7 +127,7 @@ export default function CustomersPage() {
 
         {/* Header */}
         <div className="mb-8">
-          <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Command Center</Link>
+          <Link href="/admin/events" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Event admin</Link>
           <h1 className="text-4xl font-black tracking-tight mt-1">👥 Customer History</h1>
           <p className="text-sm text-gray-500 mt-1">Cross-event customer profiles and order history.</p>
         </div>

@@ -106,7 +106,7 @@ export default function ReturnToVendor() {
       }
 
       alert("✅ Return Processed & Inventory Adjusted!");
-      router.push('/admin');
+      router.push('/admin/events');
     } catch (error: any) {
       alert("Error: " + error.message);
     } finally {
@@ -122,7 +122,7 @@ export default function ReturnToVendor() {
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans text-slate-900">
       <div className="max-w-6xl mx-auto">
-        <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block">← Dashboard</Link>
+        <Link href="/admin/events" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block">← Event admin</Link>
         
         {/* HEADER SECTION */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-4">

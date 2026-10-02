@@ -10,7 +10,7 @@ export async function microsoftEnabled(): Promise<boolean> {
   } catch { return false; }
 }
 
-export async function signInWithMicrosoft(next = '/admin') {
+export async function signInWithMicrosoft(next = '/admin/events') {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'azure',
     options: { scopes: 'email openid profile', redirectTo: `${window.location.origin}${next}` },

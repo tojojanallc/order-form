@@ -43,7 +43,7 @@ export default function CreateEventPage() {
     }
 
     alert(`🎉 Event "${form.name}" created successfully!`);
-    window.location.href = '/admin';
+    window.location.href = '/admin/events';
   };
 
   return (
@@ -53,10 +53,10 @@ export default function CreateEventPage() {
         <div className="flex justify-between items-end mb-10">
           <div>
             <Link
-              href="/admin"
+              href="/admin/events"
               className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline"
             >
-              ← Command Center
+              ← Event admin
             </Link>
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Create Event</h1>
             <p className="text-gray-500 font-medium">Launch a new kiosk / event.</p>
@@ -155,7 +155,7 @@ export default function CreateEventPage() {
             {/* ACTIONS */}
             <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
               <Link
-                href="/admin"
+                href="/admin/events"
                 className="px-8 py-4 rounded-2xl border border-gray-200 text-slate-700 font-black text-xs uppercase tracking-widest hover:bg-gray-50 text-center"
               >
                 Cancel

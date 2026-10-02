@@ -152,7 +152,7 @@ export default function OrderHelperPage() {
   return (
     <div className="min-h-screen bg-gray-50 font-sans p-6">
       <div className="max-w-5xl mx-auto">
-        <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Command Center</Link>
+        <Link href="/admin/events" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Event admin</Link>
         <h1 className="text-4xl font-black mt-2 mb-2">📦 Order Helper</h1>
         <p className="text-gray-400 mb-8">Recommends blank quantities using your sales history — optionally upload a tournament schedule PDF for age-based sizing.</p>
 

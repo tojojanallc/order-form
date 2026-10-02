@@ -59,7 +59,7 @@ export default function CreateEventPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans">
       <div className="max-w-lg mx-auto">
-        <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Command Center</Link>
+        <Link href="/admin/events" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Event admin</Link>
         <h1 className="text-4xl font-black mt-2 mb-8">Create Event</h1>
 
         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-8 space-y-6">

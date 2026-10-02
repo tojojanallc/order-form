@@ -44,7 +44,7 @@ export default function BuyingGuide() {
     <div className="min-h-screen bg-gray-50">
       <div className="bg-slate-900 px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <Link href="/admin" className="text-[10px] font-black uppercase tracking-widest text-white opacity-40 hover:opacity-80">← Back</Link>
+          <Link href="/admin/events" className="text-[10px] font-black uppercase tracking-widest text-white opacity-40 hover:opacity-80">← Back</Link>
           <div>
             <p className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Lev Custom Merch</p>
             <h1 className="text-xl font-black text-white">Event Buying Guide</h1>

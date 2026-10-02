@@ -36,7 +36,7 @@ export default function EventHistoryPage() {
       <div className="max-w-[1600px] mx-auto">
         <div className="flex justify-between items-end mb-10">
           <div>
-            <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline">← Dashboard</Link>
+            <Link href="/admin/events" className="text-blue-600 font-bold text-xs uppercase tracking-widest mb-1 inline-block hover:underline">← Event admin</Link>
             <h1 className="text-4xl font-black tracking-tight text-slate-900">Event Archive</h1>
             <p className="text-gray-500 font-medium">Performance history & configurations.</p>
           </div>

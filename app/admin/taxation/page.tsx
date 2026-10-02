@@ -119,7 +119,7 @@ export default function TaxationDashboard() {
         
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
           <div>
-            <Link href="/admin" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Command Center</Link>
+            <Link href="/admin/events" className="text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">← Event admin</Link>
             <h1 className="text-4xl font-black tracking-tight mt-1 uppercase">Tax Liability</h1>
           </div>
           

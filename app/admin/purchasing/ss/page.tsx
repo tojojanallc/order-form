@@ -134,7 +134,7 @@ export default function SSPurchasingPage() {
   return (
     <div className="min-h-screen bg-gray-50 font-sans p-6">
       <div className="max-w-6xl mx-auto">
-        <Link href="/admin" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Command Center</Link>
+        <Link href="/admin/events" className="text-blue-600 font-bold text-xs uppercase tracking-widest hover:underline">← Event admin</Link>
         <h1 className="text-4xl font-black mt-2 mb-8">🛒 S&S Activewear Order</h1>
 
         <div className="grid lg:grid-cols-2 gap-6">
