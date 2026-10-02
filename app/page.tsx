@@ -1122,8 +1122,9 @@ export default function OrderForm() {
   }
 
   if (products.length === 0) return (
-    <div className="min-h-screen font-sans" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)` }}>
-      <div className="w-[85%] mx-auto py-8">
+    <div className="min-h-screen font-sans kiosk-brand" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)` }}>
+      <div className="w-[94%] lg:w-[85%] mx-auto py-8">
+        <LevMark label="" className="mb-6" />
         <div className="glass-card shadow-2xl rounded-2xl overflow-hidden">
           <div className="h-44 shimmer-line" style={{ opacity: 0.6 }} />
           <div className="p-6 space-y-5">
@@ -1144,7 +1145,7 @@ export default function OrderForm() {
 
   if (orderComplete) {
       return (
-          <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center relative overflow-hidden" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 60%)` }}>
+          <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center relative overflow-hidden kiosk-brand" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 60%)` }}>
               <style>{`
                 @keyframes confettiFall {
                   0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
@@ -1183,6 +1184,7 @@ export default function OrderForm() {
                   <button onClick={resetApp} className="text-gray-900 font-black py-4 px-8 rounded-2xl shadow-xl hover:opacity-90 w-full text-xl tracking-wide bg-white">Next Guest ➡️</button>
                   <p className="text-white/50 text-xs mt-3">Starting over for the next guest in {Math.max(0, doneLeft)}s</p>
               </div>
+              <LevMark label="Thanks for ordering with" className="mt-8 relative z-10" />
           </div>
       );
   }
@@ -1248,7 +1250,7 @@ export default function OrderForm() {
           </div>
         </div>
       )}
-      <div className="min-h-screen font-sans text-gray-900" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)`, animation: 'gradientShift 8s ease infinite', backgroundSize: '200% 200%' }}>
+      <div className="min-h-screen font-sans text-gray-900 kiosk-brand" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)`, animation: 'gradientShift 8s ease infinite', backgroundSize: '200% 200%' }}>
       <div className="w-[94%] lg:w-[85%] mx-auto py-6 grid lg:grid-cols-3 gap-6 lg:gap-8">
         <div className={`space-y-6 ${(paymentMode === 'retail' || selectedGuest) ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <div className="glass-card shadow-2xl rounded-2xl overflow-hidden">
@@ -1833,6 +1835,7 @@ export default function OrderForm() {
             </div>
         )}
       </div>
+      <LevMark className="pb-8 pt-2" />
     </div>
 
     {/* Staff mode PIN */}
@@ -2190,6 +2193,23 @@ export default function OrderForm() {
   );
 }
 // ── PlacementVisualizer ──
+// "Powered by Lev Custom Merch" — the event's own logo and color stay the star; this sits quietly underneath.
+// White logo from levcustom.com (same file the portal's quote page uses); falls back to a wordmark if it can't load.
+const LevMark = ({ label = 'Powered by', className = '' }) => {
+  const [imgOk, setImgOk] = useState(true);
+  return (
+    <div className={`flex flex-col items-center gap-1.5 select-none pointer-events-none ${className}`}>
+      {label && <span className="text-[10px] uppercase tracking-[0.3em] text-white/50 font-bold">{label}</span>}
+      {imgOk
+        ? <img src="https://levcustom.com/logo_white.png" alt="Lev Custom Merch" className="h-9 w-auto opacity-90" draggable={false} onError={() => setImgOk(false)} />
+        : <>
+            <span className="lev-heading text-white text-xl font-black tracking-tight">LEV <span className="text-[#29ABE2]">♥</span> CUSTOM MERCH</span>
+            <span className="text-[11px] text-white/60 font-semibold">Personalized apparel, made on-site</span>
+          </>}
+    </div>
+  );
+};
+
 const PlacementVisualizer = ({ garmentType, logoSize }) => {
   const isBottom = garmentType === 'bottom';
   const accentColor = "#1e3a8a";

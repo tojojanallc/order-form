@@ -25,3 +25,6 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Lev brand on the customer kiosk: Outfit headings (event colors and logo stay as set per event) */
+.kiosk-brand h1, .kiosk-brand h2, .kiosk-brand .lev-heading { font-family: var(--font-lev-heading), Outfit, Inter, sans-serif; }
