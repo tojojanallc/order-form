@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { refundOrder } from '@/app/actions/refund-order';
 import { returnEventStockToWarehouse, describeUnmatched } from '@/lib/returnEventStock';
 import Link from 'next/link';
+import { readyText } from '@/app/lib/readyText';
 
 // --- CONFIG ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -600,9 +601,9 @@ setSalesLedger(ledgerData || []);
       if (order && wasCanceled !== isCanceled) { await adjustEventStock(order.cart_data, isCanceled ? 1 : -1); fetchInventory(); }
       if (newStatus === 'ready') {
           try {
-              const { data: orderData } = await supabase.from('orders').select('customer_name, phone').eq('id', orderId).single();
+              const { data: orderData } = await supabase.from('orders').select('customer_name, phone, event_slug').eq('id', orderId).single();
               if (orderData && orderData.phone) {
-                  const message = `Hi ${orderData.customer_name}! Your order is ready for pickup. Please head to the Lev Custom Merch team and start wearing your new gear!`;
+                  const message = await readyText(supabase, orderData.customer_name, orderData.event_slug);
                   await fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: orderData.phone, message: message }) });
               }
           } catch (err) { console.error("Error sending text:", err); }

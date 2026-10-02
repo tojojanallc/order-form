@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { readyText } from '@/app/lib/readyText';
 
 export default function ProductionScreen() {
   const params = useParams();
@@ -45,12 +46,12 @@ export default function ProductionScreen() {
     try {
         const { data: orderData } = await supabase
             .from('orders')
-            .select('customer_name, phone')
+            .select('customer_name, phone, event_slug')
             .eq('id', orderId)
             .single();
 
         if (orderData && orderData.phone && orderData.phone !== 'N/A') {
-            const message = `Hi ${orderData.customer_name}! Your order is ready for pickup. Please head to the Lev Custom Merch team and start wearing your new gear!`;
+            const message = await readyText(supabase, orderData.customer_name, orderData.event_slug);
             
             await fetch('/api/send-sms', { 
                 method: 'POST', 

@@ -75,7 +75,8 @@ if (inventoryEnabled) {
       payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
-      success_url: `${request.headers.get('origin')}/success`,
+      // session_id lets /success confirm this exact order with Stripe
+      success_url: `${request.headers.get('origin')}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${request.headers.get('origin')}/`,
       // CRITICAL: We pass the orderId (if it exists) so the webhook can find it later
       metadata: { 

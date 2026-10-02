@@ -182,6 +182,21 @@ export default function OrderForm() {
       if (data.success) { setStaffMode(true); setShowStaffPin(false); setStaffPin(''); } else { setStaffPinError(true); setStaffPin(''); }
     } catch { setStaffPinError(true); }
   };
+  // Optional per-event features, switched on in the portal (event_settings.kiosk_extras) — all off by default
+  const [extras, setExtras] = useState<any>({});
+  const [showSpell, setShowSpell] = useState(false);       // "Is this spelled right?"
+  const spellOk = useRef(false);
+  const [attract, setAttract] = useState(false);           // welcome slideshow when idle
+  const [attractIdx, setAttractIdx] = useState(0);
+  const lastAny = useRef(Date.now());
+  const [copyingFrom, setCopyingFrom] = useState('');      // "Add one for a sibling"
+  const pendingColor = useRef('');
+  const [bundleFor, setBundleFor] = useState<string | null>(null);   // suggested item that gets the bundle savings
+  const [suggestOff, setSuggestOff] = useState(false);
+  const [phonePay, setPhonePay] = useState<any>(null);     // { orderId, sessionId, qr, left }
+  const [waitMins, setWaitMins] = useState(0);
+  const [offlineSaved, setOfflineSaved] = useState(false);
+  const [queued, setQueued] = useState(0);
   // What's missing, shown on the screen next to the thing to fix (instead of an iPad pop-up)
   const [needs, setNeeds] = useState<{ key: string; msg: string } | null>(null);
   const flag = (key: string, msg: string) => {
@@ -308,6 +323,7 @@ export default function OrderForm() {
         setOpenGuestEntry(!!settings.open_guest_entry);
         setWelcomeMessage(settings.welcome_message || '');
         setRosterImageUrl(settings.roster_image_url || '');
+        setExtras(settings.kiosk_extras || {});
       }
 
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
@@ -486,7 +502,8 @@ export default function OrderForm() {
       ).map(p => parseProductId(p.id).color).filter(Boolean)
     )];
     // Auto-select if only one color, otherwise clear
-    setSelectedColor(activeColors.length === 1 ? activeColors[0] : '');
+    const keep = pendingColor.current; pendingColor.current = '';
+    setSelectedColor(keep && activeColors.includes(keep) ? keep : activeColors.length === 1 ? activeColors[0] : '');
     setSize('');
   }, [selectedProduct?.name]);
 
@@ -631,9 +648,20 @@ export default function OrderForm() {
   };
   const calculateGrandTotal = () => Math.max(0, calculateSubtotal() - discountAmount) + calculateTax();
 
+  // "Ready in about N minutes": orders waiting at this event × the minutes per order set in the portal
+  const estimateWait = async () => {
+      if (!extras.waitOn || !supabase || !actualEventSlug) return 0;
+      try {
+          const { count } = await supabase.from('orders').select('id', { count: 'exact', head: true })
+              .eq('event_slug', actualEventSlug).in('status', ['pending', 'in_progress', 'partially_fulfilled']);
+          const per = Math.max(1, Number(extras.waitMinutes) || 3);
+          return Math.max(5, Math.ceil(((count || 0) * per) / 5) * 5);
+      } catch { return 0; }
+  };
   const sendConfirmationSMS = async (name, phone, orderId = '') => {
       if (!phone || phone.length < 10) return;
-      const orderRef = orderId ? ` Your order number is #${orderId}.` : '';
+      const mins = await estimateWait();
+      const orderRef = (orderId ? ` Your order number is #${orderId}.` : '') + (mins ? ` It should be ready in about ${mins} minutes.` : '');
       fetch('/api/send-sms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -678,6 +706,13 @@ export default function OrderForm() {
     const missingNumberPos = numbers.some(n => !n.position);
     if (missingLogoPos) { flag('logo-pos', 'Pick where each accent goes'); return; }
     if (missingNamePos || missingNumberPos) { flag('pers-pos', 'Pick where each name and number goes'); return; }
+    if (names.some(n => !String(n.text || '').trim()) || numbers.some(n => !String(n.text || '').trim())) { flag('pers-pos', 'Type the name or number (or remove it)'); return; }
+    if (metallicHighlight && !String(metallicName || '').trim()) { flag('pers-pos', 'Type the athlete name for the metallic highlight'); return; }
+
+    // "Is this spelled right?" — big, the way it'll print, before it goes in the cart
+    const toPrint = [...names.map(n => n.text), ...numbers.map(n => n.text), ...(metallicHighlight ? [metallicName] : [])].filter(t => String(t || '').trim());
+    if (extras.confirmNames && toPrint.length && !spellOk.current && !showAddOnModal) { setShowSpell(true); return; }
+    spellOk.current = false;
 
     // If product has add-ons, show the modal first
     const productAddOns = selectedProductRecord?.add_ons || [];
@@ -726,8 +761,10 @@ export default function OrderForm() {
           metallicTeam: metallicHighlight ? metallicTeam : '',
           addOns: selectedAddOns,
       },
-      finalPrice: calculateItemTotal() + addOnTotal,
+      finalPrice: calculateItemTotal() + addOnTotal - bundleNow(),
     };
+    if (bundleNow() > 0) newItem.customizations.bundleSavings = bundleNow();
+    setBundleFor(null); setCopyingFrom('');
     
     setCart([...cart, newItem]);
     // Pulse the add-to-cart bar
@@ -755,6 +792,42 @@ export default function OrderForm() {
   };
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
+  // Bundle savings on the suggested item (retail only, when switched on and something else is already in the cart)
+  const bundleNow = () => {
+    const amt = Math.max(0, Number(extras.bundleDiscount) || 0);
+    if (!extras.suggest || !amt || paymentMode !== 'retail' || !bundleFor || !selectedProduct || !cart.length) return 0;
+    if (mergedName(selectedProduct.name) !== bundleFor) return 0;
+    return Math.min(amt, calculateItemTotal());
+  };
+  // "Add one for a sibling": same item and customizations, blank names/numbers, pick a new size
+  const copyItem = (item) => {
+    const prod = products.find(p => p.id === item.productId);
+    const c = JSON.parse(JSON.stringify(item.customizations || {}));
+    pendingColor.current = item.color || '';
+    if (prod) setSelectedProduct(prod);
+    if (item.color) setSelectedColor(item.color);
+    setSize('');
+    setSelectedMainDesign(c.mainDesign || '');
+    setLogos(c.logos || []);
+    setNames((c.names || []).map(n => ({ ...n, text: '' })));
+    setNumbers((c.numbers || []).map(n => ({ ...n, text: '' })));
+    setBackNameList(!!c.backList); setMetallicHighlight(false); setMetallicName(''); setMetallicTeam(c.metallicTeam || '');
+    setCopyingFrom(item.productName);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  // "Complete the look": the first product on this event that isn't in the cart yet
+  const suggestion = (() => {
+    if (!extras.suggest || suggestOff || !cart.length) return null;
+    const inCart = new Set(cart.map(i => mergedName(i.productName || '')));
+    return visibleProducts.find(p => !inCart.has(mergedName(p.name))) || null;
+  })();
+  const takeSuggestion = (p) => {
+    const design = cart[cart.length - 1]?.customizations?.mainDesign;
+    setSelectedProduct(p);
+    if (design) setTimeout(() => setSelectedMainDesign(d => availableMainOptions.some(o => o.label === design) ? design : d), 0);
+    setBundleFor(mergedName(p.name));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const editItem = (item) => {
     // Remove from cart
@@ -888,13 +961,9 @@ export default function OrderForm() {
     if (!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
     try {
-        const res = await fetch('/api/create-cash-order', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: actualEventSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null, site: assignedSiteName })
-        });
-        const data = await res.json();
+        const data = await postOrder('/api/create-cash-order', { cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: actualEventSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null, site: assignedSiteName }, { name: customerName, phone: customerPhone });
         if (!data.success) throw new Error(data.error);
+        if (data.offline) { setOfflineSaved(true); setOrderComplete(true); setIsSubmitting(false); return; }
         setLastOrderId(data.orderId); 
         if (customerPhone) sendConfirmationSMS(customerName, customerPhone, data.orderId);
         if (customerEmail) sendReceiptEmail(data.orderId, customerName, customerEmail, cart, calculateGrandTotal());
@@ -907,18 +976,96 @@ export default function OrderForm() {
     }
   };
 
+  // Pay on your own phone: QR code → Stripe Checkout on the customer's phone; the kiosk watches for the payment
+  const handlePhonePay = async () => {
+    if (!customerName) return flag('cname', 'Enter your name');
+    if (addressMissing()) return flag('address', 'Enter the full shipping address');
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/phone-pay', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start', cart, customerName, customerPhone, customerEmail, total: calculateGrandTotal(), taxCollected: calculateTax(), eventName, eventSlug: actualEventSlug, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null, site: assignedSiteName }) });
+      const data = await res.json();
+      if (!data.url) throw new Error(data.error || 'Could not start the payment');
+      const QR = (await import('qrcode')).default;
+      const qr = await QR.toDataURL(data.url, { width: 360, margin: 1 });
+      setPhonePay({ orderId: data.orderId, sessionId: data.sessionId, qr, left: 300 });
+    } catch (err) { alert('Phone payment is not available right now — please use another way to pay. (' + err.message + ')'); }
+    setIsSubmitting(false);
+  };
+  const cancelPhonePay = async () => {
+    const pp = phonePay; setPhonePay(null);
+    if (pp?.orderId) fetch('/api/phone-pay', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel', orderId: pp.orderId }) }).catch(() => {});
+  };
+  useEffect(() => {
+    if (!phonePay?.sessionId) return;
+    let stop = false;
+    const t = setInterval(async () => {
+      setPhonePay(p => p ? { ...p, left: p.left - 3 } : p);
+      try {
+        const d = await (await fetch(`/api/phone-pay?session=${encodeURIComponent(phonePay.sessionId)}`)).json();
+        if (stop || !d.paid) return;
+        stop = true; clearInterval(t);
+        setLastOrderId(String(d.orderId || phonePay.orderId));
+        if (customerPhone) sendConfirmationSMS(customerName, customerPhone, d.orderId);
+        if (customerEmail) sendReceiptEmail(d.orderId, customerName, customerEmail, cart, calculateGrandTotal());
+        setPhonePay(null); setOrderComplete(true);
+      } catch { /* keep watching */ }
+    }, 3000);
+    return () => { stop = true; clearInterval(t); };
+  }, [phonePay?.sessionId]);
+  useEffect(() => { if (phonePay && phonePay.left <= 0) cancelPhonePay(); }, [phonePay?.left]);
+
+  // ── Offline queue: cash + hosted orders save on the iPad if Wi-Fi is down, and send themselves later ──
+  const QKEY = 'kiosk_offline_orders';
+  const readQ = () => { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch { return []; } };
+  const writeQ = (q) => { try { localStorage.setItem(QKEY, JSON.stringify(q)); } catch {} setQueued(q.length); };
+  const postOrder = async (endpoint, body, who) => {
+    const payload = { ...body, clientRef: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}` };
+    const queueIt = () => { writeQ([...readQ(), { endpoint, payload, name: who?.name || '', phone: who?.phone || '', at: Date.now() }]); return { success: true, offline: true }; };
+    if (extras.offline && typeof navigator !== 'undefined' && navigator.onLine === false) return queueIt();
+    try {
+      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      return await res.json();
+    } catch (e) {
+      if (extras.offline) return queueIt();
+      throw e;
+    }
+  };
+  const syncing = useRef(false);
+  useEffect(() => {
+    setQueued(readQ().length);
+    const sync = async () => {
+      if (syncing.current || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+      const q = readQ(); if (!q.length) return;
+      syncing.current = true;
+      let rest = [...q];
+      for (const item of q) {
+        try {
+          const res = await fetch(item.endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item.payload) });
+          const d = await res.json().catch(() => ({}));
+          if (d.success || res.status === 409) {
+            rest = rest.filter(r => r.payload.clientRef !== item.payload.clientRef);
+            writeQ(rest);
+            if (d.success && !d.duplicate && item.phone) sendConfirmationSMS(item.name, item.phone, d.orderId);
+          }
+        } catch { break; }   // still offline
+      }
+      syncing.current = false;
+    };
+    sync();
+    const t = setInterval(sync, 15000);
+    window.addEventListener('online', sync);
+    return () => { clearInterval(t); window.removeEventListener('online', sync); };
+  }, []);
+
   const handleCheckout = async () => {
     if (addressMissing()) return flag('address', 'Enter the full shipping address');
     if (paymentMode === 'hosted' && selectedGuest) {
         setIsSubmitting(true);
         try {
-            const res = await fetch('/api/create-hosted-order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: actualEventSlug, customerPhone, customerEmail, site: assignedSiteName, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null }) 
-            });
-            const data = await res.json();
+            const data = await postOrder('/api/create-hosted-order', { cart, guestName: selectedGuest.name, guestId: selectedGuest.id, eventName, eventSlug: actualEventSlug, customerPhone, customerEmail, site: assignedSiteName, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null }, { name: selectedGuest.name, phone: customerPhone });
             if (!data.success) throw new Error(data.error);
+            if (data.offline) { setOfflineSaved(true); setOrderComplete(true); setCart([]); setSelectedGuest(null); setGuestSearch(''); setIsSubmitting(false); return; }
             setLastOrderId(data.orderId); 
             if (customerEmail) sendReceiptEmail(data.orderId, selectedGuest.name, customerEmail, cart, 0);
             sendConfirmationSMS(selectedGuest.name, customerPhone || "N/A", data.orderId);
@@ -972,7 +1119,7 @@ export default function OrderForm() {
         const response = await fetch('/api/checkout', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ cart, customerName, eventSlug: actualEventSlug }) 
+            body: JSON.stringify({ cart, customerName, eventSlug: actualEventSlug, orderId: orderData.id }) 
         });
         const data = await response.json();
         if (data.url) window.location.href = data.url; else alert("Payment Error");
@@ -993,6 +1140,7 @@ export default function OrderForm() {
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId('');
       setManualShipOverride(false);
       setShowStaffPin(false); setNeeds(null);
+      setOfflineSaved(false); setWaitMins(0); setBundleFor(null); setSuggestOff(false); setCopyingFrom(''); setShowSpell(false); spellOk.current = false;
       // refresh stock counts after the sale (finalSlug only exists inside the initial fetch)
       if (actualEventSlug) await loadInventoryMaps(actualEventSlug);
       window.scrollTo(0, 0);
@@ -1016,22 +1164,26 @@ export default function OrderForm() {
       setShowAddon(false); setAddonNames([{ text: '', position: 'Back Center' }]); setAddonNumbers([]); setAddonCustomerName(''); setAddonCustomerPhone('');
       setShowDiscountModal(false); setDiscountPin(''); setDiscountPinError(false);
       setShowStaffPin(false); setStaffPin('');
+      if (phonePay) cancelPhonePay();
       setIdleLeft(null);
   };
   idleRef.current = {
       startOver,
-      busy: isSubmitting || isTerminalProcessing || addonSubmitting || showSetup || orderComplete,
-      inProgress: cart.length > 0 || !!size || logos.length > 0 || names.length > 0 || numbers.length > 0 || backNameList
+      busy: isSubmitting || isTerminalProcessing || addonSubmitting || showSetup || orderComplete || !!phonePay,
+      attractOn: !!extras.attract && products.length > 0,
+      inProgress: cart.length > 0 || logos.length > 0 || names.length > 0 || numbers.length > 0 || backNameList
           || !!(customerName || customerEmail || customerPhone || shippingAddress) || !!selectedGuest || !!guestSearch
           || showLookup || showAddon || showDiscountModal || showAddOnModal || discountAmount > 0 || showStaffPin,
   };
 
   useEffect(() => {
-      const touched = () => { lastTouch.current = Date.now(); };
+      const touched = () => { lastTouch.current = Date.now(); lastAny.current = Date.now(); };
       const evs = ['pointerdown', 'touchstart', 'keydown', 'input', 'scroll'];
       evs.forEach(e => window.addEventListener(e, touched, { capture: true, passive: true }));
       const t = setInterval(() => {
-          const { busy, inProgress, startOver } = idleRef.current;
+          const { busy, inProgress, startOver, attractOn } = idleRef.current;
+          // Welcome slideshow after 60s untouched with nothing in progress
+          if (attractOn && !busy && !inProgress && Date.now() - lastAny.current > 60000) setAttract(true);
           if (busy || !inProgress) { lastTouch.current = Date.now(); setIdleLeft(null); return; }
           const idle = (Date.now() - lastTouch.current) / 1000;
           if (idle < IDLE_SECONDS) { setIdleLeft(null); return; }
@@ -1049,6 +1201,17 @@ export default function OrderForm() {
       return () => clearInterval(t);
   }, [orderComplete]);
   useEffect(() => { if (orderComplete && doneLeft <= 0) idleRef.current.startOver(); }, [doneLeft, orderComplete]);
+  useEffect(() => {
+      if (!orderComplete || offlineSaved) return;
+      if (!cartRequiresShipping) estimateWait().then(setWaitMins);
+      if (extras.lowStockOn && actualEventSlug) fetch('/api/stock-check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ eventSlug: actualEventSlug }) }).catch(() => {});
+  }, [orderComplete]);
+  // Welcome slideshow: next product every 4 seconds
+  useEffect(() => {
+      if (!attract) return;
+      const t = setInterval(() => setAttractIdx(i => i + 1), 4000);
+      return () => clearInterval(t);
+  }, [attract]);
 
   if (showSetup) {
       const [setupSiteName, setSetupSiteName] = (window as any)._setupState || [assignedSiteName, (v) => { (window as any)._setupState = [v, (window as any)._setupState?.[1]]; }];
@@ -1179,7 +1342,10 @@ export default function OrderForm() {
                   <div className="text-7xl mb-4">🎉</div>
                   <h1 className="text-4xl font-black text-white mb-3 tracking-tight">You're all set!</h1>
                   <p className="text-white/60 text-sm uppercase tracking-widest font-semibold mb-4">Order confirmed</p>
-                  <p className="text-2xl font-mono text-white font-black mb-2 bg-white/10 py-2 px-4 rounded-xl inline-block">#{lastOrderId || '---'}</p>
+                  {offlineSaved
+                    ? <p className="text-lg text-amber-200 font-bold mb-2 bg-white/10 py-2 px-4 rounded-xl">📶 Saved on this iPad — it sends automatically when Wi-Fi is back.</p>
+                    : <p className="text-2xl font-mono text-white font-black mb-2 bg-white/10 py-2 px-4 rounded-xl inline-block">#{lastOrderId || '---'}</p>}
+                  {waitMins > 0 && <p className="text-white font-black text-xl mt-3">⏱ Ready in about {waitMins} minutes</p>}
                   {paymentMode === 'hosted' ? <p className="text-white/70 mt-4 mb-8 text-lg">Your custom gear is being prepared. See you out there! 🙌</p> : <p className="text-white/70 mt-4 mb-8 text-lg">Your custom gear is being prepared. We'll text you when it's ready! 🙌</p>}
                   <button onClick={resetApp} className="text-gray-900 font-black py-4 px-8 rounded-2xl shadow-xl hover:opacity-90 w-full text-xl tracking-wide bg-white">Next Guest ➡️</button>
                   <p className="text-white/50 text-xs mt-3">Starting over for the next guest in {Math.max(0, doneLeft)}s</p>
@@ -1190,6 +1356,18 @@ export default function OrderForm() {
   }
 
   const showPrice = paymentMode === 'retail';
+  const garmentNow = isBottomSelected ? 'bottom' : isHoodieSelected ? 'hoodie' : 'top';
+  const mainOpt = availableMainOptions.find(o => o.label === selectedMainDesign);
+  const preview = (compact = false) => (
+    <LivePreview compact={compact} productImg={selectedProductRecord?.image_url} mainImg={mainOpt?.image_url} mainPlacement={mainOpt?.placement || 'large'} garment={garmentNow}
+      accents={logos.map(l => ({ label: l.type, position: l.position, img: getLogoImage(l.type) }))} names={names} numbers={numbers} />
+  );
+  const livePreviewOn = !!extras.livePreview && !!selectedProductRecord?.image_url;
+  const attractItems = (() => {
+    const seen = new Set(); const out = [];
+    for (const p of visibleProducts) { const k = mergedName(p.name); if (!p.image_url || seen.has(k)) continue; seen.add(k); out.push(p); }
+    return out;
+  })();
   const step1Done = !!(size && selectedProduct && (visibleColors.length === 0 || selectedColor));
   const step2Done = !!(selectedMainDesign);
   const step3Done = true; // optional
@@ -1258,6 +1436,7 @@ export default function OrderForm() {
               onPointerDown={startPress} onPointerUp={endPress} onPointerLeave={endPress} onPointerCancel={endPress} onContextMenu={e => e.preventDefault()}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" draggable={false} className="h-36 mx-auto mb-3 pointer-events-none" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
+              {queued > 0 && <div className="absolute top-9 right-2 text-xs bg-amber-400 text-amber-950 px-2 py-1 rounded font-black">⏳ {queued} order{queued === 1 ? '' : 's'} waiting for Wi-Fi</div>}
               {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">{assignedSiteName ? `📍 ${assignedSiteName}` : assignedTerminalId === 'BLUETOOTH_READER' ? '📱 BT' : `ID: ${assignedTerminalId.slice(-4)}`}</div>}
               {staffMode && <>
                 <button onClick={() => { setShowLookup(true); setLookupQuery(''); setLookupResults([]); }} className="absolute bottom-2 right-2 text-sm bg-black bg-opacity-30 hover:bg-opacity-50 px-3 py-2 rounded-lg text-white font-bold transition-all">🔍 Lookup</button>
@@ -1317,7 +1496,17 @@ export default function OrderForm() {
                             <div className="text-center py-8 text-red-600 font-bold">Sorry, no products available.</div>
                         ) : (
                             <>
-                                {selectedProductRecord?.image_url && (
+                                {copyingFrom && (
+                                  <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-900 rounded-xl p-3 font-bold text-base flex items-center justify-between gap-3">
+                                    <span>➕ Copying {copyingFrom} — pick the size and type the new name below.</span>
+                                    <button onClick={() => setCopyingFrom('')} className="text-blue-500 text-sm font-black">✕</button>
+                                  </div>
+                                )}
+                                {bundleNow() > 0 && (
+                                  <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-3 font-black text-base">🎁 Bundle: ${bundleNow().toFixed(2)} off this one</div>
+                                )}
+                                {livePreviewOn && <div className="mb-5">{preview()}</div>}
+                                {!livePreviewOn && selectedProductRecord?.image_url && (
                                   <div className="mb-5 bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-center">
                                     <img src={selectedProductRecord.image_url} alt={selectedProduct.name} className="h-48 object-contain" />
                                   </div>
@@ -1486,7 +1675,7 @@ export default function OrderForm() {
                                     const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign);
                                     const placement = currentLogoObj?.placement || 'large';
                                     const garmentType = isBottomSelected ? 'bottom' : isHoodieSelected ? 'hoodie' : 'top';
-                                    return <PlacementVisualizer garmentType={garmentType} logoSize={placement} />;
+                                    return livePreviewOn ? preview(true) : <PlacementVisualizer garmentType={garmentType} logoSize={placement} />;
                                   })()}
                                 </div>
                             </div>
@@ -1619,7 +1808,7 @@ export default function OrderForm() {
                 <div className={`text-white px-6 py-4 sticky bottom-0 flex justify-between items-center shadow-[0_-4px_24px_rgba(0,0,0,0.25)] transition-all ${cartPulse ? 'cart-pulse' : ''}`} style={{ backgroundColor: headerColor }}>
                   <div>
                     <p className="text-white text-opacity-80 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p>
-                    <p className="text-2xl font-bold">{showPrice ? `$${calculateItemTotal()}` : 'Free'}</p>
+                    <p className="text-2xl font-bold">{showPrice ? `$${(calculateItemTotal() - bundleNow()).toFixed(2).replace(/\.00$/, '')}` : 'Free'}</p>
                   </div>
                   <div className="flex gap-2 items-center">
                     {cart.length > 0 && <button onClick={() => document.getElementById('cart')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="lg:hidden bg-white/15 border border-white/40 text-white px-4 py-3 rounded-xl font-black text-base">🛒 Cart ({cart.length}) ↓</button>}
@@ -1645,11 +1834,12 @@ export default function OrderForm() {
                 <div className="p-4 space-y-4 max-h-[50vh] overflow-y-auto">
                 {cart.length === 0 ? <p className="text-gray-500 text-center italic py-10">Cart is empty.</p> : cart.map((item) => (
                     <div key={item.id} className="border-b border-gray-200 pb-4 last:border-0 relative">
-                    <div className="absolute top-0 right-0 flex gap-1">
+                    <div className="flex flex-wrap justify-end gap-1 mb-1">
+                      {extras.sibling && <button onClick={() => copyItem(item)} className="bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-black text-sm px-3 py-2 rounded-lg transition-all">➕ ANOTHER</button>}
                       <button onClick={() => editItem(item)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 font-black text-sm px-3 py-2 rounded-lg transition-all">EDIT</button>
                       <button onClick={() => removeItem(item.id)} className="bg-red-100 hover:bg-red-200 text-red-600 font-black text-sm px-3 py-2 rounded-lg transition-all">REMOVE</button>
                     </div>
-                    <p className="font-black text-black text-lg pr-40">{item.productName}</p>
+                    <p className="font-black text-black text-lg">{item.productName}</p>
                     {item.needsShipping && (
                       <div className="mt-1 mb-2">
                         <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>
@@ -1673,11 +1863,26 @@ export default function OrderForm() {
                         {item.customizations.numbers?.map((num, i) => <div key={'num'+i}>• #{num.text} ({num.position})</div>)}
                         {item.customizations.backList && <div>• Team Roster</div>}
                         {item.customizations.metallic && <div>• Metallic: {item.customizations.metallicName}{item.customizations.metallicTeam ? ` — ${item.customizations.metallicTeam}` : ''}</div>}
+                        {item.customizations.bundleSavings > 0 && <div className="text-emerald-700 font-bold">• Bundle savings −${Number(item.customizations.bundleSavings).toFixed(2)}</div>}
                     </div>
                     {showPrice && <p className="font-bold text-right mt-2 text-blue-900 text-lg">${item.finalPrice.toFixed(2)}</p>}
                     </div>
                 ))}
                 </div>
+                {suggestion && (
+                  <div className="mx-4 mt-3 bg-sky-50 border border-sky-200 rounded-2xl p-4 flex items-center gap-3">
+                    {suggestion.image_url ? <img src={suggestion.image_url} alt="" className="w-16 h-16 object-contain bg-white rounded-lg border border-sky-100" /> : null}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-black text-sky-900 text-sm">✨ Complete the look</p>
+                      <p className="text-sm text-sky-800 font-bold truncate">{displayName(suggestion.name, products)}</p>
+                      {showPrice && Number(extras.bundleDiscount) > 0 && <p className="text-xs text-emerald-700 font-black">Bundle: save ${Number(extras.bundleDiscount).toFixed(0)}</p>}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <button onClick={() => takeSuggestion(suggestion)} className="bg-sky-600 hover:bg-sky-700 text-white font-black text-sm px-4 py-2 rounded-xl">Add it →</button>
+                      <button onClick={() => setSuggestOff(true)} className="text-xs text-sky-600 font-bold">No thanks</button>
+                    </div>
+                  </div>
+                )}
                 {cart.length > 0 && (() => {
                   const hasPersonalization = cart.some(i => (i.customizations?.names?.length > 0) || (i.customizations?.numbers?.length > 0) || i.customizations?.backList);
                   if (!(cart.length === 1 && !hasPersonalization && showPersonalization)) return null;
@@ -1825,6 +2030,9 @@ export default function OrderForm() {
                                 {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link")}
                             </button>
                         )}
+                        {paymentMode === 'retail' && extras.qrPay && (
+                            <button onClick={handlePhonePay} disabled={isSubmitting || isTerminalProcessing} className="w-full py-3 bg-white border-2 font-black rounded-xl shadow transition-all flex flex-col items-center justify-center leading-tight" style={{ borderColor: headerColor, color: headerColor }}><span className="text-lg">📱 Pay on your phone</span><span className="text-xs font-bold opacity-70">Apple Pay · Google Pay · card</span></button>
+                        )}
                         {paymentMode === 'retail' && staffMode && (
                             <button onClick={handleCashCheckout} disabled={isSubmitting || isTerminalProcessing} className="w-full py-4 bg-emerald-600 text-white font-black rounded-xl shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 text-lg">💵 Pay with Cash</button>
                         )}
@@ -1837,6 +2045,74 @@ export default function OrderForm() {
       </div>
       <LevMark className="pb-8 pt-2" />
     </div>
+
+    {/* Is this spelled right? */}
+    {showSpell && (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden">
+          <div className="p-6 text-white text-center" style={{ backgroundColor: headerColor }}>
+            <h2 className="font-black text-3xl">Is this spelled right?</h2>
+            <p className="text-white/80 text-base mt-1">This is exactly what we'll print.</p>
+          </div>
+          <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
+            {[...names.map(n => ({ t: String(n.text || '').toUpperCase(), pos: n.position, kind: 'Name' })),
+              ...numbers.map(n => ({ t: String(n.text || ''), pos: n.position, kind: 'Number' })),
+              ...(metallicHighlight ? [{ t: String(metallicName || '').toUpperCase(), pos: 'Metallic highlight', kind: 'Athlete' }] : [])]
+              .filter(r => r.t.trim()).map((r, i) => (
+              <div key={i} className="border-2 border-gray-200 rounded-2xl p-4 text-center">
+                <div className="text-xs font-black uppercase tracking-widest text-gray-400">{r.kind} · {r.pos}</div>
+                <div className="text-5xl font-black text-gray-900 tracking-wide break-all mt-1" style={{ fontFamily: 'var(--font-lev-heading), Impact, sans-serif' }}>{r.t.split('').join('\u2009')}</div>
+              </div>
+            ))}
+            {livePreviewOn && <div className="pt-2">{preview(true)}</div>}
+          </div>
+          <div className="p-6 pt-0 grid grid-cols-2 gap-3">
+            <button onClick={() => setShowSpell(false)} className="py-4 rounded-2xl border-2 border-gray-200 font-black text-lg text-gray-700">✏️ Fix it</button>
+            <button onClick={() => { setShowSpell(false); spellOk.current = true; handleAddToCart(); }} className="py-4 rounded-2xl bg-emerald-600 text-white font-black text-lg">✓ Yes, it's right</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Pay on your phone */}
+    {phonePay && (
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden text-center">
+          <div className="p-6 text-white" style={{ backgroundColor: headerColor }}>
+            <h2 className="font-black text-3xl">📱 Scan to pay</h2>
+            <p className="text-white/80 text-base mt-1">Open your phone's camera and point it here.</p>
+          </div>
+          <div className="p-6">
+            <img src={phonePay.qr} alt="Payment QR code" className="mx-auto w-72 h-72" />
+            <p className="text-3xl font-black text-gray-900 mt-3">${calculateGrandTotal().toFixed(2)}</p>
+            <p className="text-gray-500 font-semibold mt-1">Apple Pay, Google Pay or card. This screen updates when you've paid.</p>
+            <p className="text-sm text-gray-400 mt-3 animate-pulse">Waiting for payment… ({Math.max(0, Math.floor(phonePay.left / 60))}:{String(Math.max(0, phonePay.left % 60)).padStart(2, '0')})</p>
+            <button onClick={cancelPhonePay} className="mt-4 w-full py-3 rounded-2xl border-2 border-gray-200 font-black text-gray-600">Cancel — pay another way</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Welcome slideshow when the kiosk is idle */}
+    {attract && (
+      <div className="fixed inset-0 z-[95] flex flex-col items-center justify-center p-8 text-center cursor-pointer kiosk-brand" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 70%)` }}
+        onClick={() => { setAttract(false); lastAny.current = Date.now(); }}>
+        {eventLogo ? <img src={eventLogo} alt="" className="h-28 mb-6 object-contain" /> : <h1 className="text-5xl font-black text-white mb-6">{eventName}</h1>}
+        {attractItems.length > 0 && (() => {
+          const p = attractItems[attractIdx % attractItems.length];
+          return (
+            <div key={p.id} className="slide-in-up bg-white/95 rounded-[32px] shadow-2xl p-6 w-full max-w-md">
+              <img src={p.image_url} alt="" className="h-72 w-full object-contain" />
+              <p className="text-2xl font-black text-gray-900 mt-3">{displayName(p.name, products)}</p>
+              {showPrice && <p className="text-lg font-bold text-gray-500">{pickerPrice(p)}</p>}
+            </div>
+          );
+        })()}
+        <p className="text-white text-4xl font-black mt-8 animate-pulse">👆 Tap to design yours</p>
+        {welcomeMessage && <p className="text-white/70 text-lg mt-3 max-w-xl">{welcomeMessage}</p>}
+        <LevMark className="mt-10" />
+      </div>
+    )}
 
     {/* Staff mode PIN */}
     {showStaffPin && (
@@ -2180,7 +2456,7 @@ export default function OrderForm() {
                   style={{ flex: 1, padding: '14px', border: '2px solid #ddd', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer', background: '#fff' }}>
                   Cancel
                 </button>
-                <button onClick={completeAddToCart}
+                <button onClick={() => { setShowAddOnModal(false); completeAddToCart(); }}
                   style={{ flex: 2, padding: '14px', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 900, cursor: 'pointer', background: '#000', color: '#fff' }}>
                   Add to Cart →
                 </button>
@@ -2206,6 +2482,41 @@ const LevMark = ({ label = 'Powered by', className = '' }) => {
             <span className="lev-heading text-white text-xl font-black tracking-tight">LEV <span className="text-[#29ABE2]">♥</span> CUSTOM MERCH</span>
             <span className="text-[11px] text-white/60 font-semibold">Personalized apparel, made on-site</span>
           </>}
+    </div>
+  );
+};
+
+// Live preview: the chosen design on a photo of the actual shirt and color, accents and back print listed underneath.
+// Front-photo positions are approximate (center chest for large designs, left chest for small, upper thigh on bottoms).
+const LivePreview = ({ productImg, mainImg, mainPlacement, garment, accents = [], names = [], numbers = [], compact = false }) => {
+  const spot = garment === 'bottom' ? { left: '34%', top: '44%', width: '16%' }
+    : mainPlacement === 'small' ? { left: '61%', top: garment === 'hoodie' ? '31%' : '27%', width: '13%' }
+    : { left: '50%', top: garment === 'hoodie' ? '36%' : '31%', width: '30%' };
+  const back = [...names.filter(n => String(n.text || '').trim()).map(n => ({ t: String(n.text).toUpperCase(), big: false, pos: n.position })),
+                ...numbers.filter(n => String(n.text || '').trim()).map(n => ({ t: String(n.text), big: true, pos: n.position }))];
+  return (
+    <div className={compact ? '' : 'bg-gray-50 p-3 rounded-2xl border border-gray-100'}>
+      <div className="relative mx-auto bg-white rounded-xl overflow-hidden" style={{ width: '100%', maxWidth: compact ? 220 : 340, aspectRatio: '1 / 1' }}>
+        <img src={productImg} alt="" className="absolute inset-0 w-full h-full object-contain" draggable={false} />
+        {mainImg && <img src={mainImg} alt="" draggable={false} className="absolute object-contain drop-shadow-sm"
+          style={{ ...spot, transform: spot.left === '50%' ? 'translateX(-50%)' : undefined, maxHeight: '34%' }} />}
+        <span className="absolute bottom-1.5 right-2 text-[10px] font-bold text-gray-400 bg-white/80 px-1.5 rounded">Preview</span>
+      </div>
+      {(accents.length > 0 || back.length > 0) && (
+        <div className="flex flex-wrap justify-center gap-2 mt-2">
+          {accents.map((a, i) => (
+            <div key={i} className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-700">
+              {a.img ? <img src={a.img} alt="" className="h-6 w-6 object-contain" /> : null}{a.label}{a.position ? <span className="text-gray-400 font-semibold">· {a.position}</span> : null}
+            </div>
+          ))}
+          {back.map((b, i) => (
+            <div key={`b${i}`} className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-center leading-none">
+              <div className={`font-black text-gray-900 ${b.big ? 'text-2xl' : 'text-base tracking-wider'}`} style={{ fontFamily: 'var(--font-lev-heading), Impact, sans-serif' }}>{b.t}</div>
+              <div className="text-[10px] text-gray-400 font-semibold mt-0.5">{b.pos}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

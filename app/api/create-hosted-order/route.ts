@@ -11,6 +11,13 @@ export async function POST(req: any) {
   try {
     const body = await req.json();
     const { cart, guestName, guestId: incomingGuestId, eventName, eventSlug, customerPhone, shippingInfo, site } = body;
+    const clientRef = body.clientRef || null;
+
+    // Offline-queue resend: this order already went in
+    if (clientRef) {
+      const { data: existing } = await supabase.from('orders').select('id').eq('client_ref', clientRef).maybeSingle();
+      if (existing) return NextResponse.json({ success: true, orderId: existing.id, duplicate: true });
+    }
 
     const currentEvent = (eventSlug && eventSlug !== '') ? eventSlug : 'default';
     const hasShipping = cart.some((i: any) => i.needsShipping) || !!shippingInfo?.address;
@@ -66,7 +73,8 @@ export async function POST(req: any) {
           shipping_city: shippingInfo?.city || null,
           shipping_state: shippingInfo?.state || null,
           shipping_zip: shippingInfo?.zip || null,
-          created_at: new Date()
+          created_at: new Date(),
+          client_ref: clientRef
         },
       ])
       .select()

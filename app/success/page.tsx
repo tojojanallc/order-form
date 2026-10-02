@@ -1,68 +1,38 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 // 1. The Logic Component (Wrapped in Suspense below)
 function SuccessContent() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState('Verifying...');
+  const [orderId, setOrderId] = useState('');
+  const onPhone = searchParams.get('phone') === '1';   // paid on the customer's own phone (kiosk QR code)
+  const cancelled = searchParams.get('cancelled') === '1';
 
   useEffect(() => {
-    // A. Clean the cart locally immediately
-    if (typeof window !== 'undefined') {
-        localStorage.removeItem('cart');
-    }
-
-    // B. The "Safety Net": Find the most recent pending order and mark it paid
-    const finalizeOrder = async () => {
-        try {
-            // Find the most recent order created by anyone in the last few seconds
-            // Ideally, we would match this by a Session ID passed in the URL, 
-            // but finding the latest order is a functional "hotfix" for now.
-            const { data: recentOrders } = await supabase
-                .from('orders')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(1);
-
-            if (recentOrders && recentOrders.length > 0) {
-                const latestOrder = recentOrders[0];
-                
-                // Only update if it's currently unpaid/pending
-                // We check if payment_status is 'unpaid' OR if it is null (missing)
-                if (!latestOrder.payment_status || latestOrder.payment_status !== 'paid') {
-                    console.log("Forcing Order to PAID:", latestOrder.id);
-                    
-                    await supabase
-                        .from('orders')
-                        .update({ 
-                            payment_status: 'paid',
-                            status: 'pending' // Ensure it shows as ready to ship
-                        })
-                        .eq('id', latestOrder.id);
-                        
-                    setStatus('Payment Confirmed!');
-                } else {
-                    setStatus('Order Received!');
-                }
-            } else {
-                setStatus('Order Received!');
-            }
-        } catch (e) {
-            console.error(e);
-            setStatus('Order Received!');
-        }
-    };
-
-    finalizeOrder();
+    if (typeof window !== 'undefined' && !onPhone) localStorage.removeItem('cart');
+    if (cancelled) { setStatus('Payment cancelled'); return; }
+    // Confirm this exact checkout with Stripe (marks only its own order paid)
+    const sessionId = searchParams.get('session_id');
+    if (!sessionId) { setStatus('Order Received!'); return; }
+    fetch(`/api/phone-pay?session=${encodeURIComponent(sessionId)}`)
+      .then(r => r.json())
+      .then(d => { setStatus(d.paid ? 'Payment Confirmed!' : 'Order Received!'); if (d.orderId) setOrderId(String(d.orderId)); })
+      .catch(() => setStatus('Order Received!'));
   }, [searchParams]);
+
+  if (onPhone) return (
+    <div className="bg-white p-10 rounded-3xl shadow-xl max-w-lg w-full">
+        <div className="text-6xl mb-4">{cancelled ? '↩️' : '🎉'}</div>
+        <h1 className="text-3xl font-black text-[#0a2342] mb-2">{cancelled ? 'No charge made' : status === 'Verifying...' ? 'Confirming…' : "You're paid!"}</h1>
+        {orderId && <p className="text-2xl font-mono font-black text-[#0a2342] bg-gray-100 inline-block px-4 py-1 rounded-xl mb-4">#{orderId}</p>}
+        <p className="text-gray-500 text-lg">{cancelled ? 'Head back to the kiosk to try again.' : "The kiosk will show you're all set. We'll text you when your gear is ready."}</p>
+        <img src="https://levcustom.com/logo_black.png" alt="Lev Custom Merch" className="h-10 mx-auto mt-8 opacity-80" onError={e => { e.currentTarget.style.display = 'none'; }} />
+    </div>
+  );
 
   return (
     <div className="bg-white p-10 rounded-xl shadow-xl max-w-lg w-full">
