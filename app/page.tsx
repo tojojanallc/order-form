@@ -163,6 +163,30 @@ export default function OrderForm() {
   const [ignoreInventory, setIgnoreInventory] = useState(false);
   const [requireAddress, setRequireAddress] = useState(false);
   const [manualShipOverride, setManualShipOverride] = useState(false);
+  // Staff mode: staff-only buttons (lookup, add-on, discount, cash, stock overrides) stay hidden from customers until
+  // a staff member presses and holds the header and enters the manager PIN or staff passcode. Locks again after each order.
+  const [staffMode, setStaffMode] = useState(false);
+  const [showStaffPin, setShowStaffPin] = useState(false);
+  const [staffPin, setStaffPin] = useState('');
+  const [staffPinError, setStaffPinError] = useState(false);
+  const pressTimer = useRef<any>(null);
+  const startPress = () => { clearTimeout(pressTimer.current); pressTimer.current = setTimeout(() => { if (!staffMode) { setStaffPin(''); setStaffPinError(false); setShowStaffPin(true); } }, 1000); };
+  const endPress = () => clearTimeout(pressTimer.current);
+  const unlockStaff = async () => {
+    try {
+      const res = await fetch('/api/staff-unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: staffPin }) });
+      const data = await res.json();
+      if (data.success) { setStaffMode(true); setShowStaffPin(false); setStaffPin(''); } else { setStaffPinError(true); setStaffPin(''); }
+    } catch { setStaffPinError(true); }
+  };
+  // What's missing, shown on the screen next to the thing to fix (instead of an iPad pop-up)
+  const [needs, setNeeds] = useState<{ key: string; msg: string } | null>(null);
+  const flag = (key: string, msg: string) => {
+    setNeeds({ key, msg });
+    setTimeout(() => document.getElementById(`need-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+  };
+  const needMsg = (key: string) => needs?.key === key ? <p className="text-red-600 font-black text-base mt-2">⚠️ {needs.msg}</p> : null;
+  const needBorder = (key: string, normal = 'border-gray-200') => needs?.key === key ? 'border-red-500 bg-red-50' : normal;
   const [upsellMode, setUpsellMode] = useState<null|"name"|"number"|"roster">(null);
 
   const isBottomSelected = selectedProduct ? (
@@ -521,6 +545,17 @@ export default function OrderForm() {
     return totalBaseStock - qtyInCart;
   })();
   const isOutOfStock = manualShipOverride ? true : (ignoreInventory ? false : currentStock <= 0);
+  // Same count for any size (for the size buttons)
+  const stockFor = (sz) => {
+    let n = 0;
+    matchingProducts.forEach(p => {
+      const parsed = parseProductId(p.id);
+      if ((hasMultipleColors && parsed.color !== selectedColor) || parsed.size !== sz) return;
+      n += (inventory[`${p.id}_${sz}`] || 0);
+    });
+    return n - cart.filter(item => mergedName(item.productName || '') === mergedName(selectedProduct?.name || '') && item.size === sz && (!hasMultipleColors || item.color === selectedColor)).length;
+  };
+  useEffect(() => { setNeeds(null); }, [size, selectedColor, selectedMainDesign, JSON.stringify(logos), JSON.stringify(names), JSON.stringify(numbers), customerName, customerPhone, shippingAddress, shippingCity, shippingState, shippingZip, cart.length]);
 
   // The color-specific product record (has the correct image_url for the selected color)
   const selectedProductRecord = (() => {
@@ -632,13 +667,14 @@ export default function OrderForm() {
   
   const handleAddToCart = () => {
     if (!selectedProduct) return;
-    if (hasMultipleColors && !selectedColor) { alert("Please select a color."); return; }
-    if (!size) { alert("Please select a size."); return; }
-    if (availableMainOptions.length > 0 && !selectedMainDesign) { alert("Please select a Design."); return; }
+    if (hasMultipleColors && !selectedColor) { flag('color', 'Pick a color'); return; }
+    if (!size) { flag('size', 'Pick a size'); return; }
+    if (availableMainOptions.length > 0 && !selectedMainDesign) { flag('design', 'Pick a design'); return; }
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
     const missingNumberPos = numbers.some(n => !n.position);
-    if (missingLogoPos || missingNamePos || missingNumberPos) { alert("Please select a Position for every Accent, Name, and Number."); return; }
+    if (missingLogoPos) { flag('logo-pos', 'Pick where each accent goes'); return; }
+    if (missingNamePos || missingNumberPos) { flag('pers-pos', 'Pick where each name and number goes'); return; }
 
     // If product has add-ons, show the modal first
     const productAddOns = selectedProductRecord?.add_ons || [];
@@ -746,10 +782,10 @@ export default function OrderForm() {
 
   const handleTerminalCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty");
-    if (!customerName) return alert("Please enter Name");
+    if (!customerName) return flag('cname', 'Enter your name');
     if (!assignedTerminalId) return alert("⚠️ SETUP ERROR: No Terminal ID assigned to this iPad.");
-    if (!customerPhone) return alert("Please enter Phone Number for SMS Receipt.");
-    if (addressMissing()) return alert("Please enter the full shipping address.");
+    if (!customerPhone) return flag('phone', "Enter your mobile number — we'll text you when it's ready");
+    if (addressMissing()) return flag('address', 'Enter the full shipping address');
     setIsTerminalProcessing(true);
     setTerminalStatus("Creating Order...");
     try {
@@ -795,8 +831,8 @@ export default function OrderForm() {
 
   const handleBluetoothCheckout = async () => {
     if (cart.length === 0) return alert('Cart is empty');
-    if (!customerName) return alert('Please enter customer name');
-    if (addressMissing()) return alert('Please enter the full shipping address.');
+    if (!customerName) return flag('cname', 'Enter your name');
+    if (addressMissing()) return flag('address', 'Enter the full shipping address');
     setIsSubmitting(true);
     try {
       // 1. Create order in Supabase first (pending)
@@ -844,8 +880,8 @@ export default function OrderForm() {
 
   const handleCashCheckout = async () => {
     if (cart.length === 0) return alert('Cart is empty');
-    if (!customerName) return alert("Please enter Name");
-    if (addressMissing()) return alert("Please enter the full shipping address.");
+    if (!customerName) return flag('cname', 'Enter your name');
+    if (addressMissing()) return flag('address', 'Enter the full shipping address');
     if (!confirm("Confirm Pay with Cash?")) return;
     setIsSubmitting(true); 
     try {
@@ -869,7 +905,7 @@ export default function OrderForm() {
   };
 
   const handleCheckout = async () => {
-    if (addressMissing()) return alert("Please enter the full shipping address.");
+    if (addressMissing()) return flag('address', 'Enter the full shipping address');
     if (paymentMode === 'hosted' && selectedGuest) {
         setIsSubmitting(true);
         try {
@@ -953,6 +989,7 @@ export default function OrderForm() {
       setDiscountAmount(0); setDiscountValue(''); setDiscountUnlocked(false);
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId('');
       setManualShipOverride(false);
+      setStaffMode(false); setShowStaffPin(false); setNeeds(null);
       // refresh stock counts after the sale (finalSlug only exists inside the initial fetch)
       if (actualEventSlug) await loadInventoryMaps(actualEventSlug);
       window.scrollTo(0, 0);
@@ -975,6 +1012,7 @@ export default function OrderForm() {
       setShowLookup(false); setLookupQuery(''); setLookupResults([]);
       setShowAddon(false); setAddonNames([{ text: '', position: 'Back Center' }]); setAddonNumbers([]); setAddonCustomerName(''); setAddonCustomerPhone('');
       setShowDiscountModal(false); setDiscountPin(''); setDiscountPinError(false);
+      setStaffMode(false); setShowStaffPin(false); setStaffPin('');
       setIdleLeft(null);
   };
   idleRef.current = {
@@ -982,7 +1020,7 @@ export default function OrderForm() {
       busy: isSubmitting || isTerminalProcessing || addonSubmitting || showSetup || orderComplete,
       inProgress: cart.length > 0 || !!size || logos.length > 0 || names.length > 0 || numbers.length > 0 || backNameList
           || !!(customerName || customerEmail || customerPhone || shippingAddress) || !!selectedGuest || !!guestSearch
-          || showLookup || showAddon || showDiscountModal || showAddOnModal || discountAmount > 0,
+          || showLookup || showAddon || showDiscountModal || showAddOnModal || discountAmount > 0 || staffMode || showStaffPin,
   };
 
   useEffect(() => {
@@ -1208,15 +1246,19 @@ export default function OrderForm() {
         </div>
       )}
       <div className="min-h-screen font-sans text-gray-900" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 45%)`, animation: 'gradientShift 8s ease infinite', backgroundSize: '200% 200%' }}>
-      <div className="w-[85%] mx-auto py-6 grid md:grid-cols-3 gap-8">
-        <div className={`space-y-6 ${(paymentMode === 'retail' || selectedGuest) ? 'md:col-span-2' : 'md:col-span-3'}`}>
+      <div className="w-[94%] lg:w-[85%] mx-auto py-6 grid lg:grid-cols-3 gap-6 lg:gap-8">
+        <div className={`space-y-6 ${(paymentMode === 'retail' || selectedGuest) ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <div className="glass-card shadow-2xl rounded-2xl overflow-hidden">
-            <div className="text-white py-9 px-6 text-center relative" style={{ backgroundColor: headerColor }}>
-              {eventLogo ? <img src={eventLogo} alt="Event Logo" className="h-36 mx-auto mb-3" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
+            <div className="text-white py-9 px-6 text-center relative select-none" style={{ backgroundColor: headerColor, WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+              onPointerDown={startPress} onPointerUp={endPress} onPointerLeave={endPress} onPointerCancel={endPress} onContextMenu={e => e.preventDefault()}>
+              {eventLogo ? <img src={eventLogo} alt="Event Logo" draggable={false} className="h-36 mx-auto mb-3 pointer-events-none" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
               {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
               {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">{assignedSiteName ? `📍 ${assignedSiteName}` : assignedTerminalId === 'BLUETOOTH_READER' ? '📱 BT' : `ID: ${assignedTerminalId.slice(-4)}`}</div>}
-              <button onClick={() => { setShowLookup(true); setLookupQuery(''); setLookupResults([]); }} className="absolute bottom-2 right-2 text-[10px] bg-black bg-opacity-20 hover:bg-opacity-40 px-2 py-1 rounded text-white font-bold transition-all">🔍 Lookup</button>
-              <button onClick={() => setShowAddon(true)} className="absolute bottom-2 left-2 text-[10px] bg-black bg-opacity-20 hover:bg-opacity-40 px-2 py-1 rounded text-white font-bold transition-all">✏️ Add-On</button>
+              {staffMode && <>
+                <button onClick={() => { setShowLookup(true); setLookupQuery(''); setLookupResults([]); }} className="absolute bottom-2 right-2 text-sm bg-black bg-opacity-30 hover:bg-opacity-50 px-3 py-2 rounded-lg text-white font-bold transition-all">🔍 Lookup</button>
+                <button onClick={() => setShowAddon(true)} className="absolute bottom-2 left-2 text-sm bg-black bg-opacity-30 hover:bg-opacity-50 px-3 py-2 rounded-lg text-white font-bold transition-all">✏️ Add-On</button>
+                <button onClick={() => setStaffMode(false)} className="absolute top-2 left-2 text-sm bg-amber-400 text-amber-950 px-3 py-1.5 rounded-lg font-black shadow">🔓 Staff mode · Lock</button>
+              </>}
             </div>
             
             <div className="p-6 space-y-8">
@@ -1291,7 +1333,7 @@ export default function OrderForm() {
   )
 )}
 
-{ignoreInventory && size && (!hasMultipleColors || selectedColor) && (
+{staffMode && ignoreInventory && size && (!hasMultipleColors || selectedColor) && (
   <div className={`mb-4 rounded-xl border-2 p-3 flex items-center justify-between transition-all ${manualShipOverride ? 'bg-orange-50 border-orange-400' : 'bg-gray-50 border-gray-200'}`}>
     <div>
       <p className={`font-black text-sm ${manualShipOverride ? 'text-orange-700' : 'text-gray-600'}`}>
@@ -1310,7 +1352,7 @@ export default function OrderForm() {
 
                                   {/* PRODUCT */}
                                   <div>
-                                    <label className="text-xs font-black text-gray-900 uppercase">Item</label>
+                                    <label className="text-sm font-black text-gray-900 uppercase tracking-widest">Item</label>
                                     {visibleProducts.length === 1 ? (
                                       // Single product — just show the name, no picker needed
                                       <p className="w-full p-3 border border-gray-400 rounded-lg bg-white text-black font-medium">
@@ -1348,8 +1390,8 @@ export default function OrderForm() {
                                               ) : (
                                                 <div className="h-24 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400 mb-1 rounded">No Image</div>
                                               )}
-                                              <span className="text-xs font-semibold leading-tight">{displayName(p.name, products)}</span>
-                                              {showPrice && <span className="text-xs text-gray-500">{pickerPrice(p)}</span>}
+                                              <span className="text-sm font-bold leading-tight">{displayName(p.name, products)}</span>
+                                              {showPrice && <span className="text-sm text-gray-500">{pickerPrice(p)}</span>}
                                               {uniqueColors.length > 0 && (
                                                 <div className="flex flex-wrap justify-center gap-1 mt-1.5">
                                                   {uniqueColors.slice(0, 8).map(c => (
@@ -1369,36 +1411,49 @@ export default function OrderForm() {
 
                                   {/* COLOR — chips */}
                                   {visibleColors.length > 0 && (
-                                    <div>
-                                      <label className="text-xs font-black text-gray-900 uppercase tracking-widest mb-2 block">Color</label>
+                                    <div id="need-color" className={needs?.key === 'color' ? 'rounded-xl ring-4 ring-red-300 p-2 -m-2' : ''}>
+                                      <label className="text-sm font-black text-gray-900 uppercase tracking-widest mb-2 block">Color</label>
                                       <div className="flex flex-wrap gap-2">
                                         {visibleColors.map(col => (
                                           <button key={col} type="button"
                                             onClick={() => { setSelectedColor(col); setSize(''); }}
-                                            className={`px-4 py-2 rounded-xl font-bold text-sm border-2 transition-all active:scale-95 flex items-center gap-2 ${selectedColor === col ? 'text-white border-transparent shadow-md' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
+                                            className={`px-5 py-3 rounded-xl font-bold text-base border-2 transition-all active:scale-95 flex items-center gap-2 ${selectedColor === col ? 'text-white border-transparent shadow-md' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
                                             style={selectedColor === col ? {backgroundColor: headerColor, borderColor: headerColor} : {}}
                                           >
-                                            <span style={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: colorHex(col), border: '1.5px solid rgba(0,0,0,0.15)', flexShrink: 0, display: 'inline-block' }} />
+                                            <span style={{ width: 18, height: 18, borderRadius: '50%', backgroundColor: colorHex(col), border: '1.5px solid rgba(0,0,0,0.15)', flexShrink: 0, display: 'inline-block' }} />
                                             {col}
                                           </button>
                                         ))}
                                       </div>
+                                      {needMsg('color')}
                                     </div>
                                   )}
 
                                   {/* SIZE — chips */}
                                   {(!hasMultipleColors || selectedColor) && (
-                                    <div>
-                                      <label className="text-xs font-black text-gray-900 uppercase tracking-widest mb-2 block">Size</label>
+                                    <div id="need-size" className={needs?.key === 'size' ? 'rounded-xl ring-4 ring-red-300 p-2 -m-2' : ''}>
+                                      <label className="text-sm font-black text-gray-900 uppercase tracking-widest mb-2 block">Size</label>
                                       <div className="flex flex-wrap gap-2">
-                                        {visibleSizes.map(s => (
+                                        {visibleSizes.map(s => {
+                                          // Sold out here → still orderable, ships home; low stock shows a count
+                                          const left = ignoreInventory ? null : stockFor(s.value);
+                                          const out = left !== null && left <= 0;
+                                          const on = size === s.value;
+                                          return (
                                           <button key={s.value} type="button"
                                             onClick={() => setSize(s.value)}
-                                            className={`px-4 py-2 rounded-xl font-bold text-sm border-2 transition-all active:scale-95 ${size === s.value ? 'text-white border-transparent shadow-md' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
-                                            style={size === s.value ? {backgroundColor: headerColor, borderColor: headerColor} : {}}
-                                          >{s.label}</button>
-                                        ))}
+                                            className={`min-w-[64px] px-4 py-2.5 rounded-xl font-bold text-base border-2 transition-all active:scale-95 flex flex-col items-center leading-tight ${on ? 'text-white border-transparent shadow-md' : out ? 'bg-gray-100 border-dashed border-gray-300 text-gray-400' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'}`}
+                                            style={on ? {backgroundColor: out ? '#9ca3af' : headerColor, borderColor: out ? '#9ca3af' : headerColor} : {}}
+                                          >
+                                            <span>{s.label}</span>
+                                            {out ? <span className={`text-[11px] font-black uppercase ${on ? 'text-white' : 'text-orange-600'}`}>Ships</span>
+                                              : left !== null && left <= 3 ? <span className={`text-[11px] font-bold ${on ? 'text-white/90' : 'text-amber-600'}`}>{left} left</span> : null}
+                                          </button>
+                                          );
+                                        })}
                                       </div>
+                                      {visibleSizes.some(s => !ignoreInventory && stockFor(s.value) <= 0) && <p className="text-sm text-gray-500 mt-2">Sizes marked <b className="text-orange-600">Ships</b> are sold out here — we'll ship them to your home.</p>}
+                                      {needMsg('size')}
                                     </div>
                                   )}
 
@@ -1408,19 +1463,20 @@ export default function OrderForm() {
                     </section>
 
                     {selectedProduct && availableMainOptions.length > 0 && (
-                        <section>
+                        <section id="need-design" className={needs?.key === 'design' ? 'rounded-2xl ring-4 ring-red-300 p-2' : ''}>
                             <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3">{step2Done ? <span className="w-8 h-8 rounded-full flex items-center justify-center bg-emerald-500 text-white font-black text-sm shrink-0 transition-all">✓</span> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>2</span>}<h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Choose Design</h2></div><span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">Included</span></div>
                             <div className="grid grid-cols-3 gap-4 mb-4">
                                 <div className="col-span-2 grid grid-cols-2 gap-3">
                                     {availableMainOptions.map((opt) => (
                                         <button key={opt.label} onClick={() => setSelectedMainDesign(opt.label)} className={`border-2 rounded-xl p-2 flex flex-col items-center gap-2 transition-all active:scale-95 shadow-sm ${selectedMainDesign === opt.label ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-gray-100 bg-white hover:border-gray-300 hover:shadow-sm'}`}>
                                             {opt.image_url ? (<img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />) : (<div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>)}
-                                            <span className={`text-xs font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
+                                            <span className={`text-sm font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
                                             {selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
                                         </button>
                                     ))}
                                 </div>
                                 <div className="col-span-1">
+                                  {needMsg('design')}
                                   {(() => {
                                     const currentLogoObj = availableMainOptions.find(o => o.label === selectedMainDesign);
                                     const placement = currentLogoObj?.placement || 'large';
@@ -1439,24 +1495,25 @@ export default function OrderForm() {
                                 {availableAccentOptions.map((opt) => (
                                     <button key={opt.label} onClick={() => addLogo(opt.label)} className="bg-white border-2 border-gray-100 hover:border-blue-400 rounded-xl p-2 flex flex-col items-center gap-1 transition-all active:scale-95 shadow-sm">
                                         {opt.image_url ? <img src={opt.image_url} className="h-12 w-full object-contain" /> : <div className="h-12 w-full bg-gray-100 text-[10px] flex items-center justify-center">No Img</div>}
-                                        <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{opt.label}</span>
+                                        <span className="text-xs font-bold text-center leading-tight truncate w-full">{opt.label}</span>
                                     </button>
                                 ))}
                             </div>
                             {logos.length > 0 && (
-                                <div className="bg-slate-50 p-4 rounded-xl border border-gray-100 space-y-3">
-                                    <h3 className="text-xs font-bold uppercase text-gray-500">Selected Accents (Set Position)</h3>
+                                <div id="need-logo-pos" className="bg-slate-50 p-4 rounded-xl border border-gray-100 space-y-3">
+                                    <h3 className="text-sm font-bold uppercase text-gray-500">Your accents — tap to change where they go</h3>
+                                    {needMsg('logo-pos')}
                                     {logos.map((logo, index) => {
                                         const currentImage = getLogoImage(logo.type);
                                         return (
                                             <div key={index} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
                                                 <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
                                                 <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
-                                                <select className={`border-2 p-1 rounded text-sm ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
+                                                <select className={`border-2 p-2 rounded-lg text-base ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
                                                   <option value="">Position...</option>
                                                   {getPositionOptions('logo', true).map(pos => (<option key={pos.id} value={pos.label}>{pos.label}</option>))}
                                                 </select>
-                                                <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-xl px-2">×</button>
+                                                <button onClick={() => setLogos(logos.filter((_, i) => i !== index))} className="text-gray-400 hover:text-red-600 font-bold text-3xl px-3 leading-none" aria-label="Remove">×</button>
                                             </div>
                                         );
                                     })}
@@ -1468,6 +1525,7 @@ export default function OrderForm() {
                     {selectedProduct && (showPersonalization || showNumbers) && (
                         <section>
                             <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>4</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Personalization</h2></div>{showPrice && <span className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">+$5 each</span>}</div>
+                            <div id="need-pers-pos">{needMsg('pers-pos')}</div>
                             {names.map((nameItem, index) => (
                             <div key={`name-${index}`} className="mb-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
                                 <div className="flex gap-2 items-center mb-2">
@@ -1558,20 +1616,22 @@ export default function OrderForm() {
                     <p className="text-white text-opacity-80 text-xs uppercase">{showPrice ? 'Current Item' : 'Your Selection'}</p>
                     <p className="text-2xl font-bold">{showPrice ? `$${calculateItemTotal()}` : 'Free'}</p>
                   </div>
-                  <button
-                    onClick={handleAddToCart}
-                    disabled={!selectedProduct || !size || (hasMultipleColors && !selectedColor)}
-                    className="bg-white text-black px-8 py-3 rounded-xl font-black shadow-lg active:scale-95 transition-all hover:opacity-90 disabled:opacity-40 uppercase tracking-wide text-sm"
-                  >
-                    Add to Cart
-                  </button>
+                  <div className="flex gap-2 items-center">
+                    {cart.length > 0 && <button onClick={() => document.getElementById('cart')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="lg:hidden bg-white/15 border border-white/40 text-white px-4 py-3 rounded-xl font-black text-base">🛒 Cart ({cart.length}) ↓</button>}
+                    <button
+                      onClick={handleAddToCart}
+                      className="bg-white text-black px-8 py-4 rounded-xl font-black shadow-lg active:scale-95 transition-all hover:opacity-90 uppercase tracking-wide text-base"
+                    >
+                      Add to Cart
+                    </button>
+                  </div>
                 </div>
             )}
           </div>
         </div>
         
         {(paymentMode === 'retail' || selectedGuest) && (
-            <div className="md:col-span-1">
+            <div className="lg:col-span-1" id="cart">
             <div className="glass-card shadow-2xl rounded-2xl overflow-hidden sticky top-4 slide-in-right">
                 <div className="text-white p-5" style={{ backgroundColor: headerColor }}>
                   <h2 className="font-bold text-lg">Your Cart</h2>
@@ -1581,22 +1641,22 @@ export default function OrderForm() {
                 {cart.length === 0 ? <p className="text-gray-500 text-center italic py-10">Cart is empty.</p> : cart.map((item) => (
                     <div key={item.id} className="border-b border-gray-200 pb-4 last:border-0 relative">
                     <div className="absolute top-0 right-0 flex gap-1">
-                      <button onClick={() => editItem(item)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 font-black text-xs px-3 py-1 rounded-lg transition-all">EDIT</button>
-                      <button onClick={() => removeItem(item.id)} className="bg-red-100 hover:bg-red-200 text-red-600 font-black text-xs px-3 py-1 rounded-lg transition-all">REMOVE</button>
+                      <button onClick={() => editItem(item)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 font-black text-sm px-3 py-2 rounded-lg transition-all">EDIT</button>
+                      <button onClick={() => removeItem(item.id)} className="bg-red-100 hover:bg-red-200 text-red-600 font-black text-sm px-3 py-2 rounded-lg transition-all">REMOVE</button>
                     </div>
-                    <p className="font-black text-black text-lg pr-16">{item.productName}</p>
+                    <p className="font-black text-black text-lg pr-40">{item.productName}</p>
                     {item.needsShipping && (
                       <div className="mt-1 mb-2">
                         <span className="bg-orange-200 text-orange-800 text-xs font-bold px-2 py-1 rounded">Ship to Home</span>
-                        <label className="flex items-center gap-2 mt-2 cursor-pointer w-fit">
-                          <input type="checkbox" className="w-4 h-4 accent-green-600"
+                        {staffMode && <label className="flex items-center gap-2 mt-2 cursor-pointer w-fit">
+                          <input type="checkbox" className="w-5 h-5 accent-green-600"
                             checked={!item.needsShipping || item.staffStockOverride}
                             onChange={e => {
                               setCart(cart.map(c => c.id === item.id ? { ...c, staffStockOverride: e.target.checked, needsShipping: !e.target.checked } : c));
                             }}
                           />
-                          <span className="text-xs font-black text-green-700">Staff: We have this in stock</span>
-                        </label>
+                          <span className="text-sm font-black text-green-700">Staff: We have this in stock</span>
+                        </label>}
                       </div>
                     )}
                     {item.color && <p className="text-sm text-gray-600 font-bold">Color: {item.color}</p>}
@@ -1692,8 +1752,11 @@ export default function OrderForm() {
                         <div className="bg-green-100 text-green-900 p-2 rounded mb-4 font-bold text-sm">Guest: {selectedGuest.name}</div>
                     ) : (
                         <>
-                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-2 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Full Name" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />
-                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Email" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
+                            {/* text-base (16px) so the iPad doesn't zoom in when a field is tapped */}
+                            <div id="need-cname"><input className={`w-full p-3 border-2 ${needBorder('cname')} rounded-xl mb-2 text-base text-black focus:border-blue-400 focus:outline-none`} placeholder="Your name" autoComplete="off" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />{needMsg('cname')}</div>
+                            <div id="need-phone"><input className={`w-full p-3 border-2 ${needBorder('phone')} rounded-xl mb-1 text-base text-black focus:border-blue-400 focus:outline-none`} placeholder="Mobile number — we text you when it's ready" type="tel" inputMode="tel" autoComplete="off" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />{needMsg('phone')}</div>
+                            <p className="text-[11px] text-gray-500 leading-tight mb-3">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p>
+                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 text-base text-black focus:border-blue-400 focus:outline-none" placeholder="Email for a receipt (optional)" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
                             {/* One tap fills in the domain — replaces anything already typed after "@" */}
                             {/* Swipeable row so no button gets squeezed off the narrow checkout panel */}
                             <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -1705,19 +1768,18 @@ export default function OrderForm() {
                                     </button>
                                 ))}
                             </div>
-                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 text-sm text-black focus:border-blue-400 focus:outline-none" placeholder="Phone Number" type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
-                            <p className="text-[10px] text-gray-500 leading-tight mb-4">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p>
                         </>
                     )}
                     {showAddressForm && (
-                    <div className="bg-orange-50 border border-orange-200 p-3 rounded mb-4">
-                      <h4 className="font-bold text-orange-800 text-sm mb-2">🚚 Shipping Address Required</h4>
-                      <input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} />
+                    <div id="need-address" className={`bg-orange-50 border p-3 rounded mb-4 ${needs?.key === 'address' ? 'border-red-500 ring-4 ring-red-200' : 'border-orange-200'}`}>
+                      <h4 className="font-bold text-orange-800 text-base mb-2">🚚 Shipping Address Required</h4>
+                      {needMsg('address')}
+                      <input className="w-full p-3 border border-gray-300 rounded-lg mb-2 text-base" placeholder="Street Address" value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} />
                       <div className="grid grid-cols-2 gap-2">
-                        <input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} />
-                        <input className="w-full p-2 border border-gray-300 rounded mb-2 text-sm" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} />
+                        <input className="w-full p-3 border border-gray-300 rounded-lg mb-2 text-base" placeholder="City" value={shippingCity} onChange={(e) => setShippingCity(e.target.value)} />
+                        <input className="w-full p-3 border border-gray-300 rounded-lg mb-2 text-base" placeholder="State" value={shippingState} onChange={(e) => setShippingState(e.target.value)} />
                       </div>
-                      <input className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} />
+                      <input className="w-full p-3 border border-gray-300 rounded-lg text-base" placeholder="Zip Code" value={shippingZip} onChange={(e) => setShippingZip(e.target.value)} />
                     </div>
                     )}
                     {showPrice && (
@@ -1736,7 +1798,7 @@ export default function OrderForm() {
                             <div className="flex justify-between items-center border-t border-gray-200 pt-2 mt-2">
                                 <div className="flex items-center gap-2">
                                   <span className="font-black text-black uppercase tracking-widest">Total Due</span>
-                                  {!discountAmount && <button onClick={() => setShowDiscountModal(true)} className="text-xs bg-orange-100 text-orange-700 font-black px-2 py-1 rounded-lg hover:bg-orange-200 transition-all">% Discount</button>}
+                                  {staffMode && !discountAmount && <button onClick={() => setShowDiscountModal(true)} className="text-xs bg-orange-100 text-orange-700 font-black px-2 py-1 rounded-lg hover:bg-orange-200 transition-all">% Discount</button>}
                                 </div>
                                 <span className="font-black text-2xl text-blue-900">${calculateGrandTotal().toFixed(2)}</span>
                             </div>
@@ -1758,7 +1820,7 @@ export default function OrderForm() {
                                 {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link")}
                             </button>
                         )}
-                        {paymentMode === 'retail' && (
+                        {paymentMode === 'retail' && staffMode && (
                             <button onClick={handleCashCheckout} disabled={isSubmitting || isTerminalProcessing} className="w-full py-4 bg-emerald-600 text-white font-black rounded-xl shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 text-lg">💵 Pay with Cash</button>
                         )}
                     </div>
@@ -1769,6 +1831,28 @@ export default function OrderForm() {
         )}
       </div>
     </div>
+
+    {/* Staff mode PIN */}
+    {showStaffPin && (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowStaffPin(false)}>
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="p-6 bg-amber-400">
+            <h2 className="text-amber-950 font-black text-xl">🔓 Staff mode</h2>
+            <p className="text-amber-900/80 text-sm mt-1">Shows Lookup, Add-On, Discount and Pay with Cash until this order is done.</p>
+          </div>
+          <div className="p-6 space-y-4">
+            <input type="password" autoFocus
+              className={`w-full border-2 rounded-xl px-4 py-3 font-black text-center text-2xl tracking-widest focus:outline-none ${staffPinError ? 'border-red-400 bg-red-50' : 'border-gray-200 focus:border-amber-400'}`}
+              placeholder="PIN or passcode" value={staffPin}
+              onChange={e => { setStaffPin(e.target.value); setStaffPinError(false); }}
+              onKeyDown={e => { if (e.key === 'Enter') unlockStaff(); }} />
+            {staffPinError && <p className="text-red-500 text-sm font-bold text-center">Wrong PIN</p>}
+            <button onClick={unlockStaff} className="w-full bg-amber-400 hover:bg-amber-500 text-amber-950 font-black py-3 rounded-xl text-lg">Unlock</button>
+            <button onClick={() => setShowStaffPin(false)} className="w-full text-gray-500 font-bold py-2">Cancel</button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {/* Discount Modal */}
     {showDiscountModal && (
