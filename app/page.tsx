@@ -164,8 +164,11 @@ export default function OrderForm() {
   const [requireAddress, setRequireAddress] = useState(false);
   const [manualShipOverride, setManualShipOverride] = useState(false);
   // Staff mode: staff-only buttons (lookup, add-on, discount, cash, stock overrides) stay hidden from customers until
-  // a staff member presses and holds the header and enters the manager PIN or staff passcode. Locks again after each order.
+  // a staff member presses and holds the header and enters the manager PIN or staff passcode. Stays on (even through a
+  // page reload) until someone taps Lock.
   const [staffMode, setStaffMode] = useState(false);
+  useEffect(() => { try { if (sessionStorage.getItem('kiosk_staff_mode') === '1') setStaffMode(true); } catch {} }, []);
+  useEffect(() => { try { staffMode ? sessionStorage.setItem('kiosk_staff_mode', '1') : sessionStorage.removeItem('kiosk_staff_mode'); } catch {} }, [staffMode]);
   const [showStaffPin, setShowStaffPin] = useState(false);
   const [staffPin, setStaffPin] = useState('');
   const [staffPinError, setStaffPinError] = useState(false);
@@ -989,7 +992,7 @@ export default function OrderForm() {
       setDiscountAmount(0); setDiscountValue(''); setDiscountUnlocked(false);
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId('');
       setManualShipOverride(false);
-      setStaffMode(false); setShowStaffPin(false); setNeeds(null);
+      setShowStaffPin(false); setNeeds(null);
       // refresh stock counts after the sale (finalSlug only exists inside the initial fetch)
       if (actualEventSlug) await loadInventoryMaps(actualEventSlug);
       window.scrollTo(0, 0);
@@ -1012,7 +1015,7 @@ export default function OrderForm() {
       setShowLookup(false); setLookupQuery(''); setLookupResults([]);
       setShowAddon(false); setAddonNames([{ text: '', position: 'Back Center' }]); setAddonNumbers([]); setAddonCustomerName(''); setAddonCustomerPhone('');
       setShowDiscountModal(false); setDiscountPin(''); setDiscountPinError(false);
-      setStaffMode(false); setShowStaffPin(false); setStaffPin('');
+      setShowStaffPin(false); setStaffPin('');
       setIdleLeft(null);
   };
   idleRef.current = {
@@ -1020,7 +1023,7 @@ export default function OrderForm() {
       busy: isSubmitting || isTerminalProcessing || addonSubmitting || showSetup || orderComplete,
       inProgress: cart.length > 0 || !!size || logos.length > 0 || names.length > 0 || numbers.length > 0 || backNameList
           || !!(customerName || customerEmail || customerPhone || shippingAddress) || !!selectedGuest || !!guestSearch
-          || showLookup || showAddon || showDiscountModal || showAddOnModal || discountAmount > 0 || staffMode || showStaffPin,
+          || showLookup || showAddon || showDiscountModal || showAddOnModal || discountAmount > 0 || showStaffPin,
   };
 
   useEffect(() => {
@@ -1838,7 +1841,7 @@ export default function OrderForm() {
         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
           <div className="p-6 bg-amber-400">
             <h2 className="text-amber-950 font-black text-xl">🔓 Staff mode</h2>
-            <p className="text-amber-900/80 text-sm mt-1">Shows Lookup, Add-On, Discount and Pay with Cash until this order is done.</p>
+            <p className="text-amber-900/80 text-sm mt-1">Shows Lookup, Add-On, Discount and Pay with Cash until someone taps Lock.</p>
           </div>
           <div className="p-6 space-y-4">
             <input type="password" autoFocus
