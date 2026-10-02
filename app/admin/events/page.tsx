@@ -147,6 +147,9 @@ export default function AdminPage() {
   useEffect(() => { pnPrinterIdRef.current = pnPrinterId; }, [pnPrinterId]);
 
   useEffect(() => {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+          if (user) { setIsAuthorized(true); setIsAdmin(true); setShowFinancials(true); }
+      });
       const sessionAuth = sessionStorage.getItem('admin_auth');
       if (sessionAuth === 'true') {
           setIsAuthorized(true);
@@ -970,7 +973,21 @@ setSalesLedger(ledgerData || []);
   const clearGuestList = async () => { if (confirm("Clear All?")) { await supabase.from('guests').delete().neq('id', 0); fetchGuests(); } };
   
   if (!mounted) return <div className="p-10 text-center text-gray-500 font-bold">Loading Admin Dashboard...</div>;
-  if (!isAuthorized) return <div className="min-h-screen flex items-center justify-center bg-gray-100"><form onSubmit={handleLogin} className="bg-white p-8 rounded shadow"><h1 className="text-xl font-bold mb-4">Admin Login</h1><input type="password" onChange={e => setPasscode(e.target.value)} className="border p-2 w-full rounded" placeholder="Password"/></form></div>;
+  if (!isAuthorized) return (
+    <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#0a2342' }}>
+      <div className="bg-white p-8 rounded-[24px] shadow-2xl w-full max-w-sm">
+        <div className="text-center mb-6" style={{ fontFamily: 'var(--font-outfit), Outfit, sans-serif', fontWeight: 900, fontSize: 24, color: '#0a2342' }}>Lev <span style={{ color: '#29ABE2' }}>Event Admin</span></div>
+        <a href="/admin/login?next=/admin/events" className="w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 mb-5">
+          <svg width="16" height="16" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+          Sign in with Microsoft 365
+        </a>
+        <form onSubmit={handleLogin} className="border-t border-gray-100 pt-5">
+          <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Event staff passcode</label>
+          <input type="password" onChange={e => setPasscode(e.target.value)} className="border p-3 w-full rounded-xl" placeholder="Passcode" />
+        </form>
+      </div>
+    </div>
+  );
 
   const visibleOrders = orders.filter(o => {
       if (o.status === 'refunded') return false;
