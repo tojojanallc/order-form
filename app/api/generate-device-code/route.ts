@@ -1,6 +1,24 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { timingSafeEqual } from 'crypto';
+
+// Only the Lev portal may call this (Setup → Card terminals): it sends the shared secret kept in the private
+// lev_app_secrets table (RLS on, no policies — only the two apps' servers can read it with the service role key).
+let secret: string | null = null;
+async function allowed(req: Request) {
+  if (!secret) {
+    const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+    const { data } = await admin.from('lev_app_secrets').select('value').eq('key', 'kiosk_api').maybeSingle();
+    secret = data?.value || null;
+  }
+  const got = Buffer.from(req.headers.get('x-lev-secret') || '');
+  const want = Buffer.from(secret || '');
+  return !!secret && got.length === want.length && timingSafeEqual(got, want);
+}
+const denied = () => NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
 export async function POST(req: Request) {
+  if (!(await allowed(req))) return denied();
   try {
     const { name, location_id } = await req.json();
 
@@ -39,6 +57,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
+  if (!(await allowed(req))) return denied();
   // ?id=<device code id> → pairing status (PAIRED includes the terminal's device_id); otherwise the Square locations
   const id = new URL(req.url).searchParams.get('id');
   if (id) {
