@@ -1126,7 +1126,7 @@ setSalesLedger(ledgerData || []);
 )}
 
           <div className="flex bg-white rounded-lg p-1 shadow border border-gray-300">
-            {['orders', 'sites', 'event stock', 'guests', 'terminals', 'settings', ...(isAdmin ? ['staff hours'] : [])].map(tab => (
+            {['orders', 'sites', 'event stock', 'guests', 'settings', ...(isAdmin ? ['staff hours'] : [])].map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded font-bold uppercase text-xs ${activeTab === tab ? 'bg-blue-900 text-white' : 'hover:bg-gray-100'}`}>{tab}</button>
             ))}
           </div>

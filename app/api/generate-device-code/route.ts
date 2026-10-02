@@ -38,7 +38,22 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  // ?id=<device code id> → pairing status (PAIRED includes the terminal's device_id); otherwise the Square locations
+  const id = new URL(req.url).searchParams.get('id');
+  if (id) {
+    try {
+      const res = await fetch(`https://connect.squareup.com/v2/devices/codes/${encodeURIComponent(id)}`, {
+        headers: { 'Authorization': `Bearer ${process.env.SQUARE_ACCESS_TOKEN}`, 'Square-Version': '2024-01-18' },
+      });
+      const data = await res.json();
+      if (!res.ok) return NextResponse.json({ error: data.errors?.[0]?.detail || 'Square API error' }, { status: 500 });
+      const d = data.device_code || {};
+      return NextResponse.json({ id: d.id, code: d.code, name: d.name, status: d.status, device_id: d.device_id || null });
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+  }
   // Get locations so user can pick one
   try {
     const res = await fetch('https://connect.squareup.com/v2/locations', {
