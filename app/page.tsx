@@ -2034,7 +2034,7 @@ export default function OrderForm() {
                         {paymentMode === 'retail' && extras.qrPay && (
                             <button onClick={handlePhonePay} disabled={isSubmitting || isTerminalProcessing} className="w-full py-3 bg-white border-2 font-black rounded-xl shadow transition-all flex flex-col items-center justify-center leading-tight" style={{ borderColor: headerColor, color: headerColor }}><span className="text-lg">📱 Pay on your phone</span><span className="text-xs font-bold opacity-70">Apple Pay · Google Pay · card</span></button>
                         )}
-                        {paymentMode === 'retail' && staffMode && (
+                        {paymentMode === 'retail' && (
                             <button onClick={handleCashCheckout} disabled={isSubmitting || isTerminalProcessing} className="w-full py-4 bg-emerald-600 text-white font-black rounded-xl shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 text-lg">💵 Pay with Cash</button>
                         )}
                     </div>
@@ -2121,7 +2121,7 @@ export default function OrderForm() {
         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
           <div className="p-6 bg-amber-400">
             <h2 className="text-amber-950 font-black text-xl">🔓 Staff mode</h2>
-            <p className="text-amber-900/80 text-sm mt-1">Shows Lookup, Add-On, Discount and Pay with Cash until someone taps Lock.</p>
+            <p className="text-amber-900/80 text-sm mt-1">Shows Lookup, Add-On and Discount until someone taps Lock.</p>
           </div>
           <div className="p-6 space-y-4">
             <input type="password" autoFocus
