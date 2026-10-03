@@ -700,18 +700,17 @@ export default function OrderForm() {
     if (!selectedProduct) return;
     if (hasMultipleColors && !selectedColor) { flag('color', 'Pick a color'); return; }
     if (!size) { flag('size', 'Pick a size'); return; }
-    if (availableMainOptions.length > 0 && !selectedMainDesign) { flag('design', 'Pick a design'); return; }
+    if (availableMainOptions.length > 0 && !binderDesign && !selectedMainDesign) { flag('design', 'Pick a design'); return; }
     const missingLogoPos = logos.some(l => !l.position);
     const missingNamePos = names.some(n => !n.position);
     const missingNumberPos = numbers.some(n => !n.position);
     if (missingLogoPos) { flag('logo-pos', 'Pick where each accent goes'); return; }
-    if (logos.some(l => l.binder !== undefined && !String(l.binder || '').trim())) { flag('logo-pos', 'Type the binder number / description for each binder design'); return; }
     if (missingNamePos || missingNumberPos) { flag('pers-pos', 'Pick where each name and number goes'); return; }
     if (names.some(n => !String(n.text || '').trim()) || numbers.some(n => !String(n.text || '').trim())) { flag('pers-pos', 'Type the name or number (or remove it)'); return; }
     if (metallicHighlight && !String(metallicName || '').trim()) { flag('pers-pos', 'Type the athlete name for the metallic highlight'); return; }
 
     // "Is this spelled right?" — big, the way it'll print, before it goes in the cart
-    const toPrint = [...names.map(n => n.text), ...numbers.map(n => n.text), ...(metallicHighlight ? [metallicName] : []), ...logos.filter(l => l.binder !== undefined).map(l => l.binder)].filter(t => String(t || '').trim());
+    const toPrint = [...names.map(n => n.text), ...numbers.map(n => n.text), ...(metallicHighlight ? [metallicName] : [])].filter(t => String(t || '').trim());
     if (extras.confirmNames && toPrint.length && !spellOk.current && !showAddOnModal) { setShowSpell(true); return; }
     spellOk.current = false;
 
@@ -756,7 +755,7 @@ export default function OrderForm() {
       custom_name: names.length > 0 ? names[0].text : (metallicHighlight ? metallicName : null),
       has_heat_sheet: backNameList,
       customizations: {
-          mainDesign: selectedMainDesign, logos, names, numbers,
+          mainDesign: designForCart(), logos, names, numbers,
           backList: backNameList, metallic: metallicHighlight,
           metallicName: metallicHighlight ? metallicName : '',
           metallicTeam: metallicHighlight ? metallicTeam : '',
@@ -789,7 +788,8 @@ export default function OrderForm() {
     setBackNameList(false); setMetallicHighlight(false);
     setBackListConfirmed(false); setMetallicName(''); setMetallicTeam('');
     setManualShipOverride(false);
-    if (availableMainOptions.length > 1) setSelectedMainDesign(''); 
+    if (availableMainOptions.length > 1) setSelectedMainDesign('');
+    setBinderDesign(false);
   };
 
   const removeItem = (itemId) => setCart(cart.filter(item => item.id !== itemId));
@@ -808,7 +808,7 @@ export default function OrderForm() {
     if (prod) setSelectedProduct(prod);
     if (item.color) setSelectedColor(item.color);
     setSize('');
-    setSelectedMainDesign(c.mainDesign || '');
+    loadDesign(c.mainDesign);
     setLogos(c.logos || []);
     setNames((c.names || []).map(n => ({ ...n, text: '' })));
     setNumbers((c.numbers || []).map(n => ({ ...n, text: '' })));
@@ -837,7 +837,7 @@ export default function OrderForm() {
     const prod = products.find(p => p.id === item.productId);
     if (prod) setSelectedProduct(prod);
     setSize(item.size);
-    setSelectedMainDesign(item.customizations?.mainDesign || '');
+    loadDesign(item.customizations?.mainDesign);
     setLogos(item.customizations?.logos || []);
     setNames(item.customizations?.names || []);
     setNumbers(item.customizations?.numbers || []);
@@ -848,10 +848,12 @@ export default function OrderForm() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   const addLogo = (logoLabel) => { setLogos([...logos, { type: logoLabel, position: defaultPosition('logo') }]); };
-  // "From the binder": a DTF that isn't loaded in the kiosk. The customer types the binder # / description and it
-  // becomes the accent's name ("Binder: #14 football"), so the cart, press queue and printouts all show it as-is.
-  const addBinder = () => { setLogos([...logos, { type: 'Binder: ', binder: '', position: defaultPosition('logo') }]); };
-  const setBinder = (i, text) => { const n = [...logos]; n[i] = { ...n[i], binder: text, type: `Binder: ${text.trim()}` }; setLogos(n); };
+  // "Binder": the customer picked a DTF from the binder instead of the event's design. Same price; the item's
+  // design just reads "Binder" on the cart, press queue and printouts.
+  const [binderDesign, setBinderDesign] = useState(false);
+  const designForCart = () => binderDesign ? 'Binder' : selectedMainDesign;
+  const pickDesign = (label) => { setBinderDesign(false); setSelectedMainDesign(label); };
+  const loadDesign = (d) => { if (d === 'Binder') { setBinderDesign(true); } else { setBinderDesign(false); setSelectedMainDesign(d || ''); } };
   const updateLogo = (i, f, v) => { const n = [...logos]; n[i][f] = v; setLogos(n); };
   const updateName = (i, f, v) => { const n = [...names]; n[i][f] = v; setNames(n); };
   const updateNumber = (i, f, v) => { const n = [...numbers]; n[i][f] = v; setNumbers(n); }; 
@@ -1145,6 +1147,7 @@ export default function OrderForm() {
       setIsSubmitting(false); setIsTerminalProcessing(false); setLastOrderId('');
       setManualShipOverride(false);
       setShowStaffPin(false); setNeeds(null);
+      setBinderDesign(false);
       setOfflineSaved(false); setWaitMins(0); setBundleFor(null); setSuggestOff(false); setCopyingFrom(''); setShowSpell(false); spellOk.current = false;
       // refresh stock counts after the sale (finalSlug only exists inside the initial fetch)
       if (actualEventSlug) await loadInventoryMaps(actualEventSlug);
@@ -1362,7 +1365,7 @@ export default function OrderForm() {
 
   const showPrice = paymentMode === 'retail';
   const garmentNow = isBottomSelected ? 'bottom' : isHoodieSelected ? 'hoodie' : 'top';
-  const mainOpt = availableMainOptions.find(o => o.label === selectedMainDesign);
+  const mainOpt = binderDesign ? null : availableMainOptions.find(o => o.label === selectedMainDesign);
   const preview = (compact = false, view = 'both') => (
     <LivePreview compact={compact} view={view} color={selectedColor || parseProductId(selectedProductRecord?.id || '').color || ''} rosterImg={backNameList && rosterImageUrl ? rosterImageUrl : null}
       productImg={selectedProductRecord?.image_url} mainImg={mainOpt?.image_url} mainPlacement={mainOpt?.placement || 'large'} garment={garmentNow}
@@ -1375,7 +1378,7 @@ export default function OrderForm() {
     return out;
   })();
   const step1Done = !!(size && selectedProduct && (visibleColors.length === 0 || selectedColor));
-  const step2Done = !!(selectedMainDesign);
+  const step2Done = binderDesign || !!(selectedMainDesign);
   const step3Done = true; // optional
   const step4Done = true; // optional
 
@@ -1662,18 +1665,25 @@ export default function OrderForm() {
                         )}
                     </section>
 
-                    {selectedProduct && availableMainOptions.length > 0 && (
+                    {selectedProduct && (availableMainOptions.length > 0 || extras.binder) && (
                         <section id="need-design" className={needs?.key === 'design' ? 'rounded-2xl ring-4 ring-red-300 p-2' : ''}>
                             <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3">{step2Done ? <span className="w-8 h-8 rounded-full flex items-center justify-center bg-emerald-500 text-white font-black text-sm shrink-0 transition-all">✓</span> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>2</span>}<h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Choose Design</h2></div><span className="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">Included</span></div>
                             <div className="grid grid-cols-3 gap-4 mb-4">
                                 <div className="col-span-2 grid grid-cols-2 gap-3">
                                     {availableMainOptions.map((opt) => (
-                                        <button key={opt.label} onClick={() => setSelectedMainDesign(opt.label)} className={`border-2 rounded-xl p-2 flex flex-col items-center gap-2 transition-all active:scale-95 shadow-sm ${selectedMainDesign === opt.label ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-gray-100 bg-white hover:border-gray-300 hover:shadow-sm'}`}>
+                                        <button key={opt.label} onClick={() => pickDesign(opt.label)} className={`border-2 rounded-xl p-2 flex flex-col items-center gap-2 transition-all active:scale-95 shadow-sm ${!binderDesign && selectedMainDesign === opt.label ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-gray-100 bg-white hover:border-gray-300 hover:shadow-sm'}`}>
                                             {opt.image_url ? (<img src={opt.image_url} alt={opt.label} className="h-20 w-full object-contain" />) : (<div className="h-20 w-full bg-gray-100 flex items-center justify-center text-xs text-gray-400">No Image</div>)}
-                                            <span className={`text-sm font-bold text-center leading-tight ${selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
-                                            {selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
+                                            <span className={`text-sm font-bold text-center leading-tight ${!binderDesign && selectedMainDesign === opt.label ? 'text-green-800' : 'text-gray-800'}`}>{opt.label}</span>
+                                            {!binderDesign && selectedMainDesign === opt.label && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
                                         </button>
                                     ))}
+                                    {extras.binder && (
+                                        <button onClick={() => setBinderDesign(true)} className={`border-2 rounded-xl p-2 flex flex-col items-center gap-2 transition-all active:scale-95 shadow-sm ${binderDesign ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-dashed border-amber-300 bg-amber-50 hover:border-amber-500'}`}>
+                                            <div className="h-20 w-full flex items-center justify-center text-5xl">📒</div>
+                                            <span className={`text-sm font-black text-center leading-tight ${binderDesign ? 'text-green-800' : 'text-amber-900'}`}>Binder</span>
+                                            {binderDesign && <span className="text-[10px] bg-green-600 text-white px-2 py-0.5 rounded-full font-bold">SELECTED ✓</span>}
+                                        </button>
+                                    )}
                                 </div>
                                 <div className="col-span-1">
                                   {needMsg('design')}
@@ -1688,7 +1698,7 @@ export default function OrderForm() {
                         </section>
                     )}
 
-                    {selectedProduct && (availableAccentOptions.length > 0 || extras.binder) && (
+                    {selectedProduct && availableAccentOptions.length > 0 && (
                         <section>
                             <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100"><div className="flex items-center gap-3"><span className="w-8 h-8 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0" style={{backgroundColor: headerColor}}>3</span><h2 className="font-black text-gray-900 text-base uppercase tracking-widest">Add Accents</h2></div>{showPrice && <span className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold uppercase tracking-wide">+$5 each</span>}</div>
                             <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-4">
@@ -1698,12 +1708,6 @@ export default function OrderForm() {
                                         <span className="text-xs font-bold text-center leading-tight truncate w-full">{opt.label}</span>
                                     </button>
                                 ))}
-                                {extras.binder && (
-                                    <button onClick={addBinder} className="bg-amber-50 border-2 border-dashed border-amber-300 hover:border-amber-500 rounded-xl p-2 flex flex-col items-center gap-1 transition-all active:scale-95 shadow-sm">
-                                        <div className="h-12 w-full flex items-center justify-center text-3xl">📒</div>
-                                        <span className="text-xs font-black text-amber-900 text-center leading-tight w-full">From the binder</span>
-                                    </button>
-                                )}
                             </div>
                             {logos.length > 0 && (
                                 <div id="need-logo-pos" className="bg-slate-50 p-4 rounded-xl border border-gray-100 space-y-3">
@@ -1713,12 +1717,8 @@ export default function OrderForm() {
                                         const currentImage = getLogoImage(logo.type);
                                         return (
                                             <div key={index} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
-                                                <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{logo.binder !== undefined ? <span className="text-2xl">📒</span> : currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
-                                                {logo.binder !== undefined
-                                                  ? <div className="flex-1 min-w-0"><div className="text-xs font-black uppercase text-amber-800 mb-1">From the binder</div>
-                                                      <input value={logo.binder} onChange={(e) => setBinder(index, e.target.value)} maxLength={40} autoFocus placeholder="Binder # and what it is (e.g. #14 football)"
-                                                        className={`w-full border-2 rounded-lg p-2 text-base font-bold text-black focus:outline-none ${String(logo.binder || '').trim() ? 'border-gray-300 focus:border-amber-500' : 'border-amber-400 bg-amber-50'}`} /></div>
-                                                  : <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>}
+                                                <div className="w-10 h-10 flex-shrink-0 border rounded bg-gray-50 flex items-center justify-center">{currentImage ? <img src={currentImage} className="max-h-8 max-w-8" /> : <span className="text-xs">IMG</span>}</div>
+                                                <div className="flex-1"><div className="text-sm font-bold">{logo.type}</div></div>
                                                 <select className={`border-2 p-2 rounded-lg text-base ${!logo.position ? 'border-red-400 bg-red-50 text-red-900' : 'border-gray-300 text-black'}`} value={logo.position} onChange={(e) => updateLogo(index, 'position', e.target.value)}>
                                                   <option value="">Position...</option>
                                                   {getPositionOptions('logo', true).map(pos => (<option key={pos.id} value={pos.label}>{pos.label}</option>))}
@@ -2073,8 +2073,7 @@ export default function OrderForm() {
           <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
             {[...names.map(n => ({ t: String(n.text || '').toUpperCase(), pos: n.position, kind: 'Name' })),
               ...numbers.map(n => ({ t: String(n.text || ''), pos: n.position, kind: 'Number' })),
-              ...(metallicHighlight ? [{ t: String(metallicName || '').toUpperCase(), pos: 'Metallic highlight', kind: 'Athlete' }] : []),
-              ...logos.filter(l => l.binder !== undefined).map(l => ({ t: String(l.binder || ''), pos: l.position, kind: '📒 Binder design' }))]
+              ...(metallicHighlight ? [{ t: String(metallicName || '').toUpperCase(), pos: 'Metallic highlight', kind: 'Athlete' }] : []),]
               .filter(r => r.t.trim()).map((r, i) => (
               <div key={i} className="border-2 border-gray-200 rounded-2xl p-4 text-center">
                 <div className="text-xs font-black uppercase tracking-widest text-gray-400">{r.kind} · {r.pos}</div>
