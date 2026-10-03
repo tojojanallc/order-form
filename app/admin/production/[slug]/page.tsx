@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { readyText } from '@/app/lib/readyText';
 
 export default function ProductionScreen() {
   const params = useParams();
@@ -51,12 +50,11 @@ export default function ProductionScreen() {
             .single();
 
         if (orderData && orderData.phone && orderData.phone !== 'N/A') {
-            const message = await readyText(supabase, orderData.customer_name, orderData.event_slug);
-            
-            await fetch('/api/send-sms', { 
-                method: 'POST', 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: JSON.stringify({ phone: orderData.phone, message: message }) 
+            // The server writes the "ready" text (with the store link when it's on) and sends it to the order's phone
+            await fetch('/api/send-sms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kind: 'ready', orderId })
             });
         }
     } catch (err) { 

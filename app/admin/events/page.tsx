@@ -7,7 +7,6 @@ import * as XLSX from 'xlsx';
 import { refundOrder } from '@/app/actions/refund-order';
 import { returnEventStockToWarehouse, describeUnmatched } from '@/lib/returnEventStock';
 import Link from 'next/link';
-import { readyText } from '@/app/lib/readyText';
 
 // --- CONFIG ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -603,8 +602,8 @@ setSalesLedger(ledgerData || []);
           try {
               const { data: orderData } = await supabase.from('orders').select('customer_name, phone, event_slug').eq('id', orderId).single();
               if (orderData && orderData.phone) {
-                  const message = await readyText(supabase, orderData.customer_name, orderData.event_slug);
-                  await fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: orderData.phone, message: message }) });
+                  // The server writes the "ready" text (with the store link when it's on) and sends it to the order's phone
+                  await fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'ready', orderId }) });
               }
           } catch (err) { console.error("Error sending text:", err); }
       }
@@ -615,11 +614,10 @@ setSalesLedger(ledgerData || []);
       if (!confirm(`Send Last Call text to ${customerName}?`)) return;
 
       try {
-          const message = `🚨 LAST CALL! Hi ${customerName}, the Lev Custom Merch tent is packing up soon! Please come grab your order before we leave the venue.`;
           const res = await fetch('/api/send-sms', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone, message })
+              body: JSON.stringify({ kind: 'last_call', orderId })
           });
           
           if (res.ok) {

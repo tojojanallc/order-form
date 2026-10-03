@@ -658,14 +658,14 @@ export default function OrderForm() {
           return Math.max(5, Math.ceil(((count || 0) * per) / 5) * 5);
       } catch { return 0; }
   };
+  // The server writes the text and sends it to the phone saved on the order (see /api/send-sms)
   const sendConfirmationSMS = async (name, phone, orderId = '') => {
-      if (!phone || phone.length < 10) return;
+      if (!phone || String(phone).replace(/\D/g, '').length < 10 || !orderId) return;
       const mins = await estimateWait();
-      const orderRef = (orderId ? ` Your order number is #${orderId}.` : '') + (mins ? ` It should be ready in about ${mins} minutes.` : '');
       fetch('/api/send-sms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: phone, message: `Hi ${name}! Thanks for your order from Lev Custom Merch at ${eventName}.${orderRef} We will text you again when it's ready for pickup!` })
+          body: JSON.stringify({ kind: 'confirmation', orderId, minutes: mins })
       }).catch(err => console.error("SMS Failed:", err));
   };
 
@@ -2329,7 +2329,7 @@ export default function OrderForm() {
                     if (status.status === 'COMPLETED') {
                       clearInterval(poll);
                       await fetch('/api/printnode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: data.orderId, mode: 'cloud', printerId: assignedPrinterId }) });
-                      if (addonCustomerPhone) await fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: addonCustomerPhone, message: `Hi ${addonCustomerName}! Your add-on order #${data.orderId} from Lev Custom Merch is confirmed. We'll text you when it's ready!` }) });
+                      if (addonCustomerPhone) await fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'addon', orderId: data.orderId }) });
                       setShowAddon(false);
                       setAddonNames([{ text: '', position: 'Back Center' }]);
                       setAddonNumbers([]);
