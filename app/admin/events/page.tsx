@@ -134,7 +134,6 @@ export default function AdminPage() {
   const [offerPersonalization, setOfferPersonalization] = useState(true);
 
   const [pnEnabled, setPnEnabled] = useState(false);
-  const [pnApiKey, setPnApiKey] = useState('');
   const [pnPrinterId, setPnPrinterId] = useState('');
   const [availablePrinters, setAvailablePrinters] = useState([]);
   const [printerStatus, setPrinterStatus] = useState<null | {online: boolean, message: string, name?: string, state?: string, computerName?: string}>(null);
@@ -511,7 +510,6 @@ setSalesLedger(ledgerData || []);
           setOfferPersonalization(data.offer_personalization ?? true); 
           setOfferNumbers(data.offer_numbers ?? true);
           setPnEnabled(data.printnode_enabled || false); 
-          setPnApiKey(data.printnode_api_key || ''); 
           setPnPrinterId(data.printnode_printer_id || ''); 
           setTaxEnabled(data.tax_enabled || false);
           setTaxRate(data.tax_rate || 0);
@@ -661,7 +659,7 @@ setSalesLedger(ledgerData || []);
       const isCloud = pnEnabledRef.current && pnPrinterIdRef.current; // Use refs to avoid stale closure
       const mode = isCloud ? 'cloud' : 'download';
       try {
-          const res = await fetch('/api/printnode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order, mode, printerId: pnPrinterIdRef.current }) });
+          const res = await fetch('/api/printnode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(isCloud ? { orderId: order.id, mode, printerId: pnPrinterIdRef.current } : { order, mode }) });
           const result = await res.json();
           if (!result.success) { console.error("Print API Error:", result.error); return; }
           if (!isCloud) {

@@ -1,12 +1,34 @@
 import { NextResponse } from 'next/server';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { admin } from '@/app/lib/server';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { order, mode, printerId } = body;
+    const { mode } = body;
+    const printerId = String(body.printerId || '').trim();
+    let order = body.order;
+
+    // Cloud printing only prints a real saved order on one of our own printers (an event's or site's printer,
+    // or the printers list) — never content sent from the browser — and at most 5 times per order an hour.
+    if (mode === 'cloud') {
+      const db = admin();
+      const id = body.orderId ?? body.order?.id;
+      const { data: saved } = id ? await db.from('orders').select('*').eq('id', id).maybeSingle() : { data: null };
+      if (!saved) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      const [a, b, c] = await Promise.all([
+        db.from('event_settings').select('slug').eq('printnode_printer_id', printerId).limit(1),
+        db.from('event_sites').select('id').eq('printer_id', printerId).limit(1),
+        db.from('printers').select('printer_id').eq('printer_id', printerId).limit(1),
+      ]);
+      if (!printerId || !(a.data?.length || b.data?.length || c.data?.length)) return NextResponse.json({ error: 'Unknown printer' }, { status: 400 });
+      const { count } = await db.from('lev_sms_log').select('id', { count: 'exact', head: true }).eq('kind', 'print').eq('order_id', saved.id).gte('sent_at', new Date(Date.now() - 3600e3).toISOString());
+      if ((count || 0) >= 5) return NextResponse.json({ error: 'This order was just printed several times — wait a bit' }, { status: 429 });
+      await db.from('lev_sms_log').insert({ kind: 'print', order_id: saved.id });
+      order = saved;
+    }
 
     if (!order) {
       return NextResponse.json({ error: "Missing order" }, { status: 400 });
