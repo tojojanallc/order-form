@@ -1,12 +1,8 @@
 'use client';
 import { useState, useRef } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/supabase';
 import Link from 'next/link';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
 
 const SIZE_ORDER = ['YS','YM','YL','YXL','XS','S','M','L','XL','2XL','3XL'];
 

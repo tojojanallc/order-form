@@ -1,4 +1,4 @@
-// Low-stock text alerts (event_settings.kiosk_extras.lowStockOn / lowStockAt / lowStockPhone).
+// Low-stock text alerts (event_settings.kiosk_extras.lowStockOn / lowStockAt; the phone is in lev_event_private).
 // The kiosk calls this after each order. Each size alerts once; if it's restocked above the line it can alert again.
 import { NextResponse } from 'next/server';
 import { admin, sendSms } from '@/app/lib/server';
@@ -9,7 +9,9 @@ export async function POST(req: Request) {
   const db = admin();
   const { data: ev } = await db.from('event_settings').select('event_name, kiosk_extras, ignore_inventory').eq('slug', eventSlug).maybeSingle();
   const x = ev?.kiosk_extras || {};
-  if (!ev || ev.ignore_inventory || !x.lowStockOn || !x.lowStockPhone) return NextResponse.json({ sent: 0 });
+  const { data: priv } = await db.from('lev_event_private').select('low_stock_phone').eq('slug', eventSlug).maybeSingle();
+  const phone = priv?.low_stock_phone || x.lowStockPhone;
+  if (!ev || ev.ignore_inventory || !x.lowStockOn || !phone) return NextResponse.json({ sent: 0 });
   const at = Math.max(1, Number(x.lowStockAt) || 2);
 
   const [{ data: inv }, { data: done }] = await Promise.all([
@@ -30,6 +32,6 @@ export async function POST(req: Request) {
   const label = (r: any) => { const [name, , color] = String(r.product_id).split(' | '); return `${name}${color ? ` ${color}` : ''} ${r.size}: ${Math.max(0, Number(r.count) || 0)} left`; };
   const lines = fresh.slice(0, 8).map(label);
   if (fresh.length > 8) lines.push(`+${fresh.length - 8} more`);
-  const ok = await sendSms(x.lowStockPhone, `Lev low stock — ${ev.event_name || eventSlug}:\n${lines.join('\n')}`);
+  const ok = await sendSms(phone, `Lev low stock — ${ev.event_name || eventSlug}:\n${lines.join('\n')}`);
   return NextResponse.json({ sent: ok ? fresh.length : 0 });
 }

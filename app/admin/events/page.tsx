@@ -2,16 +2,14 @@
 'use client'; 
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'; 
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/supabase';
+import { saveEventFields } from '@/lib/saveEvent';
 import * as XLSX from 'xlsx'; 
 import { refundOrder } from '@/app/actions/refund-order';
 import { returnEventStockToWarehouse, describeUnmatched } from '@/lib/returnEventStock';
 import Link from 'next/link';
 
 // --- CONFIG ---
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 const SIZE_ORDER = ['Youth XS', 'Youth S', 'Youth M', 'Youth L', 'Youth XL', 'Adult S', 'Adult M', 'Adult L', 'Adult XL', 'Adult XXL', 'Adult 3XL', 'Adult 4XL'];
 
@@ -149,6 +147,12 @@ export default function AdminPage() {
       supabase.auth.getUser().then(({ data: { user } }) => {
           if (user) { setIsAuthorized(true); setIsAdmin(true); setShowFinancials(true); }
       });
+      // Passcode sign-in (signed cookie from /api/auth, also set by the login page)
+      fetch('/api/auth').then(r => r.json()).then(({ role }) => {
+          if (!role) return;
+          setIsAuthorized(true);
+          if (role === 'admin') { setIsAdmin(true); setShowFinancials(true); }
+      }).catch(() => {});
       const sessionAuth = sessionStorage.getItem('admin_auth');
       if (sessionAuth === 'true') {
           setIsAuthorized(true);
@@ -531,13 +535,13 @@ setSalesLedger(ledgerData || []);
   };
 
   const saveSettings = async () => { 
-      const { error } = await supabase.from('event_settings').update({ 
+      const error = await saveEventFields(selectedEventSlug, { 
           printer_type: printerType, 
           printnode_enabled: pnEnabled, 
           ...(pnPrinterId ? { printnode_printer_id: pnPrinterId } : {}),
-      }).eq('slug', selectedEventSlug); 
+      }); 
       if (error) {
-          alert("❌ Save failed: " + error.message);
+          alert("❌ Save failed: " + error);
       } else {
           alert("✅ Saved settings for " + selectedEventSlug);
       } 
@@ -556,8 +560,8 @@ setSalesLedger(ledgerData || []);
           alert("Couldn't return stock to the warehouse — event NOT archived: " + err.message);
           setLoading(false); return;
       }
-      const { data: updateData, error: updateError } = await supabase.from('event_settings').update({ status: 'archived' }).eq('slug', selectedEventSlug).select();
-      if (updateError || !updateData.length) { alert("Error archiving"); setLoading(false); return; }
+      const updateError = await saveEventFields(selectedEventSlug, { status: 'archived' });
+      if (updateError) { alert("Error archiving: " + updateError); setLoading(false); return; }
       await supabase.from('orders').update({ status: 'completed' }).eq('event_slug', selectedEventSlug).neq('status', 'completed').neq('status', 'refunded');
       alert("SUCCESS: Event Archived!"); 
       

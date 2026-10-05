@@ -40,6 +40,7 @@ export default function AdminDashboard() {
 
   async function handleSignOut() {
     await supabase.auth.signOut();
+    await fetch('/api/auth', { method: 'DELETE' }).catch(() => {});
     router.push('/admin/login');
   }
 

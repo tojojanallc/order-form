@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/supabase';
+import { saveEventFields } from '@/lib/saveEvent';
 import Link from 'next/link';
 import { returnEventStockToWarehouse, describeUnmatched } from '@/lib/returnEventStock';
 import * as XLSX from 'xlsx';
@@ -80,7 +81,7 @@ export default function ReconcilePage() {
             `Returned ${returnedUnits} units to inventory.\n\nThese couldn't be matched to a warehouse item and are still on this event:\n${describeUnmatched(unmatched)}\n\nArchive anyway? (Cancel keeps the event open so you can move them from Event Stock.)`
         )) { await loadStockAndSales(eventSlug); return; }
 
-        await supabase.from('event_settings').update({
+        const saveErr = await saveEventFields(eventSlug, {
             status: 'archived',
             staffing_cost: expenses.staffing,
             truck_rental_cost: expenses.truck,
@@ -88,7 +89,8 @@ export default function ReconcilePage() {
             misc_expenses: expenses.misc,
             total_processing_fees: totals.fees,
             total_invoiced_value: totals.value
-        }).eq('slug', eventSlug);
+        });
+        if (saveErr) throw new Error(saveErr);
         window.location.href = "/admin/events/history";
     } catch (err: any) { alert(err.message); }
     finally { setLoading(false); }

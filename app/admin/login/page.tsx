@@ -22,6 +22,21 @@ export default function AdminLoginPage() {
     microsoftEnabled().then(on => { setMs(on); if (!on) setShowPassword(true); });
   }, []);
 
+  // Event staff / admin passcode → signed cookie from /api/auth. Staff passcodes open Event admin and Production only.
+  const [passcode, setPasscode] = useState('');
+  const handlePasscode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passcode }) });
+    const d = await res.json().catch(() => ({}));
+    setLoading(false);
+    if (!d.success) return alert(d.error || 'Wrong passcode');
+    sessionStorage.setItem('admin_auth', 'true');
+    sessionStorage.setItem('admin_role', d.role || 'staff');
+    const staffPage = ['/admin/events', '/admin/production'].some(p => next === p || next.startsWith(p + '/') || next.startsWith(p + '?'));
+    window.location.href = d.role === 'admin' || staffPage ? next : '/admin/events';
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -66,6 +81,14 @@ export default function AdminLoginPage() {
             </button>
           </form>
         )}
+
+        <form onSubmit={handlePasscode} className="mt-6 pt-6 border-t border-gray-100 flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="block text-[10px] font-black uppercase text-gray-400 mb-2 ml-1">Event staff passcode</label>
+            <input type="password" className="w-full p-3 bg-gray-50 rounded-2xl border-none focus:ring-2 font-bold outline-none" value={passcode} onChange={(e) => setPasscode(e.target.value)} required />
+          </div>
+          <button type="submit" disabled={loading} className="px-5 py-3 rounded-2xl font-black uppercase tracking-widest text-xs text-white" style={{ background: '#0a2342' }}>Go</button>
+        </form>
       </div>
     </div>
   );
