@@ -1,17 +1,36 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
+import { admin } from '@/app/lib/server';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const baseUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
   : 'http://localhost:3000';
 
+// Receipts are built from the saved order and go only to the email saved on it — the kiosk sends just
+// { orderId }, so this can't be used to email anyone anything. At most 2 receipts per order a day.
+const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+
 export async function POST(req: any) {
   try {
-    const body = await req.json();
-    const { email, name, cart, total, orderId, eventName, eventLogo, shippingInfo } = body;
-
-    if (!email) return NextResponse.json({ error: 'No email provided' }, { status: 400 });
+    const body = await req.json().catch(() => ({}));
+    const db = admin();
+    const { data: order } = body.orderId ? await db.from('orders').select('id, created_at, customer_name, email, cart_data, total_price, event_name, event_slug, shipping_address, shipping_city, shipping_state, shipping_zip').eq('id', body.orderId).maybeSingle() : { data: null };
+    if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    // Receipts go out at checkout — older orders can't be re-sent from here
+    if (Date.now() - new Date(order.created_at).getTime() > 24 * 3600e3) return NextResponse.json({ error: 'Order too old' }, { status: 400 });
+    const email = String(order.email || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: 'No email on that order' }, { status: 400 });
+    const { data: sent } = await db.from('lev_sms_log').select('sent_at').eq('order_id', order.id).eq('kind', 'receipt').gte('sent_at', new Date(Date.now() - 24 * 3600e3).toISOString()).order('sent_at', { ascending: false });
+    if ((sent?.length || 0) >= 2 || (sent?.[0] && Date.now() - new Date(sent[0].sent_at).getTime() < 60_000)) return NextResponse.json({ error: 'Already sent' }, { status: 429 });
+    const { data: ev } = order.event_slug ? await db.from('event_settings').select('event_logo_url').eq('slug', order.event_slug).maybeSingle() : { data: null };
+    const name = esc(order.customer_name || 'there');
+    const eventName = esc(order.event_name || 'the event');
+    const eventLogo = ev?.event_logo_url || null;
+    const orderId = order.id;
+    const cart: any[] = Array.isArray(order.cart_data) ? order.cart_data : [];
+    const total = order.total_price;
+    const shippingInfo = order.shipping_address ? { address: esc(order.shipping_address), city: esc(order.shipping_city), state: esc(order.shipping_state), zip: esc(order.shipping_zip) } : null;
 
     // --- THE FOOLPROOF MATH ---
     // 1. Calculate the exact subtotal directly from the cart items
@@ -27,7 +46,7 @@ export async function POST(req: any) {
     let eventLogoHtml = '';
     if (eventLogo) {
         const src = eventLogo.startsWith('http') ? eventLogo : `${baseUrl}/${eventLogo}`;
-        eventLogoHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${src}" alt="${eventName}" style="max-width: 150px; height: auto;" /></div>`;
+        eventLogoHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${esc(src)}" alt="${eventName}" style="max-width: 150px; height: auto;" /></div>`;
     }
 
     // 2. Static Company Logo
@@ -35,17 +54,17 @@ export async function POST(req: any) {
 
     const cartRows = cart.map((item: any) => {
         const customizations = [];
-        if (item.customizations?.mainDesign) customizations.push(`<strong>Design:</strong> ${item.customizations.mainDesign}`);
-        if (item.customizations?.metallic) customizations.push(`<strong>Metallic:</strong> ${item.customizations.metallicName || ''}${item.customizations.metallicTeam ? ` — ${item.customizations.metallicTeam}` : ''}`);
+        if (item.customizations?.mainDesign) customizations.push(`<strong>Design:</strong> ${esc(item.customizations.mainDesign)}`);
+        if (item.customizations?.metallic) customizations.push(`<strong>Metallic:</strong> ${esc(item.customizations.metallicName || '')}${item.customizations.metallicTeam ? ` — ${esc(item.customizations.metallicTeam)}` : ''}`);
         const accentLogos = item.customizations?.logos || [];
-        if (accentLogos.length > 0) customizations.push(`<strong>Add-Ons:</strong> ${accentLogos.map((l: any) => `${l.type} (${l.position})`).join(', ')}`);
+        if (accentLogos.length > 0) customizations.push(`<strong>Add-Ons:</strong> ${accentLogos.map((l: any) => `${esc(l.type)} (${esc(l.position)})`).join(', ')}`);
         const itemNames = item.customizations?.names || [];
-        if (itemNames.length > 0) customizations.push(`<strong>Names:</strong> ${itemNames.map((n: any) => `${n.text} (${n.position})`).join(', ')}`);
+        if (itemNames.length > 0) customizations.push(`<strong>Names:</strong> ${itemNames.map((n: any) => `${esc(n.text)} (${esc(n.position)})`).join(', ')}`);
         const itemNumbers = item.customizations?.numbers || [];
-        if (itemNumbers.length > 0) customizations.push(`<strong>Numbers:</strong> ${itemNumbers.map((n: any) => `${n.text} (${n.position})`).join(', ')}`);
+        if (itemNumbers.length > 0) customizations.push(`<strong>Numbers:</strong> ${itemNumbers.map((n: any) => `${esc(n.text)} (${esc(n.position)})`).join(', ')}`);
         const shipBadge = item.needsShipping ? `<br/><span style="background:#fff3cd;color:#856404;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:bold;display:inline-block;margin-top:4px;">🚚 Ship to Home</span>` : '';
         return `<tr>
-            <td style="padding: 12px 8px; border-bottom: 1px solid #ddd;"><strong>${item.productName}</strong><br/><span style="font-size: 12px; color: #555;">Size: ${item.size}</span>${shipBadge}</td>
+            <td style="padding: 12px 8px; border-bottom: 1px solid #ddd;"><strong>${esc(item.productName)}</strong><br/><span style="font-size: 12px; color: #555;">Size: ${esc(item.size)}</span>${shipBadge}</td>
             <td style="padding: 12px 8px; border-bottom: 1px solid #ddd; font-size: 12px;">${customizations.join('<br/>')}</td>
             <td style="padding: 12px 8px; border-bottom: 1px solid #ddd; text-align: right;">$${Number(item.finalPrice).toFixed(2)}</td>
         </tr>`;
@@ -62,7 +81,7 @@ export async function POST(req: any) {
         </tr>`;
     }
 
-    const data = await resend.emails.send({
+    const { error: sendError } = await resend.emails.send({
       from: 'Lev Custom Merch <orders@receipts.levcustom.com>',
       to: [email],
       subject: `Receipt: ${eventName} - Order #${String(orderId).slice(0, 8)}`,
@@ -107,7 +126,9 @@ export async function POST(req: any) {
             </div>
         </div>`,
     });
-    return NextResponse.json({ success: true, data });
+    if (sendError) return NextResponse.json({ success: false, error: sendError.message }, { status: 502 });
+    await db.from('lev_sms_log').insert({ order_id: order.id, kind: 'receipt' });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

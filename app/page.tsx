@@ -691,7 +691,8 @@ export default function OrderForm() {
           await fetch('/api/send-receipt', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email, name, cart: cartData, total: totalAmount, orderId, eventName, eventLogo, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null })
+              // The server builds the receipt from the saved order and sends it to the email saved on it
+              body: JSON.stringify({ orderId })
           });
       } catch (err) { console.error(`NETWORK ERROR: ${err.message}`); }
   };

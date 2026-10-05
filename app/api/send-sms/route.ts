@@ -7,8 +7,6 @@ import { readyText } from '@/app/lib/readyText';
 //  • { kind, orderId } — 'confirmation' | 'addon' | 'ready' | 'last_call'. The message is written here and goes
 //    only to the phone saved on that order, with a limit on repeats (lev_sms_log).
 //  • { phone, message } + x-lev-secret header — the Lev portal's server only ("Text me a sample").
-//  • TEMPORARY (remove after 10/4/2026): { phone, message } from kiosk screens that haven't reloaded since the
-//    change — only to a phone on an order placed in the last 24 hours, only Lev's own wording.
 
 let secret: string | null = null;
 async function fromPortal(req: Request, db: ReturnType<typeof admin>) {
@@ -59,25 +57,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: ok }, { status: ok ? 200 : 502 });
     }
 
-    // TEMPORARY bridge for screens still running the old code (remove after 10/4/2026)
-    if (body.phone && body.message) {
-      const phone = last10(body.phone);
-      const msg = String(body.message);
-      const ours = msg.length <= 400 && /^(Hi |🚨 LAST CALL! Hi )/.test(msg) && /Lev Custom Merch/.test(msg);
-      if (phone.length === 10 && ours) {
-        const { data: recent } = await db.from('orders').select('id, phone').gte('created_at', new Date(Date.now() - 24 * 3600e3).toISOString()).ilike('phone', `%${phone.slice(-4)}`).limit(50);
-        const match = (recent || []).find(r => last10(r.phone) === phone);
-        if (match) {
-          const seen = await recentlySent(db, { phone }, 'legacy');
-          if (!seen.tooSoon && seen.count < 6) {
-            const ok = await sendSms(phone, msg);
-            if (ok) await db.from('lev_sms_log').insert({ order_id: match.id, phone, kind: 'legacy' });
-            return NextResponse.json({ success: ok }, { status: ok ? 200 : 502 });
-          }
-          return NextResponse.json({ success: false, error: 'Already sent' }, { status: 429 });
-        }
-      }
-    }
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   } catch (error: any) {
     console.error('SMS error:', error);
