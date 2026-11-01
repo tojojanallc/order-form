@@ -8,12 +8,20 @@ import { readyText } from '@/app/lib/readyText';
 //    only to the phone saved on that order, with a limit on repeats (lev_sms_log).
 //  • { phone, message } + x-lev-secret header — the Lev portal's server only ("Text me a sample").
 
+// Every read here must be fresh (Next 14 would otherwise serve the key and the repeat-text counts from its data cache)
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 let secret: string | null = null;
+const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 async function fromPortal(req: Request, db: ReturnType<typeof admin>) {
-  if (!secret) secret = (await db.from('lev_app_secrets').select('value').eq('key', 'kiosk_api').maybeSingle()).data?.value || null;
-  const got = Buffer.from(req.headers.get('x-lev-secret') || '');
-  const want = Buffer.from(secret || '');
-  return !!secret && got.length === want.length && timingSafeEqual(got, want);
+  const got = req.headers.get('x-lev-secret') || '';
+  if (!got) return false;
+  if (secret && same(got, secret)) return true;
+  // Not loaded yet, or the key was changed since — read it again once
+  secret = (await db.from('lev_app_secrets').select('value').eq('key', 'kiosk_api').maybeSingle()).data?.value || null;
+  if (!secret) console.error('send-sms: could not read the shared portal key (lev_app_secrets kiosk_api)');
+  return !!secret && same(got, secret);
 }
 
 const last10 = (p: any) => String(p || '').replace(/\D/g, '').slice(-10);

@@ -4,16 +4,21 @@ import { timingSafeEqual } from 'crypto';
 
 // Only the Lev portal may call this (Setup → Card terminals): it sends the shared secret kept in the private
 // lev_app_secrets table (RLS on, no policies — only the two apps' servers can read it with the service role key).
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 let secret: string | null = null;
+const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 async function allowed(req: Request) {
-  if (!secret) {
-    const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
-    const { data } = await admin.from('lev_app_secrets').select('value').eq('key', 'kiosk_api').maybeSingle();
-    secret = data?.value || null;
-  }
-  const got = Buffer.from(req.headers.get('x-lev-secret') || '');
-  const want = Buffer.from(secret || '');
-  return !!secret && got.length === want.length && timingSafeEqual(got, want);
+  const got = req.headers.get('x-lev-secret') || '';
+  if (!got) return false;
+  if (secret && same(got, secret)) return true;
+  // Not loaded yet, or the key was changed since — read it again once
+  const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const { data } = await admin.from('lev_app_secrets').select('value').eq('key', 'kiosk_api').maybeSingle();
+  secret = data?.value || null;
+  if (!secret) console.error('generate-device-code: could not read the shared portal key (lev_app_secrets kiosk_api)');
+  return !!secret && same(got, secret);
 }
 const denied = () => NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
