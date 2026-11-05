@@ -329,7 +329,23 @@ export default function OrderForm() {
       }
 
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
-      if (productData) setProducts(productData);
+      // A youth (or adult) cut with no photo borrows its partner's photo in the same color — e.g. One Stop has no
+      // image for TD955 Youth Reactive Tee, but TD954 adult in the same tie-dye does. Same card either way.
+      if (productData) {
+        const colorOf = (p) => String(p.id || '').split(' | ')[2] || '';
+        const photo = new Map();
+        for (const p of productData) if (p.image_url) {
+          const k = mergedName(p.name).toLowerCase();
+          if (!photo.has(`${k}|${colorOf(p).toLowerCase()}`)) photo.set(`${k}|${colorOf(p).toLowerCase()}`, p.image_url);
+          if (!photo.has(k)) photo.set(k, p.image_url);
+        }
+        setProducts(productData.map(p => {
+          if (p.image_url) return p;
+          const k = mergedName(p.name).toLowerCase();
+          const img = photo.get(`${k}|${colorOf(p).toLowerCase()}`) || photo.get(k);
+          return img ? { ...p, image_url: img } : p;
+        }));
+      }
 
       const { data: logoData } = await supabase.from('logos').select('label, image_url, category, placement').eq('active', true).eq('event_slug', finalSlug).order('sort_order');
       if (logoData) {
