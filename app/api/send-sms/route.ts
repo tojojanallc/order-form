@@ -13,14 +13,26 @@ export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 
 let secret: string | null = null;
+// What kind of key SUPABASE_SERVICE_ROLE_KEY holds (never the key): only a service_role / sb_secret key can read lev_app_secrets
+function keyKind() {
+  const k = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  if (!k) return 'missing';
+  if (k.startsWith('sb_secret_')) return 'sb_secret';
+  if (k.startsWith('sb_publishable_')) return 'sb_publishable (wrong kind)';
+  try {
+    const p = JSON.parse(Buffer.from(k.split('.')[1] || '', 'base64url').toString());
+    return `jwt role=${p.role || '?'} ref=${p.ref || '?'}`;
+  } catch { return 'unrecognized'; }
+}
 const same = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 async function fromPortal(req: Request, db: ReturnType<typeof admin>) {
   const got = req.headers.get('x-lev-secret') || '';
   if (!got) return false;
   if (secret && same(got, secret)) return true;
   // Not loaded yet, or the key was changed since — read it again once
-  secret = (await db.from('lev_app_secrets').select('value').eq('key', 'kiosk_api').maybeSingle()).data?.value || null;
-  if (!secret) console.error('send-sms: could not read the shared portal key (lev_app_secrets kiosk_api)');
+  const { data, error } = await db.from('lev_app_secrets').select('value').eq('key', 'kiosk_api').maybeSingle();
+  secret = data?.value || null;
+  if (!secret) console.error('send-sms: could not read the shared portal key (lev_app_secrets kiosk_api)', JSON.stringify({ error: error?.message || null, serverKey: keyKind() }));
   return !!secret && same(got, secret);
 }
 
