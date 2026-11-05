@@ -49,7 +49,9 @@ const parseProductId = (id) => {
 
 // Youth / ladies / adult cuts of the same style share one product card: "Colortone Youth Multi-Color Tie-Dyed T-Shirt"
 // and "Colortone Unisex Multi-Color Tie-Dyed T-Shirt" both → "Colortone Multi-Color Tie-Dyed T-Shirt"
-const mergedName = (name) => name.replace(/\s*\b(Youth|Ladies|Unisex|Adult)\b\s*/gi, ' ').replace(/\s+/g, ' ').trim();
+// A spaced dash between brand and style ("Tultex - Unisex Fine Jersey T-Shirt Youth" vs "Tultex Unisex Fine Jersey T-Shirt")
+// doesn't make it a different product either; dashes inside words (T-Shirt, Tie-Dyed) stay.
+const mergedName = (name) => String(name || '').replace(/\s*\b(Youth|Ladies|Unisex|Adult)\b\s*/gi, ' ').replace(/\s+[-–—]+\s+/g, ' ').replace(/^\s*[-–—]+\s*|\s*[-–—]+\s*$/g, '').replace(/\s+/g, ' ').trim();
 const colorHex = (c: string): string => {
   const map: Record<string, string> = {
     "black": "#111", "white": "#fff", "navy": "#1a2a5e", "red": "#c0392b",
