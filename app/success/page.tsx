@@ -11,6 +11,7 @@ function SuccessContent() {
   const [orderId, setOrderId] = useState('');
   const onPhone = searchParams.get('phone') === '1';   // paid on the customer's own phone (kiosk QR code)
   const cancelled = searchParams.get('cancelled') === '1';
+  const preorder = searchParams.get('preorder') === '1';    // paid from the event's pre-order QR code
 
   useEffect(() => {
     if (typeof window !== 'undefined' && !onPhone) localStorage.removeItem('cart');
@@ -20,7 +21,19 @@ function SuccessContent() {
     if (!sessionId) { setStatus('Order Received!'); return; }
     fetch(`/api/phone-pay?session=${encodeURIComponent(sessionId)}`)
       .then(r => r.json())
-      .then(d => { setStatus(d.paid ? 'Payment Confirmed!' : 'Order Received!'); if (d.orderId) setOrderId(String(d.orderId)); })
+      .then(d => {
+        setStatus(d.paid ? 'Payment Confirmed!' : 'Order Received!'); if (d.orderId) setOrderId(String(d.orderId));
+        // Pre-orders: the confirmation text + emailed receipt (the kiosk sends these itself for in-person orders).
+        // The server only texts / emails the contact saved on that order, and limits repeats.
+        if (preorder && d.paid && d.orderId) {
+          const key = `preorder-confirmed-${d.orderId}`;
+          let already = false; try { already = !!sessionStorage.getItem(key); sessionStorage.setItem(key, '1'); } catch {}
+          if (!already) {
+            fetch('/api/send-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'confirmation', orderId: d.orderId }) }).catch(() => {});
+            fetch('/api/send-receipt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: d.orderId }) }).catch(() => {});
+          }
+        }
+      })
       .catch(() => setStatus('Order Received!'));
   }, [searchParams]);
 
@@ -29,7 +42,7 @@ function SuccessContent() {
         <div className="text-6xl mb-4">{cancelled ? '↩️' : '🎉'}</div>
         <h1 className="text-3xl font-black text-[#0a2342] mb-2">{cancelled ? 'No charge made' : status === 'Verifying...' ? 'Confirming…' : "You're paid!"}</h1>
         {orderId && <p className="text-2xl font-mono font-black text-[#0a2342] bg-gray-100 inline-block px-4 py-1 rounded-xl mb-4">#{orderId}</p>}
-        <p className="text-gray-500 text-lg">{cancelled ? 'Head back to the kiosk to try again.' : "The kiosk will show you're all set. We'll text you when your gear is ready."}</p>
+        <p className="text-gray-500 text-lg">{cancelled ? 'Head back to the kiosk to try again.' : preorder ? "Your pre-order is in — we'll make it and text you when it's ready to pick up." : "The kiosk will show you're all set. We'll text you when your gear is ready."}</p>
         <img src="https://levcustom.com/logo_black.png" alt="Lev Custom Merch" className="h-10 mx-auto mt-8 opacity-80" onError={e => { e.currentTarget.style.display = 'none'; }} />
     </div>
   );

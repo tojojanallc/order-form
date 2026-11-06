@@ -186,6 +186,9 @@ export default function OrderForm() {
   };
   // Optional per-event features, switched on in the portal (event_settings.kiosk_extras) — all off by default
   const [extras, setExtras] = useState<any>({});
+  // ?preorder=1 — the event's pre-order QR code, on the customer's own phone: pay online, we make it later
+  const [preorder, setPreorder] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [showSpell, setShowSpell] = useState(false);       // "Is this spelled right?"
   const spellOk = useRef(false);
   const [attract, setAttract] = useState(false);           // welcome slideshow when idle
@@ -259,6 +262,7 @@ export default function OrderForm() {
 
     // Read terminal ID from URL param first (?terminal=xxx), fall back to localStorage
     const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('preorder') === '1') setPreorder(true);
     const urlTerminalId = urlParams.get('terminal');
     const urlSiteName = urlParams.get('site');
     const urlPrinterId = urlParams.get('printer');
@@ -326,6 +330,7 @@ export default function OrderForm() {
         setWelcomeMessage(settings.welcome_message || '');
         setRosterImageUrl(settings.roster_image_url || '');
         setExtras(settings.kiosk_extras || {});
+        setSettingsLoaded(true);
       }
 
       const { data: productData } = await supabase.from('products').select('*').order('sort_order', { ascending: true });
@@ -1002,6 +1007,23 @@ export default function OrderForm() {
     }
   };
 
+  // Pre-order (event QR code, customer's own phone): the server prices the cart from the event's prices and
+  // sends them to Stripe; once paid the order joins the event's order list to print and make
+  const handlePreorder = async () => {
+    if (!customerName) return flag('cname', 'Enter your name');
+    if (String(customerPhone || '').replace(/\D/g, '').length < 10) return flag('phone', 'Enter your mobile number — we text you when it’s ready');
+    if (addressMissing()) return flag('address', 'Enter the full shipping address');
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/preorder', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventSlug: actualEventSlug, cart, customerName, customerPhone, customerEmail, shippingInfo: cartRequiresShipping ? { address: shippingAddress, city: shippingCity, state: shippingState, zip: shippingZip } : null }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) throw new Error(data.error || 'Could not start the payment');
+      window.location.href = data.url;
+    } catch (err) { alert(err.message); setIsSubmitting(false); }
+  };
+  const preorderIsOpen = paymentMode === 'retail' && !!extras.preorderOn && (!extras.preorderUntil || Date.now() < new Date(extras.preorderUntil).getTime());
+
   // Pay on your own phone: QR code → Stripe Checkout on the customer's phone; the kiosk watches for the payment
   const handlePhonePay = async () => {
     if (!customerName) return flag('cname', 'Enter your name');
@@ -1196,7 +1218,8 @@ export default function OrderForm() {
   };
   idleRef.current = {
       startOver,
-      busy: isSubmitting || isTerminalProcessing || addonSubmitting || showSetup || orderComplete || !!phonePay,
+      // (a pre-order is on the customer's own phone: never clear it or show the welcome slideshow)
+      busy: isSubmitting || isTerminalProcessing || addonSubmitting || showSetup || orderComplete || !!phonePay || preorder,
       attractOn: !!extras.attract && products.length > 0,
       inProgress: cart.length > 0 || logos.length > 0 || names.length > 0 || numbers.length > 0 || backNameList
           || !!(customerName || customerEmail || customerPhone || shippingAddress) || !!selectedGuest || !!guestSearch
@@ -1331,6 +1354,19 @@ export default function OrderForm() {
       </div>
     </div>
   );
+  // Pre-order link opened while pre-orders are off (or the event isn't selling online)
+  if (preorder && settingsLoaded && !preorderIsOpen) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center kiosk-brand" style={{ background: `linear-gradient(160deg, ${headerColor} 0%, #0f172a 60%)` }}>
+              {eventLogo ? <img src={eventLogo} alt="" className="h-28 mb-6 object-contain" /> : <h1 className="text-3xl font-black text-white mb-4">{eventName}</h1>}
+              <div className="bg-white rounded-3xl p-8 max-w-md shadow-2xl">
+                  <div className="text-5xl mb-3">🕒</div>
+                  <h2 className="text-2xl font-black text-[#0a2342] mb-2">Pre-orders are closed</h2>
+                  <p className="text-gray-600">Stop by the Lev Custom Merch tent at the event to order in person.</p>
+              </div>
+          </div>
+      );
+  }
   if (!selectedProduct && paymentMode !== 'hosted') return <div className="p-10 text-center">No active products available.</div>;
 
   if (orderComplete) {
@@ -1463,7 +1499,8 @@ export default function OrderForm() {
             <div className="text-white py-9 px-6 text-center relative select-none" style={{ backgroundColor: headerColor, WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
               onPointerDown={startPress} onPointerUp={endPress} onPointerLeave={endPress} onPointerCancel={endPress} onContextMenu={e => e.preventDefault()}>
               {eventLogo ? <img src={eventLogo} alt="Event Logo" draggable={false} className="h-36 mx-auto mb-3 pointer-events-none" /> : <h1 className="text-2xl font-bold uppercase tracking-wide">{eventName}</h1>}
-              {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">Order Form</p>}
+              {!eventLogo && <p className="text-white text-opacity-80 text-sm mt-1">{preorder ? 'Pre-order' : 'Order Form'}</p>}
+              {preorder && <div className="mt-3 mx-auto max-w-md rounded-xl px-4 py-2 text-sm font-bold text-white" style={{ background: 'rgba(255,255,255,0.16)' }}>🛒 Pre-order &amp; pay now{extras.preorderNote ? ` — ${extras.preorderNote}` : ' — we’ll make it and text you when it’s ready'}</div>}
               {queued > 0 && <div className="absolute top-9 right-2 text-xs bg-amber-400 text-amber-950 px-2 py-1 rounded font-black">⏳ {queued} order{queued === 1 ? '' : 's'} waiting for Wi-Fi</div>}
               {assignedTerminalId && <div className="absolute top-2 right-2 text-[10px] bg-black bg-opacity-20 px-2 py-1 rounded text-white">{assignedSiteName ? `📍 ${assignedSiteName}` : assignedTerminalId === 'BLUETOOTH_READER' ? '📱 BT' : `ID: ${assignedTerminalId.slice(-4)}`}</div>}
               {staffMode && <>
@@ -2050,25 +2087,31 @@ export default function OrderForm() {
                         </div>
                     )}
                     <div className="space-y-3">
-                        {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && assignedTerminalId === 'BLUETOOTH_READER' && (
+                        {preorder && (
+                            <button onClick={handlePreorder} disabled={isSubmitting || !preorderIsOpen} className={`w-full py-4 text-xl font-black rounded-xl shadow-lg transition-all text-white ${isSubmitting ? 'bg-blue-400 animate-pulse' : 'bg-blue-700 hover:bg-blue-800'}`}>
+                                {isSubmitting ? '⏳ Opening secure checkout…' : `💳 Pay $${calculateGrandTotal().toFixed(2)}`}
+                            </button>
+                        )}
+                        {preorder && <p className="text-xs text-gray-500 text-center leading-snug">Secure card payment by Stripe. We’ll text you when your order is ready.</p>}
+                        {!preorder && paymentMode === 'retail' && retailPaymentMethod === 'terminal' && assignedTerminalId === 'BLUETOOTH_READER' && (
                             <button onClick={handleBluetoothCheckout} disabled={isSubmitting} className={`w-full py-4 text-xl font-black rounded-xl shadow-lg transition-all text-white flex items-center justify-center gap-2 ${isSubmitting ? 'bg-blue-400 animate-pulse cursor-wait' : 'bg-blue-600 hover:bg-blue-700'}`}>
                                 {isSubmitting ? <span>⏳ Opening Square POS...</span> : <span>📱 Pay with Bluetooth Reader</span>}
                             </button>
                         )}
-                        {paymentMode === 'retail' && retailPaymentMethod === 'terminal' && assignedTerminalId !== 'BLUETOOTH_READER' && (
+                        {!preorder && paymentMode === 'retail' && retailPaymentMethod === 'terminal' && assignedTerminalId !== 'BLUETOOTH_READER' && (
                             <button onClick={handleTerminalCheckout} disabled={isSubmitting || isTerminalProcessing} className={`w-full py-4 text-xl font-black rounded-xl shadow-lg transition-all text-white flex items-center justify-center gap-2 ${isTerminalProcessing ? 'bg-purple-600 animate-pulse cursor-wait' : 'bg-purple-700 hover:bg-purple-800'}`}>
                                 {isTerminalProcessing ? <span>📟 {terminalStatus}</span> : <span>📟 Pay with Card (Terminal)</span>}
                             </button>
                         )}
-                        {((paymentMode === 'retail' && retailPaymentMethod !== 'terminal') || paymentMode === 'hosted') && (
+                        {!preorder && ((paymentMode === 'retail' && retailPaymentMethod !== 'terminal') || paymentMode === 'hosted') && (
                             <button onClick={handleCheckout} disabled={isSubmitting || isTerminalProcessing || (paymentMode === 'hosted' && !selectedGuest)} className={`w-full py-4 rounded-xl font-black shadow-lg transition-all text-white text-lg ${isSubmitting || isTerminalProcessing ? 'bg-gray-400' : 'hover:opacity-90'}`} style={{ backgroundColor: (isSubmitting || isTerminalProcessing) ? 'gray' : headerColor }}>
                                 {isSubmitting ? "Processing..." : (paymentMode === 'hosted' ? "🎉 Submit Order (Free)" : "Pay via Stripe Link")}
                             </button>
                         )}
-                        {paymentMode === 'retail' && extras.qrPay && (
+                        {!preorder && paymentMode === 'retail' && extras.qrPay && (
                             <button onClick={handlePhonePay} disabled={isSubmitting || isTerminalProcessing} className="w-full py-3 bg-white border-2 font-black rounded-xl shadow transition-all flex flex-col items-center justify-center leading-tight" style={{ borderColor: headerColor, color: headerColor }}><span className="text-lg">📱 Pay on your phone</span><span className="text-xs font-bold opacity-70">Apple Pay · Google Pay · card</span></button>
                         )}
-                        {paymentMode === 'retail' && (
+                        {!preorder && paymentMode === 'retail' && (
                             <button onClick={handleCashCheckout} disabled={isSubmitting || isTerminalProcessing} className="w-full py-4 bg-emerald-600 text-white font-black rounded-xl shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 text-lg">💵 Pay with Cash</button>
                         )}
                     </div>
