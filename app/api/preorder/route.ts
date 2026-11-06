@@ -28,6 +28,7 @@ export async function POST(req: Request) {
   const name = str(b.customerName, 80), phone = str(b.customerPhone, 30), email = str(b.customerEmail, 120);
   if (!name) return NextResponse.json({ error: 'Enter your name' }, { status: 400 });
   if (String(phone).replace(/\D/g, '').length < 10) return NextResponse.json({ error: 'Enter your mobile number so we can text you when it’s ready' }, { status: 400 });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ error: 'Enter your email — we send your receipt there' }, { status: 400 });
   const cartIn: any[] = Array.isArray(b.cart) ? b.cart.slice(0, 30) : [];
   if (!cartIn.length) return NextResponse.json({ error: 'Your cart is empty' }, { status: 400 });
 

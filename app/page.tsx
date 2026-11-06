@@ -1012,6 +1012,7 @@ export default function OrderForm() {
   const handlePreorder = async () => {
     if (!customerName) return flag('cname', 'Enter your name');
     if (String(customerPhone || '').replace(/\D/g, '').length < 10) return flag('phone', 'Enter your mobile number — we text you when it’s ready');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customerEmail || '').trim())) return flag('email', 'Enter your email — we send your receipt there');
     if (addressMissing()) return flag('address', 'Enter the full shipping address');
     setIsSubmitting(true);
     try {
@@ -2038,7 +2039,8 @@ export default function OrderForm() {
                             <div id="need-cname"><input className={`w-full p-3 border-2 ${needBorder('cname')} rounded-xl mb-2 text-base text-black focus:border-blue-400 focus:outline-none`} placeholder="Your name" autoComplete="off" value={customerName} onChange={(e) => setCustomerName(e.target.value)} />{needMsg('cname')}</div>
                             <div id="need-phone"><input className={`w-full p-3 border-2 ${needBorder('phone')} rounded-xl mb-1 text-base text-black focus:border-blue-400 focus:outline-none`} placeholder="Mobile number — we text you when it's ready" type="tel" inputMode="tel" autoComplete="off" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />{needMsg('phone')}</div>
                             <p className="text-[11px] text-gray-500 leading-tight mb-3">By providing your phone number, you agree to receive automated transactional text messages from Lev Custom Merch.</p>
-                            <input className="w-full p-3 border-2 border-gray-200 rounded-xl mb-1 text-base text-black focus:border-blue-400 focus:outline-none" placeholder="Email for a receipt (optional)" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} />
+                            {/* Pre-orders need an email (receipt + how we reach them before pickup) */}
+                            <div id="need-email"><input className={`w-full p-3 border-2 ${needBorder('email')} rounded-xl mb-1 text-base text-black focus:border-blue-400 focus:outline-none`} placeholder={preorder ? 'Email (required) — for your receipt' : 'Email for a receipt (optional)'} type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" value={customerEmail} onChange={(e) => { setCustomerEmail(e.target.value); if (needs?.key === 'email') setNeeds(null); }} />{needMsg('email')}</div>
                             {/* One tap fills in the domain — replaces anything already typed after "@" */}
                             {/* Swipeable row so no button gets squeezed off the narrow checkout panel */}
                             <div className="flex gap-1.5 mb-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x" style={{ WebkitOverflowScrolling: 'touch' }}>
