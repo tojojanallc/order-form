@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
     // 4x6 label: 288 x 432 pts
-    const page = pdfDoc.addPage([288, 432]);
+    let page = pdfDoc.addPage([288, 432]);
     const { width } = page.getSize();
 
     let cursorY = 400;
@@ -119,14 +119,49 @@ export async function POST(req: Request) {
     // ── 2. Items ────────────────────────────────────────────────────────────────
     const items = Array.isArray(order.cart_data) ? order.cart_data : [];
 
-    items.forEach((item: any) => {
-      if (!item || cursorY < 40) return;
+    // An item that doesn't fit goes on the next label (it used to be left off without a word)
+    const linesFor = (item: any) => {
+      const c = item.customizations || {};
+      return 1 + (item.needsShipping && order.status === 'pending_shipping' ? 1 : 0) + ([item.size, item.color].some(Boolean) ? 1 : 0)
+        + (c.mainDesign ? 1 : 0) + (c.names || []).filter((n: any) => n?.text).length + (c.numbers || []).filter((n: any) => n?.text).length
+        + (c.logos || []).filter((l: any) => l?.type).length + (c.backList ? 1 : 0) + (c.metallic ? 1 : 0);
+    };
+    // At most 2 items per label: the label printers only print the top part of a long label, so a 3rd/4th item
+    // goes on the next label (same name + order #) instead of falling off the bottom
+    const PER_LABEL = 2;
+    let onLabel = 0;
+    const nextLabel = () => {
+      page = pdfDoc.addPage([288, 432]);
+      cursorY = 400;
+      onLabel = 0;
+      page.drawText(order.customer_name || 'Guest', { x: margin, y: cursorY, size: 16, font: fontBold });
+      moveDown(14);
+      page.drawText(`Order #${String(order.id).slice(0, 8)} — continued`, { x: margin, y: cursorY, size: 10, font });
+      moveDown(8);
+      page.drawLine({ start: { x: margin, y: cursorY }, end: { x: width - margin, y: cursorY }, thickness: 1, color: rgb(0, 0, 0) });
+      moveDown(18);
+    };
 
-      // Product name
-      let pName = item.productName || 'Item';
-      if (pName.length > 28) pName = pName.substring(0, 26) + '…';
-      page.drawText(pName, { x: margin, y: cursorY, size: 12, font: fontBold });
-      moveDown(13);
+    items.forEach((item: any) => {
+      if (!item) return;
+      if (onLabel >= PER_LABEL || cursorY - (linesFor(item) * 12 + 36) < 30) nextLabel();
+      onLabel++;
+
+      // Product name — the whole name, wrapped (cutting it hid "… Youth"), up to 2 lines
+      const words = String(item.productName || 'Item').split(/\s+/);
+      const nameLines: string[] = [];
+      for (const w of words) {
+        const last = nameLines[nameLines.length - 1];
+        if (last !== undefined && fontBold.widthOfTextAtSize(`${last} ${w}`, 12) <= width - margin * 2) nameLines[nameLines.length - 1] = `${last} ${w}`;
+        else nameLines.push(w);
+      }
+      if (nameLines.length > 2) nameLines.splice(1, nameLines.length - 1, nameLines.slice(1).join(' '));
+      nameLines.slice(0, 2).forEach(line => {
+        let l = line;
+        while (l.length > 4 && fontBold.widthOfTextAtSize(l, 12) > width - margin * 2) l = l.slice(0, -2) + '…';
+        page.drawText(l, { x: margin, y: cursorY, size: 12, font: fontBold });
+        moveDown(13);
+      });
 
       // Ship tag for individual item if mixed order
       if (item.needsShipping && order.status === 'pending_shipping') {
@@ -186,9 +221,15 @@ export async function POST(req: Request) {
       moveDown(14);
     });
 
-    // Footer
-    page.drawText('Lev Custom Merch | 414.882.4465 | www.levcustom.com', {
-      x: margin, y: 8, size: 7, font, color: rgb(0.5, 0.5, 0.5),
+    // Footer on every label; "Label 1/2" and "continued" when the order runs onto more than one
+    const labels = pdfDoc.getPages();
+    labels.forEach((p, i) => {
+      p.drawText(`Lev Custom Merch | 414.882.4465 | www.levcustom.com${labels.length > 1 ? `   ·   Label ${i + 1}/${labels.length}` : ''}`, {
+        x: margin, y: 8, size: 7, font, color: rgb(0.5, 0.5, 0.5),
+      });
+      if (labels.length > 1 && i < labels.length - 1) p.drawText('continued on next label »', { x: margin, y: 20, size: 9, font: fontBold });
+      // "1/2" big in the top corner, so a split order's labels stay together
+      if (labels.length > 1) p.drawText(`${i + 1}/${labels.length}`, { x: width - margin - fontBold.widthOfTextAtSize(`${i + 1}/${labels.length}`, 16), y: 402, size: 16, font: fontBold });
     });
 
     const pdfBase64 = await pdfDoc.saveAsBase64();
