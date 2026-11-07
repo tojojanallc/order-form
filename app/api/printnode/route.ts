@@ -169,10 +169,12 @@ export async function POST(req: Request) {
         moveDown(12);
       }
 
-      // Size + color
-      const sizeColor = [item.size, item.color].filter(Boolean).join(' / ');
-      if (sizeColor) {
-        page.drawText(`Size: ${sizeColor}`, { x: margin, y: cursorY, size: 11, font });
+      // Size + color — the kiosk only saves item.color for multi-color products, so fall back to the color in
+      // the product id ("Name | Size | Color")
+      const color = String(item.color || String(item.productId || '').split(' | ')[2] || '').trim();
+      if (item.size || color) {
+        const parts = [item.size ? `Size: ${item.size}` : '', color ? `Color: ${color}` : ''].filter(Boolean).join('   ');
+        page.drawText(parts.replace(/[^\x20-\x7E -ÿ]/g, ''), { x: margin, y: cursorY, size: 11, font: fontBold });
         moveDown(12);
       }
 
