@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import { confirmSession } from '@/app/lib/stripePay';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -43,6 +44,11 @@ export async function POST(req) {
         .eq('id', orderId);
 
       if (error) console.error("Supabase Update Error:", error);
+      // Pre-orders (event QR): confirm with the server key + email info@, even if the customer closed
+      // their phone before the thank-you page loaded (confirmSession only touches this session's order)
+      if (session.metadata?.preorder === '1') {
+        try { await confirmSession(session.id); } catch (e) { console.error('Pre-order confirm failed:', e); }
+      }
     } else {
       // 2. FALLBACK: If no ID was passed, insert a new row (Safety net)
       const { error } = await supabase.from('orders').insert({

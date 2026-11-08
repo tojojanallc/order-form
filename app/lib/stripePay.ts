@@ -1,6 +1,7 @@
 // Stripe Checkout confirmation shared by /api/phone-pay and the /success page's API
 import Stripe from 'stripe';
 import { admin } from '@/app/lib/server';
+import { alertPreorderPaid } from '@/app/lib/preorder';
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -16,6 +17,8 @@ export async function confirmSession(sessionId: string) {
     const status = ['awaiting_payment', 'canceled', null, ''].includes(order.status) ? (order.shipping_address ? 'pending_shipping' : 'pending') : order.status;
     await db.from('orders').update({ payment_status: 'paid', status, payment_intent_id: String(session.payment_intent || '') }).eq('id', orderId);
   }
+  // Pre-order (event QR) just paid → email info@ (once per order; no-op for other orders)
+  if (session.metadata?.preorder === '1') await alertPreorderPaid(db, orderId);
   return { paid: true, orderId };
 }
 
